@@ -53,8 +53,8 @@
 struct dev {
 	struct spdk_pci_addr			pci_addr;
 	struct spdk_nvme_ctrlr 			*ctrlr;
-	const struct spdk_nvme_ctrlr_data	*cdata;
-	struct spdk_nvme_ns_data		*common_ns_data;
+	const struct nvme_controller_data	*cdata;
+	struct nvme_namespace_data		*common_ns_data;
 	int					outstanding_admin_cmds;
 };
 
@@ -85,11 +85,11 @@ probe_cb(void *cb_ctx, const struct spdk_nvme_transport_id *trid,
 }
 
 static void
-identify_common_ns_cb(void *cb_arg, const struct spdk_nvme_cpl *cpl)
+identify_common_ns_cb(void *cb_arg, const struct nvme_completion *cpl)
 {
 	struct dev *dev = cb_arg;
 
-	if (cpl->status.sc != SPDK_NVME_SC_SUCCESS) {
+	if (cpl->status.sc != NVME_SC_SUCCESS) {
 		/* Identify Namespace for NSID = FFFFFFFFh is optional, so failure is not fatal. */
 		spdk_free(dev->common_ns_data);
 		dev->common_ns_data = NULL;
@@ -103,7 +103,7 @@ attach_cb(void *cb_ctx, const struct spdk_nvme_transport_id *trid,
 	  struct spdk_nvme_ctrlr *ctrlr, const struct spdk_nvme_ctrlr_opts *opts)
 {
 	struct dev *dev;
-	struct spdk_nvme_cmd cmd;
+	struct nvme_command cmd;
 
 	/* add to dev list */
 	dev = &devs[num_devs++];
@@ -113,7 +113,7 @@ attach_cb(void *cb_ctx, const struct spdk_nvme_transport_id *trid,
 	/* Retrieve controller data */
 	dev->cdata = spdk_nvme_ctrlr_get_data(dev->ctrlr);
 
-	dev->common_ns_data = spdk_zmalloc(sizeof(struct spdk_nvme_ns_data), 4096, NULL);
+	dev->common_ns_data = spdk_zmalloc(sizeof(struct nvme_namespace_data), 4096, NULL);
 	if (dev->common_ns_data == NULL) {
 		fprintf(stderr, "common_ns_data allocation failure\n");
 		return;
@@ -121,13 +121,13 @@ attach_cb(void *cb_ctx, const struct spdk_nvme_transport_id *trid,
 
 	/* Identify Namespace with NSID set to FFFFFFFFh to get common namespace capabilities. */
 	memset(&cmd, 0, sizeof(cmd));
-	cmd.opc = SPDK_NVME_OPC_IDENTIFY;
+	cmd.opc = NVME_OPC_IDENTIFY;
 	cmd.cdw10 = 0; /* CNS = 0 (Identify Namespace) */
 	cmd.nsid = SPDK_NVME_GLOBAL_NS_TAG;
 
 	dev->outstanding_admin_cmds++;
 	if (spdk_nvme_ctrlr_cmd_admin_raw(ctrlr, &cmd, dev->common_ns_data,
-					  sizeof(struct spdk_nvme_ns_data), identify_common_ns_cb, dev) != 0) {
+					  sizeof(struct nvme_namespace_data), identify_common_ns_cb, dev) != 0) {
 		dev->outstanding_admin_cmds--;
 		spdk_free(dev->common_ns_data);
 		dev->common_ns_data = NULL;
@@ -160,7 +160,7 @@ static void usage(void)
 }
 
 static void
-display_namespace_dpc(const struct spdk_nvme_ns_data *nsdata)
+display_namespace_dpc(const struct nvme_namespace_data *nsdata)
 {
 	if (nsdata->dpc.pit1 || nsdata->dpc.pit2 || nsdata->dpc.pit3) {
 		if (nsdata->dpc.pit1) {
@@ -193,7 +193,7 @@ display_namespace_dpc(const struct spdk_nvme_ns_data *nsdata)
 static void
 display_namespace(struct spdk_nvme_ns *ns)
 {
-	const struct spdk_nvme_ns_data		*nsdata;
+	const struct nvme_namespace_data		*nsdata;
 	uint32_t				i;
 
 	nsdata = spdk_nvme_ns_get_data(ns);
@@ -221,7 +221,7 @@ display_namespace(struct spdk_nvme_ns *ns)
 		       i, 1 << nsdata->lbaf[i].lbads, nsdata->lbaf[i].ms);
 	printf("Data Protection Capabilities:");
 	display_namespace_dpc(nsdata);
-	if (SPDK_NVME_FMT_NVM_PROTECTION_DISABLE == nsdata->dps.pit) {
+	if (NVME_FMT_NVM_PROTECTION_DISABLE == nsdata->dps.pit) {
 		printf("Data Protection Setting:     N/A\n");
 	} else {
 		printf("Data Protection Setting:     PIT%d Location: %s\n",
@@ -235,7 +235,7 @@ display_namespace(struct spdk_nvme_ns *ns)
 static void
 display_controller(struct dev *dev, int model)
 {
-	const struct spdk_nvme_ctrlr_data	*cdata;
+	const struct nvme_controller_data	*cdata;
 	uint8_t					str[128];
 	uint32_t				i;
 
@@ -333,7 +333,7 @@ get_controller(void)
 }
 
 static int
-get_lba_format(const struct spdk_nvme_ns_data *ns_data)
+get_lba_format(const struct nvme_namespace_data *ns_data)
 {
 	int lbaf, i;
 
@@ -355,7 +355,7 @@ get_lba_format(const struct spdk_nvme_ns_data *ns_data)
 }
 
 static void
-identify_allocated_ns_cb(void *cb_arg, const struct spdk_nvme_cpl *cpl)
+identify_allocated_ns_cb(void *cb_arg, const struct nvme_completion *cpl)
 {
 	struct dev *dev = cb_arg;
 
@@ -367,8 +367,8 @@ get_allocated_nsid(struct dev *dev)
 {
 	uint32_t nsid;
 	size_t i;
-	struct spdk_nvme_ns_list *ns_list;
-	struct spdk_nvme_cmd cmd = {0};
+	struct nvme_ns_list *ns_list;
+	struct nvme_command cmd = {0};
 
 	ns_list = spdk_zmalloc(sizeof(*ns_list), 4096, NULL);
 	if (ns_list == NULL) {
@@ -376,8 +376,8 @@ get_allocated_nsid(struct dev *dev)
 		return 0;
 	}
 
-	cmd.opc = SPDK_NVME_OPC_IDENTIFY;
-	cmd.cdw10 = SPDK_NVME_IDENTIFY_ALLOCATED_NS_LIST;
+	cmd.opc = NVME_OPC_IDENTIFY;
+	cmd.cdw10 = NVME_IDENTIFY_ALLOCATED_NS_LIST;
 	cmd.nsid = 0;
 
 	dev->outstanding_admin_cmds++;
@@ -415,9 +415,9 @@ static void
 ns_attach(struct dev *device, int attachment_op, int ctrlr_id, int ns_id)
 {
 	int ret = 0;
-	struct spdk_nvme_ctrlr_list *ctrlr_list;
+	struct nvme_ctrlr_list *ctrlr_list;
 
-	ctrlr_list = spdk_zmalloc(sizeof(struct spdk_nvme_ctrlr_list),
+	ctrlr_list = spdk_zmalloc(sizeof(struct nvme_ctrlr_list),
 				  4096, NULL);
 	if (ctrlr_list == NULL) {
 		printf("Allocation error (controller list)\n");
@@ -427,9 +427,9 @@ ns_attach(struct dev *device, int attachment_op, int ctrlr_id, int ns_id)
 	ctrlr_list->ctrlr_count = 1;
 	ctrlr_list->ctrlr_list[0] = ctrlr_id;
 
-	if (attachment_op == SPDK_NVME_NS_CTRLR_ATTACH) {
+	if (attachment_op == NVME_NS_CTRLR_ATTACH) {
 		ret = spdk_nvme_ctrlr_attach_ns(device->ctrlr, ns_id, ctrlr_list);
-	} else if (attachment_op == SPDK_NVME_NS_CTRLR_DETACH) {
+	} else if (attachment_op == NVME_NS_CTRLR_DETACH) {
 		ret = spdk_nvme_ctrlr_detach_ns(device->ctrlr, ns_id, ctrlr_list);
 	}
 
@@ -445,9 +445,9 @@ ns_manage_add(struct dev *device, uint64_t ns_size, uint64_t ns_capacity, int ns
 	      uint8_t ns_dps_type, uint8_t ns_dps_location, uint8_t ns_nmic)
 {
 	uint32_t nsid;
-	struct spdk_nvme_ns_data *ndata;
+	struct nvme_namespace_data *ndata;
 
-	ndata = spdk_zmalloc(sizeof(struct spdk_nvme_ns_data), 4096, NULL);
+	ndata = spdk_zmalloc(sizeof(struct nvme_namespace_data), 4096, NULL);
 	if (ndata == NULL) {
 		printf("Allocation error (namespace data)\n");
 		exit(1);
@@ -456,7 +456,7 @@ ns_manage_add(struct dev *device, uint64_t ns_size, uint64_t ns_capacity, int ns
 	ndata->nsze = ns_size;
 	ndata->ncap = ns_capacity;
 	ndata->flbas.format = ns_lbasize;
-	if (SPDK_NVME_FMT_NVM_PROTECTION_DISABLE != ns_dps_type) {
+	if (NVME_FMT_NVM_PROTECTION_DISABLE != ns_dps_type) {
 		ndata->dps.pit = ns_dps_type;
 		ndata->dps.md_start = ns_dps_location;
 	}
@@ -487,7 +487,7 @@ static void
 nvme_manage_format(struct dev *device, int ns_id, int ses, int pi, int pil, int ms, int lbaf)
 {
 	int ret = 0;
-	struct spdk_nvme_format format = {};
+	struct nvme_format format = {};
 
 	format.lbaf	= lbaf;
 	format.ms	= ms;
@@ -581,7 +581,7 @@ add_ns(void)
 		return;
 	}
 
-	if (SPDK_NVME_FMT_NVM_PROTECTION_DISABLE != ns_dps_type) {
+	if (NVME_FMT_NVM_PROTECTION_DISABLE != ns_dps_type) {
 		printf("Please Input Data Protection Location (1: Head; 0: Tail): \n");
 		if (!scanf("%d", &ns_dps_location)) {
 			printf("Invalid Data Protection Location\n");
@@ -639,9 +639,9 @@ format_nvm(void)
 	int					lbaf;
 	char					option;
 	struct dev				*ctrlr;
-	const struct spdk_nvme_ctrlr_data	*cdata;
+	const struct nvme_controller_data	*cdata;
 	struct spdk_nvme_ns			*ns;
-	const struct spdk_nvme_ns_data		*nsdata;
+	const struct nvme_namespace_data		*nsdata;
 
 	ctrlr = get_controller();
 	if (ctrlr == NULL) {
@@ -765,7 +765,7 @@ update_firmware_image(void)
 	char					path[256];
 	void					*fw_image;
 	struct dev				*ctrlr;
-	const struct spdk_nvme_ctrlr_data	*cdata;
+	const struct nvme_controller_data	*cdata;
 
 	ctrlr = get_controller();
 	if (ctrlr == NULL) {
@@ -882,10 +882,10 @@ int main(int argc, char **argv)
 			delete_ns();
 			break;
 		case 4:
-			attach_and_detach_ns(SPDK_NVME_NS_CTRLR_ATTACH);
+			attach_and_detach_ns(NVME_NS_CTRLR_ATTACH);
 			break;
 		case 5:
-			attach_and_detach_ns(SPDK_NVME_NS_CTRLR_DETACH);
+			attach_and_detach_ns(NVME_NS_CTRLR_DETACH);
 			break;
 		case 6:
 			format_nvm();

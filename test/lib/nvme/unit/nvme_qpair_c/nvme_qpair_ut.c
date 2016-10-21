@@ -239,7 +239,7 @@ ut_insert_cq_entry(struct spdk_nvme_qpair *qpair, uint32_t slot)
 {
 	struct nvme_request	*req;
 	struct nvme_tracker 	*tr;
-	struct spdk_nvme_cpl	*cpl;
+	struct nvme_completion	*cpl;
 
 	req = spdk_mempool_get(_g_nvme_driver.request_mempool);
 	SPDK_CU_ASSERT_FATAL(req != NULL);
@@ -259,13 +259,13 @@ ut_insert_cq_entry(struct spdk_nvme_qpair *qpair, uint32_t slot)
 #endif
 
 static void
-expected_success_callback(void *arg, const struct spdk_nvme_cpl *cpl)
+expected_success_callback(void *arg, const struct nvme_completion *cpl)
 {
 	CU_ASSERT(!spdk_nvme_cpl_is_error(cpl));
 }
 
 static void
-expected_failure_callback(void *arg, const struct spdk_nvme_cpl *cpl)
+expected_failure_callback(void *arg, const struct nvme_completion *cpl)
 {
 	CU_ASSERT(spdk_nvme_cpl_is_error(cpl));
 }
@@ -338,7 +338,7 @@ test_sgl_req(void)
 	prepare_submit_request_test(&qpair, &ctrlr);
 	req = nvme_allocate_request(&payload, PAGE_SIZE, NULL, &io_req);
 	SPDK_CU_ASSERT_FATAL(req != NULL);
-	req->cmd.opc = SPDK_NVME_OPC_WRITE;
+	req->cmd.opc = NVME_OPC_WRITE;
 	req->cmd.cdw10 = 10000;
 	req->cmd.cdw12 = 7 | 0;
 	req->payload_offset = 1;
@@ -350,7 +350,7 @@ test_sgl_req(void)
 	prepare_submit_request_test(&qpair, &ctrlr);
 	req = nvme_allocate_request(&payload, PAGE_SIZE, NULL, &io_req);
 	SPDK_CU_ASSERT_FATAL(req != NULL);
-	req->cmd.opc = SPDK_NVME_OPC_WRITE;
+	req->cmd.opc = NVME_OPC_WRITE;
 	req->cmd.cdw10 = 10000;
 	req->cmd.cdw12 = 7 | 0;
 	spdk_nvme_retry_count = 1;
@@ -365,7 +365,7 @@ test_sgl_req(void)
 	prepare_submit_request_test(&qpair, &ctrlr);
 	req = nvme_allocate_request(&payload, 2 * PAGE_SIZE, NULL, &io_req);
 	SPDK_CU_ASSERT_FATAL(req != NULL);
-	req->cmd.opc = SPDK_NVME_OPC_WRITE;
+	req->cmd.opc = NVME_OPC_WRITE;
 	req->cmd.cdw10 = 10000;
 	req->cmd.cdw12 = 15 | 0;
 	req->payload_offset = 2;
@@ -377,7 +377,7 @@ test_sgl_req(void)
 	prepare_submit_request_test(&qpair, &ctrlr);
 	req = nvme_allocate_request(&payload, (NVME_MAX_PRP_LIST_ENTRIES + 1) * PAGE_SIZE, NULL, &io_req);
 	SPDK_CU_ASSERT_FATAL(req != NULL);
-	req->cmd.opc = SPDK_NVME_OPC_WRITE;
+	req->cmd.opc = NVME_OPC_WRITE;
 	req->cmd.cdw10 = 10000;
 	req->cmd.cdw12 = 4095 | 0;
 
@@ -416,7 +416,7 @@ test_hw_sgl_req(void)
 	prepare_submit_request_test(&qpair, &ctrlr);
 	req = nvme_allocate_request(&payload, PAGE_SIZE, NULL, &io_req);
 	SPDK_CU_ASSERT_FATAL(req != NULL);
-	req->cmd.opc = SPDK_NVME_OPC_WRITE;
+	req->cmd.opc = NVME_OPC_WRITE;
 	req->cmd.cdw10 = 10000;
 	req->cmd.cdw12 = 7 | 0;
 	req->payload_offset = 0;
@@ -426,11 +426,11 @@ test_hw_sgl_req(void)
 
 	sgl_tr = TAILQ_FIRST(&qpair.outstanding_tr);
 	CU_ASSERT(sgl_tr != NULL);
-	CU_ASSERT(sgl_tr->u.sgl[0].generic.type == SPDK_NVME_SGL_TYPE_DATA_BLOCK);
+	CU_ASSERT(sgl_tr->u.sgl[0].generic.type == NVME_SGL_TYPE_DATA_BLOCK);
 	CU_ASSERT(sgl_tr->u.sgl[0].generic.subtype == 0);
 	CU_ASSERT(sgl_tr->u.sgl[0].unkeyed.length == 4096);
 	CU_ASSERT(sgl_tr->u.sgl[0].address == 0);
-	CU_ASSERT(req->cmd.dptr.sgl1.generic.type == SPDK_NVME_SGL_TYPE_DATA_BLOCK);
+	CU_ASSERT(req->cmd.dptr.sgl1.generic.type == NVME_SGL_TYPE_DATA_BLOCK);
 	TAILQ_REMOVE(&qpair.outstanding_tr, sgl_tr, tq_list);
 	cleanup_submit_request_test(&qpair);
 	nvme_free_request(req);
@@ -438,7 +438,7 @@ test_hw_sgl_req(void)
 	prepare_submit_request_test(&qpair, &ctrlr);
 	req = nvme_allocate_request(&payload, NVME_MAX_SGL_DESCRIPTORS * PAGE_SIZE, NULL, &io_req);
 	SPDK_CU_ASSERT_FATAL(req != NULL);
-	req->cmd.opc = SPDK_NVME_OPC_WRITE;
+	req->cmd.opc = NVME_OPC_WRITE;
 	req->cmd.cdw10 = 10000;
 	req->cmd.cdw12 = 2023 | 0;
 	req->payload_offset = 0;
@@ -449,12 +449,12 @@ test_hw_sgl_req(void)
 	sgl_tr = TAILQ_FIRST(&qpair.outstanding_tr);
 	CU_ASSERT(sgl_tr != NULL);
 	for (i = 0; i < NVME_MAX_SGL_DESCRIPTORS; i++) {
-		CU_ASSERT(sgl_tr->u.sgl[i].generic.type == SPDK_NVME_SGL_TYPE_DATA_BLOCK);
+		CU_ASSERT(sgl_tr->u.sgl[i].generic.type == NVME_SGL_TYPE_DATA_BLOCK);
 		CU_ASSERT(sgl_tr->u.sgl[i].generic.subtype == 0);
 		CU_ASSERT(sgl_tr->u.sgl[i].unkeyed.length == 4096);
 		CU_ASSERT(sgl_tr->u.sgl[i].address == i * 4096);
 	}
-	CU_ASSERT(req->cmd.dptr.sgl1.generic.type == SPDK_NVME_SGL_TYPE_LAST_SEGMENT);
+	CU_ASSERT(req->cmd.dptr.sgl1.generic.type == NVME_SGL_TYPE_LAST_SEGMENT);
 	TAILQ_REMOVE(&qpair.outstanding_tr, sgl_tr, tq_list);
 	cleanup_submit_request_test(&qpair);
 	nvme_free_request(req);
@@ -593,7 +593,7 @@ static void test_nvme_qpair_destroy(void)
 	tr_temp->req = nvme_allocate_request_null(expected_failure_callback, NULL);
 	SPDK_CU_ASSERT_FATAL(tr_temp->req != NULL);
 
-	tr_temp->req->cmd.opc = SPDK_NVME_OPC_ASYNC_EVENT_REQUEST;
+	tr_temp->req->cmd.opc = NVME_OPC_ASYNC_EVENT_REQUEST;
 	tr_temp->req->cmd.cid = tr_temp->cid;
 	TAILQ_INSERT_HEAD(&qpair.outstanding_tr, tr_temp, tq_list);
 
@@ -604,95 +604,95 @@ static void test_nvme_qpair_destroy(void)
 
 static void test_nvme_completion_is_retry(void)
 {
-	struct spdk_nvme_cpl	cpl = {};
+	struct nvme_completion	cpl = {};
 
-	cpl.status.sct = SPDK_NVME_SCT_GENERIC;
-	cpl.status.sc = SPDK_NVME_SC_NAMESPACE_NOT_READY;
+	cpl.status.sct = NVME_SCT_GENERIC;
+	cpl.status.sc = NVME_SC_NAMESPACE_NOT_READY;
 	cpl.status.dnr = 0;
 	CU_ASSERT_TRUE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sc = SPDK_NVME_SC_FORMAT_IN_PROGRESS;
+	cpl.status.sc = NVME_SC_FORMAT_IN_PROGRESS;
 	cpl.status.dnr = 1;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 	cpl.status.dnr = 0;
 	CU_ASSERT_TRUE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sc = SPDK_NVME_SC_INVALID_OPCODE;
+	cpl.status.sc = NVME_SC_INVALID_OPCODE;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sc = SPDK_NVME_SC_INVALID_FIELD;
+	cpl.status.sc = NVME_SC_INVALID_FIELD;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sc = SPDK_NVME_SC_COMMAND_ID_CONFLICT;
+	cpl.status.sc = NVME_SC_COMMAND_ID_CONFLICT;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sc = SPDK_NVME_SC_DATA_TRANSFER_ERROR;
+	cpl.status.sc = NVME_SC_DATA_TRANSFER_ERROR;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sc = SPDK_NVME_SC_ABORTED_POWER_LOSS;
+	cpl.status.sc = NVME_SC_ABORTED_POWER_LOSS;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
+	cpl.status.sc = NVME_SC_INTERNAL_DEVICE_ERROR;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sc = SPDK_NVME_SC_ABORTED_BY_REQUEST;
+	cpl.status.sc = NVME_SC_ABORTED_BY_REQUEST;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sc = SPDK_NVME_SC_ABORTED_FAILED_FUSED;
+	cpl.status.sc = NVME_SC_ABORTED_FAILED_FUSED;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sc = SPDK_NVME_SC_ABORTED_MISSING_FUSED;
+	cpl.status.sc = NVME_SC_ABORTED_MISSING_FUSED;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sc = SPDK_NVME_SC_INVALID_NAMESPACE_OR_FORMAT;
+	cpl.status.sc = NVME_SC_INVALID_NAMESPACE_OR_FORMAT;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sc = SPDK_NVME_SC_COMMAND_SEQUENCE_ERROR;
+	cpl.status.sc = NVME_SC_COMMAND_SEQUENCE_ERROR;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sc = SPDK_NVME_SC_INVALID_SGL_SEG_DESCRIPTOR;
+	cpl.status.sc = NVME_SC_INVALID_SGL_SEG_DESCRIPTOR;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sc = SPDK_NVME_SC_INVALID_NUM_SGL_DESCIRPTORS;
+	cpl.status.sc = NVME_SC_INVALID_NUM_SGL_DESCIRPTORS;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sc = SPDK_NVME_SC_DATA_SGL_LENGTH_INVALID;
+	cpl.status.sc = NVME_SC_DATA_SGL_LENGTH_INVALID;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sc = SPDK_NVME_SC_METADATA_SGL_LENGTH_INVALID;
+	cpl.status.sc = NVME_SC_METADATA_SGL_LENGTH_INVALID;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sc = SPDK_NVME_SC_SGL_DESCRIPTOR_TYPE_INVALID;
+	cpl.status.sc = NVME_SC_SGL_DESCRIPTOR_TYPE_INVALID;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sc = SPDK_NVME_SC_INVALID_CONTROLLER_MEM_BUF;
+	cpl.status.sc = NVME_SC_INVALID_CONTROLLER_MEM_BUF;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sc = SPDK_NVME_SC_INVALID_PRP_OFFSET;
+	cpl.status.sc = NVME_SC_INVALID_PRP_OFFSET;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sc = SPDK_NVME_SC_ATOMIC_WRITE_UNIT_EXCEEDED;
+	cpl.status.sc = NVME_SC_ATOMIC_WRITE_UNIT_EXCEEDED;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sc = SPDK_NVME_SC_LBA_OUT_OF_RANGE;
+	cpl.status.sc = NVME_SC_LBA_OUT_OF_RANGE;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sc = SPDK_NVME_SC_CAPACITY_EXCEEDED;
+	cpl.status.sc = NVME_SC_CAPACITY_EXCEEDED;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sc = SPDK_NVME_SC_RESERVATION_CONFLICT;
+	cpl.status.sc = NVME_SC_RESERVATION_CONFLICT;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
 	cpl.status.sc = 0x70;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sct = SPDK_NVME_SCT_COMMAND_SPECIFIC;
+	cpl.status.sct = NVME_SCT_COMMAND_SPECIFIC;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sct = SPDK_NVME_SCT_MEDIA_ERROR;
+	cpl.status.sct = NVME_SCT_MEDIA_ERROR;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
-	cpl.status.sct = SPDK_NVME_SCT_VENDOR_SPECIFIC;
+	cpl.status.sct = NVME_SCT_VENDOR_SPECIFIC;
 	CU_ASSERT_FALSE(nvme_completion_is_retry(&cpl));
 
 	cpl.status.sct = 0x4;
@@ -705,17 +705,17 @@ test_get_status_string(void)
 {
 	const char	*status_string;
 
-	status_string = get_status_string(SPDK_NVME_SCT_GENERIC, SPDK_NVME_SC_SUCCESS);
+	status_string = get_status_string(NVME_SCT_GENERIC, NVME_SC_SUCCESS);
 	CU_ASSERT(strcmp(status_string, "SUCCESS") == 0);
 
-	status_string = get_status_string(SPDK_NVME_SCT_COMMAND_SPECIFIC,
-					  SPDK_NVME_SC_COMPLETION_QUEUE_INVALID);
+	status_string = get_status_string(NVME_SCT_COMMAND_SPECIFIC,
+					  NVME_SC_COMPLETION_QUEUE_INVALID);
 	CU_ASSERT(strcmp(status_string, "INVALID COMPLETION QUEUE") == 0);
 
-	status_string = get_status_string(SPDK_NVME_SCT_MEDIA_ERROR, SPDK_NVME_SC_UNRECOVERED_READ_ERROR);
+	status_string = get_status_string(NVME_SCT_MEDIA_ERROR, NVME_SC_UNRECOVERED_READ_ERROR);
 	CU_ASSERT(strcmp(status_string, "UNRECOVERED READ ERROR") == 0);
 
-	status_string = get_status_string(SPDK_NVME_SCT_VENDOR_SPECIFIC, 0);
+	status_string = get_status_string(NVME_SCT_VENDOR_SPECIFIC, 0);
 	CU_ASSERT(strcmp(status_string, "VENDOR SPECIFIC") == 0);
 
 	status_string = get_status_string(100, 0);

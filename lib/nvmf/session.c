@@ -54,10 +54,10 @@ nvmf_init_discovery_session_properties(struct spdk_nvmf_session *session)
 	/* extended data for get log page supportted */
 	session->vcdata.lpa.edlp = 1;
 	session->vcdata.cntlid = 0; /* There is one controller per subsystem, so its id is 0 */
-	session->vcdata.nvmf_specific.ioccsz = sizeof(struct spdk_nvme_cmd) / 16;
-	session->vcdata.nvmf_specific.iorcsz = sizeof(struct spdk_nvme_cpl) / 16;
+	session->vcdata.nvmf_specific.ioccsz = sizeof(struct nvme_command) / 16;
+	session->vcdata.nvmf_specific.iorcsz = sizeof(struct nvme_completion) / 16;
 	session->vcdata.nvmf_specific.icdoff = 0; /* offset starts directly after SQE */
-	session->vcdata.nvmf_specific.ctrattr.ctrlr_model = SPDK_NVMF_CTRLR_MODEL_DYNAMIC;
+	session->vcdata.nvmf_specific.ctrattr.ctrlr_model = NVMF_CTRLR_MODEL_DYNAMIC;
 	session->vcdata.nvmf_specific.msdbd = 1; /* target supports single SGL in capsule */
 	session->vcdata.sgls.keyed_sgl = 1;
 	session->vcdata.sgls.sgl_offset = 1;
@@ -102,10 +102,10 @@ nvmf_init_nvme_session_properties(struct spdk_nvmf_session *session)
 	session->vcdata.sgls.keyed_sgl = 1;
 	session->vcdata.sgls.sgl_offset = 1;
 
-	session->vcdata.nvmf_specific.ioccsz = sizeof(struct spdk_nvme_cmd) / 16;
-	session->vcdata.nvmf_specific.iorcsz = sizeof(struct spdk_nvme_cpl) / 16;
+	session->vcdata.nvmf_specific.ioccsz = sizeof(struct nvme_command) / 16;
+	session->vcdata.nvmf_specific.iorcsz = sizeof(struct nvme_completion) / 16;
 	session->vcdata.nvmf_specific.icdoff = 0; /* offset starts directly after SQE */
-	session->vcdata.nvmf_specific.ctrattr.ctrlr_model = SPDK_NVMF_CTRLR_MODEL_DYNAMIC;
+	session->vcdata.nvmf_specific.ctrattr.ctrlr_model = NVMF_CTRLR_MODEL_DYNAMIC;
 	session->vcdata.nvmf_specific.msdbd = 1; /* target supports single SGL in capsule */
 
 	/* TODO: this should be set by the transport */
@@ -139,7 +139,7 @@ nvmf_init_nvme_session_properties(struct spdk_nvmf_session *session)
 	session->vcprop.cap.bits.mpsmax = 0; /* 2 ^ 12 + mpsmax == 4k */
 
 	/* Report at least version 1.2.1 */
-	if (session->vcprop.vs.raw < SPDK_NVME_VERSION(1, 2, 1)) {
+	if (session->vcprop.vs.raw < NVME_VERSION(1, 2, 1)) {
 		session->vcprop.vs.bits.mjr = 1;
 		session->vcprop.vs.bits.mnr = 2;
 		session->vcprop.vs.bits.ter = 1;
@@ -183,7 +183,7 @@ spdk_nvmf_session_destruct(struct spdk_nvmf_session *session)
 static void
 invalid_connect_response(struct spdk_nvmf_fabric_connect_rsp *rsp, uint8_t iattr, uint16_t ipo)
 {
-	rsp->status.sct = SPDK_NVME_SCT_COMMAND_SPECIFIC;
+	rsp->status.sct = NVME_SCT_COMMAND_SPECIFIC;
 	rsp->status.sc = SPDK_NVMF_FABRIC_SC_INVALID_PARAM;
 	rsp->status_code_specific.invalid.iattr = iattr;
 	rsp->status_code_specific.invalid.ipo = ipo;
@@ -252,7 +252,7 @@ spdk_nvmf_session_connect(struct spdk_nvmf_conn *conn,
 		session = conn->transport->session_init();
 		if (session == NULL) {
 			SPDK_ERRLOG("Memory allocation failure\n");
-			rsp->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
+			rsp->status.sc = NVME_SC_INTERNAL_DEVICE_ERROR;
 			return;
 		}
 
@@ -267,7 +267,7 @@ spdk_nvmf_session_connect(struct spdk_nvmf_conn *conn,
 		memcpy(session->hostid, data->hostid, sizeof(session->hostid));
 
 		if (conn->transport->session_add_conn(session, conn)) {
-			rsp->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
+			rsp->status.sc = NVME_SC_INTERNAL_DEVICE_ERROR;
 			conn->transport->session_fini(session);
 			free(session);
 			return;
@@ -305,14 +305,14 @@ spdk_nvmf_session_connect(struct spdk_nvmf_conn *conn,
 			return;
 		}
 
-		if (1u << session->vcprop.cc.bits.iosqes != sizeof(struct spdk_nvme_cmd)) {
+		if (1u << session->vcprop.cc.bits.iosqes != sizeof(struct nvme_command)) {
 			SPDK_ERRLOG("Got I/O connect with invalid IOSQES %u\n",
 				    session->vcprop.cc.bits.iosqes);
 			INVALID_CONNECT_CMD(qid);
 			return;
 		}
 
-		if (1u << session->vcprop.cc.bits.iocqes != sizeof(struct spdk_nvme_cpl)) {
+		if (1u << session->vcprop.cc.bits.iocqes != sizeof(struct nvme_completion)) {
 			SPDK_ERRLOG("Got I/O connect with invalid IOCQES %u\n",
 				    session->vcprop.cc.bits.iocqes);
 			INVALID_CONNECT_CMD(qid);
@@ -322,7 +322,7 @@ spdk_nvmf_session_connect(struct spdk_nvmf_conn *conn,
 		/* check if we would exceed session connection limit */
 		if (session->num_connections >= session->max_connections_allowed) {
 			SPDK_ERRLOG("connection limit %d\n", session->num_connections);
-			rsp->status.sct = SPDK_NVME_SCT_COMMAND_SPECIFIC;
+			rsp->status.sct = NVME_SCT_COMMAND_SPECIFIC;
 			rsp->status.sc = SPDK_NVMF_FABRIC_SC_CONTROLLER_BUSY;
 			return;
 		}
@@ -337,7 +337,7 @@ spdk_nvmf_session_connect(struct spdk_nvmf_conn *conn,
 	TAILQ_INSERT_HEAD(&session->connections, conn, link);
 	conn->sess = session;
 
-	rsp->status.sc = SPDK_NVME_SC_SUCCESS;
+	rsp->status.sc = NVME_SC_SUCCESS;
 	rsp->status_code_specific.success.cntlid = session->vcdata.cntlid;
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "connect capsule response: cntlid = 0x%04x\n",
 		      rsp->status_code_specific.success.cntlid);
@@ -381,7 +381,7 @@ nvmf_prop_get_cc(struct spdk_nvmf_session *session)
 static bool
 nvmf_prop_set_cc(struct spdk_nvmf_session *session, uint64_t value)
 {
-	union spdk_nvme_cc_register cc, diff;
+	union nvme_cc_register cc, diff;
 
 	cc.raw = (uint32_t)value;
 
@@ -407,14 +407,14 @@ nvmf_prop_set_cc(struct spdk_nvmf_session *session, uint64_t value)
 	}
 
 	if (diff.bits.shn) {
-		if (cc.bits.shn == SPDK_NVME_SHN_NORMAL ||
-		    cc.bits.shn == SPDK_NVME_SHN_ABRUPT) {
+		if (cc.bits.shn == NVME_SHN_NORMAL ||
+		    cc.bits.shn == NVME_SHN_ABRUPT) {
 			SPDK_TRACELOG(SPDK_TRACE_NVMF, "Property Set CC Shutdown %u%ub!\n",
 				      cc.bits.shn >> 1, cc.bits.shn & 1);
 			session->vcprop.cc.bits.shn = cc.bits.shn;
 			session->vcprop.cc.bits.en = 0;
 			session->vcprop.csts.bits.rdy = 0;
-			session->vcprop.csts.bits.shst = SPDK_NVME_SHST_COMPLETE;
+			session->vcprop.csts.bits.shst = NVME_SHST_COMPLETE;
 		} else if (cc.bits.shn == 0) {
 			session->vcprop.cc.bits.shn = 0;
 		} else {
@@ -463,7 +463,7 @@ struct nvmf_prop {
 
 #define PROP(field, size, get_cb, set_cb) \
 	{ \
-		offsetof(struct spdk_nvme_registers, field), \
+		offsetof(struct nvme_registers, field), \
 		SPDK_NVMF_PROP_SIZE_##size, \
 		#field, \
 		get_cb, set_cb \
@@ -533,7 +533,7 @@ spdk_nvmf_property_get(struct spdk_nvmf_session *session,
 void
 spdk_nvmf_property_set(struct spdk_nvmf_session *session,
 		       struct spdk_nvmf_fabric_prop_set_cmd *cmd,
-		       struct spdk_nvme_cpl *response)
+		       struct nvme_completion *response)
 {
 	const struct nvmf_prop *prop;
 	uint64_t value;
@@ -586,10 +586,10 @@ spdk_nvmf_session_poll(struct spdk_nvmf_session *session)
 int
 spdk_nvmf_session_set_features_host_identifier(struct spdk_nvmf_request *req)
 {
-	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
+	struct nvme_completion *response = &req->rsp->nvme_cpl;
 
 	SPDK_ERRLOG("Set Features - Host Identifier not allowed\n");
-	response->status.sc = SPDK_NVME_SC_COMMAND_SEQUENCE_ERROR;
+	response->status.sc = NVME_SC_COMMAND_SEQUENCE_ERROR;
 	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 }
 
@@ -597,20 +597,20 @@ int
 spdk_nvmf_session_get_features_host_identifier(struct spdk_nvmf_request *req)
 {
 	struct spdk_nvmf_session *session = req->conn->sess;
-	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
-	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
+	struct nvme_command *cmd = &req->cmd->nvme_cmd;
+	struct nvme_completion *response = &req->rsp->nvme_cpl;
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Get Features - Host Identifier\n");
 	if (!(cmd->cdw11 & 1)) {
 		/* NVMe over Fabrics requires EXHID=1 (128-bit/16-byte host ID) */
 		SPDK_ERRLOG("Get Features - Host Identifier with EXHID=0 not allowed\n");
-		response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+		response->status.sc = NVME_SC_INVALID_FIELD;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 
 	if (req->data == NULL || req->length < sizeof(session->hostid)) {
 		SPDK_ERRLOG("Invalid data buffer for Get Features - Host Identifier\n");
-		response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+		response->status.sc = NVME_SC_INVALID_FIELD;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 
@@ -622,13 +622,13 @@ int
 spdk_nvmf_session_set_features_keep_alive_timer(struct spdk_nvmf_request *req)
 {
 	struct spdk_nvmf_session *session = req->conn->sess;
-	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
-	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
+	struct nvme_command *cmd = &req->cmd->nvme_cmd;
+	struct nvme_completion *rsp = &req->rsp->nvme_cpl;
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Set Features - Keep Alive Timer (%u ms)\n", cmd->cdw11);
 
 	if (cmd->cdw11 == 0) {
-		rsp->status.sc = SPDK_NVME_SC_KEEP_ALIVE_INVALID;
+		rsp->status.sc = NVME_SC_KEEP_ALIVE_INVALID;
 	} else if (cmd->cdw11 < MIN_KEEP_ALIVE_TIMEOUT) {
 		session->kato = MIN_KEEP_ALIVE_TIMEOUT;
 	} else {
@@ -644,7 +644,7 @@ int
 spdk_nvmf_session_get_features_keep_alive_timer(struct spdk_nvmf_request *req)
 {
 	struct spdk_nvmf_session *session = req->conn->sess;
-	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
+	struct nvme_completion *rsp = &req->rsp->nvme_cpl;
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Get Features - Keep Alive Timer\n");
 	rsp->cdw0 = session->kato;
@@ -655,7 +655,7 @@ int
 spdk_nvmf_session_set_features_number_of_queues(struct spdk_nvmf_request *req)
 {
 	struct spdk_nvmf_session *session = req->conn->sess;
-	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
+	struct nvme_completion *rsp = &req->rsp->nvme_cpl;
 	uint32_t nr_io_queues;
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Set Features - Number of Queues, cdw11 0x%x\n",
@@ -667,7 +667,7 @@ spdk_nvmf_session_set_features_number_of_queues(struct spdk_nvmf_request *req)
 	/* verify that the contoller is ready to process commands */
 	if (session->num_connections > 1) {
 		SPDK_TRACELOG(SPDK_TRACE_NVMF, "Queue pairs already active!\n");
-		rsp->status.sc = SPDK_NVME_SC_COMMAND_SEQUENCE_ERROR;
+		rsp->status.sc = NVME_SC_COMMAND_SEQUENCE_ERROR;
 	} else {
 		/* Number of IO queues has a zero based value */
 		rsp->cdw0 = ((nr_io_queues - 1) << 16) |
@@ -681,7 +681,7 @@ int
 spdk_nvmf_session_get_features_number_of_queues(struct spdk_nvmf_request *req)
 {
 	struct spdk_nvmf_session *session = req->conn->sess;
-	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
+	struct nvme_completion *rsp = &req->rsp->nvme_cpl;
 	uint32_t nr_io_queues;
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Get Features - Number of Queues\n");

@@ -45,7 +45,7 @@
 
 struct dev {
 	struct spdk_nvme_ctrlr				*ctrlr;
-	struct spdk_nvme_health_information_page	*health_page;
+	struct nvme_health_information_page	*health_page;
 	uint32_t					orig_temp_threshold;
 	char 						name[100];
 };
@@ -63,7 +63,7 @@ static int aer_done = 0;
 static int temperature_done = 0;
 static int failed = 0;
 
-static void set_feature_completion(void *cb_arg, const struct spdk_nvme_cpl *cpl)
+static void set_feature_completion(void *cb_arg, const struct nvme_completion *cpl)
 {
 	struct dev *dev = cb_arg;
 
@@ -81,17 +81,17 @@ static void set_feature_completion(void *cb_arg, const struct spdk_nvme_cpl *cpl
 static int
 set_temp_threshold(struct dev *dev, uint32_t temp)
 {
-	struct spdk_nvme_cmd cmd = {};
+	struct nvme_command cmd = {};
 
-	cmd.opc = SPDK_NVME_OPC_SET_FEATURES;
-	cmd.cdw10 = SPDK_NVME_FEAT_TEMPERATURE_THRESHOLD;
+	cmd.opc = NVME_OPC_SET_FEATURES;
+	cmd.cdw10 = NVME_FEAT_TEMPERATURE_THRESHOLD;
 	cmd.cdw11 = temp;
 
 	return spdk_nvme_ctrlr_cmd_admin_raw(dev->ctrlr, &cmd, NULL, 0, set_feature_completion, dev);
 }
 
 static void
-get_feature_completion(void *cb_arg, const struct spdk_nvme_cpl *cpl)
+get_feature_completion(void *cb_arg, const struct nvme_completion *cpl)
 {
 	struct dev *dev = cb_arg;
 
@@ -112,23 +112,23 @@ get_feature_completion(void *cb_arg, const struct spdk_nvme_cpl *cpl)
 static int
 get_temp_threshold(struct dev *dev)
 {
-	struct spdk_nvme_cmd cmd = {};
+	struct nvme_command cmd = {};
 
-	cmd.opc = SPDK_NVME_OPC_GET_FEATURES;
-	cmd.cdw10 = SPDK_NVME_FEAT_TEMPERATURE_THRESHOLD;
+	cmd.opc = NVME_OPC_GET_FEATURES;
+	cmd.cdw10 = NVME_FEAT_TEMPERATURE_THRESHOLD;
 
 	return spdk_nvme_ctrlr_cmd_admin_raw(dev->ctrlr, &cmd, NULL, 0, get_feature_completion, dev);
 }
 
 static void
-print_health_page(struct dev *dev, struct spdk_nvme_health_information_page *hip)
+print_health_page(struct dev *dev, struct nvme_health_information_page *hip)
 {
 	printf("%s: Current Temperature:         %u Kelvin (%d Celsius)\n",
 	       dev->name, hip->temperature, hip->temperature - 273);
 }
 
 static void
-get_log_page_completion(void *cb_arg, const struct spdk_nvme_cpl *cpl)
+get_log_page_completion(void *cb_arg, const struct nvme_completion *cpl)
 {
 	struct dev *dev = cb_arg;
 
@@ -145,7 +145,7 @@ get_log_page_completion(void *cb_arg, const struct spdk_nvme_cpl *cpl)
 static int
 get_health_log_page(struct dev *dev)
 {
-	return spdk_nvme_ctrlr_cmd_get_log_page(dev->ctrlr, SPDK_NVME_LOG_HEALTH_INFORMATION,
+	return spdk_nvme_ctrlr_cmd_get_log_page(dev->ctrlr, NVME_LOG_HEALTH_INFORMATION,
 						SPDK_NVME_GLOBAL_NS_TAG, dev->health_page, sizeof(*dev->health_page), 0,
 						get_log_page_completion, dev);
 }
@@ -162,7 +162,7 @@ cleanup(void)
 	}
 }
 
-static void aer_cb(void *arg, const struct spdk_nvme_cpl *cpl)
+static void aer_cb(void *arg, const struct nvme_completion *cpl)
 {
 	uint32_t log_page_id = (cpl->cdw0 & 0xFF0000) >> 16;
 	struct dev *dev = arg;

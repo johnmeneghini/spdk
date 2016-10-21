@@ -61,11 +61,11 @@ static void verify_firmware_log_page(struct nvme_request *req)
 {
 	uint32_t temp_cdw10;
 
-	CU_ASSERT(req->cmd.opc == SPDK_NVME_OPC_GET_LOG_PAGE);
+	CU_ASSERT(req->cmd.opc == NVME_OPC_GET_LOG_PAGE);
 	CU_ASSERT(req->cmd.nsid == SPDK_NVME_GLOBAL_NS_TAG);
 
-	temp_cdw10 = ((sizeof(struct spdk_nvme_firmware_page) / sizeof(uint32_t) - 1) << 16) |
-		     SPDK_NVME_LOG_FIRMWARE_SLOT;
+	temp_cdw10 = ((sizeof(struct nvme_firmware_page) / sizeof(uint32_t) - 1) << 16) |
+		     NVME_LOG_FIRMWARE_SLOT;
 	CU_ASSERT(req->cmd.cdw10 == temp_cdw10);
 }
 
@@ -73,11 +73,11 @@ static void verify_health_log_page(struct nvme_request *req)
 {
 	uint32_t temp_cdw10;
 
-	CU_ASSERT(req->cmd.opc == SPDK_NVME_OPC_GET_LOG_PAGE);
+	CU_ASSERT(req->cmd.opc == NVME_OPC_GET_LOG_PAGE);
 	CU_ASSERT(req->cmd.nsid == health_log_nsid);
 
-	temp_cdw10 = ((sizeof(struct spdk_nvme_health_information_page) / sizeof(uint32_t) - 1) << 16) |
-		     SPDK_NVME_LOG_HEALTH_INFORMATION;
+	temp_cdw10 = ((sizeof(struct nvme_health_information_page) / sizeof(uint32_t) - 1) << 16) |
+		     NVME_LOG_HEALTH_INFORMATION;
 	CU_ASSERT(req->cmd.cdw10 == temp_cdw10);
 }
 
@@ -85,17 +85,17 @@ static void verify_error_log_page(struct nvme_request *req)
 {
 	uint32_t temp_cdw10;
 
-	CU_ASSERT(req->cmd.opc == SPDK_NVME_OPC_GET_LOG_PAGE);
+	CU_ASSERT(req->cmd.opc == NVME_OPC_GET_LOG_PAGE);
 	CU_ASSERT(req->cmd.nsid == SPDK_NVME_GLOBAL_NS_TAG);
 
-	temp_cdw10 = (((sizeof(struct spdk_nvme_error_information_entry) * error_num_entries) /
-		       sizeof(uint32_t) - 1) << 16) | SPDK_NVME_LOG_ERROR;
+	temp_cdw10 = (((sizeof(struct nvme_error_information_entry) * error_num_entries) /
+		       sizeof(uint32_t) - 1) << 16) | NVME_LOG_ERROR;
 	CU_ASSERT(req->cmd.cdw10 == temp_cdw10);
 }
 
 static void verify_set_feature_cmd(struct nvme_request *req)
 {
-	CU_ASSERT(req->cmd.opc == SPDK_NVME_OPC_SET_FEATURES);
+	CU_ASSERT(req->cmd.opc == NVME_OPC_SET_FEATURES);
 	CU_ASSERT(req->cmd.cdw10 == feature);
 	CU_ASSERT(req->cmd.cdw11 == feature_cdw11);
 	CU_ASSERT(req->cmd.cdw12 == feature_cdw12);
@@ -103,20 +103,20 @@ static void verify_set_feature_cmd(struct nvme_request *req)
 
 static void verify_get_feature_cmd(struct nvme_request *req)
 {
-	CU_ASSERT(req->cmd.opc == SPDK_NVME_OPC_GET_FEATURES);
+	CU_ASSERT(req->cmd.opc == NVME_OPC_GET_FEATURES);
 	CU_ASSERT(req->cmd.cdw10 == get_feature);
 	CU_ASSERT(req->cmd.cdw11 == get_feature_cdw11);
 }
 
 static void verify_abort_cmd(struct nvme_request *req)
 {
-	CU_ASSERT(req->cmd.opc == SPDK_NVME_OPC_ABORT);
+	CU_ASSERT(req->cmd.opc == NVME_OPC_ABORT);
 	CU_ASSERT(req->cmd.cdw10 == (((uint32_t)abort_cid << 16) | abort_sqid));
 }
 
 static void verify_io_raw_cmd(struct nvme_request *req)
 {
-	struct spdk_nvme_cmd	command = {};
+	struct nvme_command	command = {};
 
 	CU_ASSERT(memcmp(&req->cmd, &command, sizeof(req->cmd)) == 0);
 }
@@ -125,7 +125,7 @@ static void verify_intel_smart_log_page(struct nvme_request *req)
 {
 	uint32_t temp_cdw10;
 
-	CU_ASSERT(req->cmd.opc == SPDK_NVME_OPC_GET_LOG_PAGE);
+	CU_ASSERT(req->cmd.opc == NVME_OPC_GET_LOG_PAGE);
 	CU_ASSERT(req->cmd.nsid == health_log_nsid);
 
 	temp_cdw10 = ((sizeof(struct spdk_nvme_intel_smart_information_page) /
@@ -138,7 +138,7 @@ static void verify_intel_temperature_log_page(struct nvme_request *req)
 {
 	uint32_t temp_cdw10;
 
-	CU_ASSERT(req->cmd.opc == SPDK_NVME_OPC_GET_LOG_PAGE);
+	CU_ASSERT(req->cmd.opc == NVME_OPC_GET_LOG_PAGE);
 
 	temp_cdw10 = ((sizeof(struct spdk_nvme_intel_temperature_page) / sizeof(uint32_t) - 1) << 16) |
 		     SPDK_NVME_INTEL_LOG_TEMPERATURE;
@@ -149,7 +149,7 @@ static void verify_intel_read_latency_log_page(struct nvme_request *req)
 {
 	uint32_t temp_cdw10;
 
-	CU_ASSERT(req->cmd.opc == SPDK_NVME_OPC_GET_LOG_PAGE);
+	CU_ASSERT(req->cmd.opc == NVME_OPC_GET_LOG_PAGE);
 
 	temp_cdw10 = ((sizeof(struct spdk_nvme_intel_rw_latency_page) / sizeof(uint32_t) - 1) << 16) |
 		     SPDK_NVME_INTEL_LOG_READ_CMD_LATENCY;
@@ -160,7 +160,7 @@ static void verify_intel_write_latency_log_page(struct nvme_request *req)
 {
 	uint32_t temp_cdw10;
 
-	CU_ASSERT(req->cmd.opc == SPDK_NVME_OPC_GET_LOG_PAGE);
+	CU_ASSERT(req->cmd.opc == NVME_OPC_GET_LOG_PAGE);
 
 	temp_cdw10 = ((sizeof(struct spdk_nvme_intel_rw_latency_page) / sizeof(uint32_t) - 1) << 16) |
 		     SPDK_NVME_INTEL_LOG_WRITE_CMD_LATENCY;
@@ -171,7 +171,7 @@ static void verify_intel_get_log_page_directory(struct nvme_request *req)
 {
 	uint32_t temp_cdw10;
 
-	CU_ASSERT(req->cmd.opc == SPDK_NVME_OPC_GET_LOG_PAGE);
+	CU_ASSERT(req->cmd.opc == NVME_OPC_GET_LOG_PAGE);
 
 	temp_cdw10 = ((sizeof(struct spdk_nvme_intel_log_page_directory) / sizeof(uint32_t) - 1) << 16) |
 		     SPDK_NVME_INTEL_LOG_PAGE_DIRECTORY;
@@ -182,7 +182,7 @@ static void verify_intel_marketing_description_log_page(struct nvme_request *req
 {
 	uint32_t temp_cdw10;
 
-	CU_ASSERT(req->cmd.opc == SPDK_NVME_OPC_GET_LOG_PAGE);
+	CU_ASSERT(req->cmd.opc == NVME_OPC_GET_LOG_PAGE);
 
 	temp_cdw10 = ((sizeof(struct spdk_nvme_intel_marketing_description_page) / sizeof(
 			       uint32_t) - 1) << 16) |
@@ -192,48 +192,48 @@ static void verify_intel_marketing_description_log_page(struct nvme_request *req
 
 static void verify_namespace_attach(struct nvme_request *req)
 {
-	CU_ASSERT(req->cmd.opc == SPDK_NVME_OPC_NS_ATTACHMENT);
-	CU_ASSERT(req->cmd.cdw10 == SPDK_NVME_NS_CTRLR_ATTACH);
+	CU_ASSERT(req->cmd.opc == NVME_OPC_NS_ATTACHMENT);
+	CU_ASSERT(req->cmd.cdw10 == NVME_NS_CTRLR_ATTACH);
 	CU_ASSERT(req->cmd.nsid == namespace_management_nsid);
 }
 
 static void verify_namespace_detach(struct nvme_request *req)
 {
-	CU_ASSERT(req->cmd.opc == SPDK_NVME_OPC_NS_ATTACHMENT);
-	CU_ASSERT(req->cmd.cdw10 == SPDK_NVME_NS_CTRLR_DETACH);
+	CU_ASSERT(req->cmd.opc == NVME_OPC_NS_ATTACHMENT);
+	CU_ASSERT(req->cmd.cdw10 == NVME_NS_CTRLR_DETACH);
 	CU_ASSERT(req->cmd.nsid == namespace_management_nsid);
 }
 
 static void verify_namespace_create(struct nvme_request *req)
 {
-	CU_ASSERT(req->cmd.opc == SPDK_NVME_OPC_NS_MANAGEMENT);
-	CU_ASSERT(req->cmd.cdw10 == SPDK_NVME_NS_MANAGEMENT_CREATE);
+	CU_ASSERT(req->cmd.opc == NVME_OPC_NS_MANAGEMENT);
+	CU_ASSERT(req->cmd.cdw10 == NVME_NS_MANAGEMENT_CREATE);
 	CU_ASSERT(req->cmd.nsid == 0);
 }
 
 static void verify_namespace_delete(struct nvme_request *req)
 {
-	CU_ASSERT(req->cmd.opc == SPDK_NVME_OPC_NS_MANAGEMENT);
-	CU_ASSERT(req->cmd.cdw10 == SPDK_NVME_NS_MANAGEMENT_DELETE);
+	CU_ASSERT(req->cmd.opc == NVME_OPC_NS_MANAGEMENT);
+	CU_ASSERT(req->cmd.cdw10 == NVME_NS_MANAGEMENT_DELETE);
 	CU_ASSERT(req->cmd.nsid == namespace_management_nsid);
 }
 
 static void verify_format_nvme(struct nvme_request *req)
 {
-	CU_ASSERT(req->cmd.opc == SPDK_NVME_OPC_FORMAT_NVM);
+	CU_ASSERT(req->cmd.opc == NVME_OPC_FORMAT_NVM);
 	CU_ASSERT(req->cmd.cdw10 == 0);
 	CU_ASSERT(req->cmd.nsid == format_nvme_nsid);
 }
 
 static void verify_fw_commit(struct nvme_request *req)
 {
-	CU_ASSERT(req->cmd.opc == SPDK_NVME_OPC_FIRMWARE_COMMIT);
+	CU_ASSERT(req->cmd.opc == NVME_OPC_FIRMWARE_COMMIT);
 	CU_ASSERT(req->cmd.cdw10 == 0x09);
 }
 
 static void verify_fw_image_download(struct nvme_request *req)
 {
-	CU_ASSERT(req->cmd.opc == SPDK_NVME_OPC_FIRMWARE_IMAGE_DOWNLOAD);
+	CU_ASSERT(req->cmd.opc == NVME_OPC_FIRMWARE_IMAGE_DOWNLOAD);
 	CU_ASSERT(req->cmd.cdw10 == (fw_img_size >> 2) - 1);
 	CU_ASSERT(req->cmd.cdw11 == fw_img_offset >> 2);
 }
@@ -309,11 +309,11 @@ static void
 test_firmware_get_log_page(void)
 {
 	struct spdk_nvme_ctrlr			ctrlr = {};
-	struct spdk_nvme_firmware_page		payload = {};
+	struct nvme_firmware_page		payload = {};
 
 	verify_fn = verify_firmware_log_page;
 
-	spdk_nvme_ctrlr_cmd_get_log_page(&ctrlr, SPDK_NVME_LOG_FIRMWARE_SLOT, SPDK_NVME_GLOBAL_NS_TAG,
+	spdk_nvme_ctrlr_cmd_get_log_page(&ctrlr, NVME_LOG_FIRMWARE_SLOT, SPDK_NVME_GLOBAL_NS_TAG,
 					 &payload,
 					 sizeof(payload), 0, NULL, NULL);
 }
@@ -322,11 +322,11 @@ static void
 test_health_get_log_page(void)
 {
 	struct spdk_nvme_ctrlr				ctrlr = {};
-	struct spdk_nvme_health_information_page	payload = {};
+	struct nvme_health_information_page	payload = {};
 
 	verify_fn = verify_health_log_page;
 
-	spdk_nvme_ctrlr_cmd_get_log_page(&ctrlr, SPDK_NVME_LOG_HEALTH_INFORMATION, health_log_nsid,
+	spdk_nvme_ctrlr_cmd_get_log_page(&ctrlr, NVME_LOG_HEALTH_INFORMATION, health_log_nsid,
 					 &payload,
 					 sizeof(payload), 0, NULL, NULL);
 }
@@ -335,7 +335,7 @@ static void
 test_error_get_log_page(void)
 {
 	struct spdk_nvme_ctrlr				ctrlr = {};
-	struct spdk_nvme_error_information_entry	payload = {};
+	struct nvme_error_information_entry	payload = {};
 
 	ctrlr.cdata.elpe = CTRLR_CDATA_ELPE;
 
@@ -343,7 +343,7 @@ test_error_get_log_page(void)
 
 	/* valid page */
 	error_num_entries = 1;
-	spdk_nvme_ctrlr_cmd_get_log_page(&ctrlr, SPDK_NVME_LOG_ERROR, SPDK_NVME_GLOBAL_NS_TAG, &payload,
+	spdk_nvme_ctrlr_cmd_get_log_page(&ctrlr, NVME_LOG_ERROR, SPDK_NVME_GLOBAL_NS_TAG, &payload,
 					 sizeof(payload), 0, NULL, NULL);
 }
 
@@ -470,7 +470,7 @@ test_io_raw_cmd(void)
 {
 	struct spdk_nvme_ctrlr	ctrlr = {};
 	struct spdk_nvme_qpair	qpair = {};
-	struct spdk_nvme_cmd	cmd = {};
+	struct nvme_command	cmd = {};
 
 	verify_fn = verify_io_raw_cmd;
 
@@ -488,7 +488,7 @@ static void
 test_namespace_attach(void)
 {
 	struct spdk_nvme_ctrlr			ctrlr = {};
-	struct spdk_nvme_ctrlr_list		payload = {};
+	struct nvme_ctrlr_list		payload = {};
 
 	verify_fn = verify_namespace_attach;
 
@@ -499,7 +499,7 @@ static void
 test_namespace_detach(void)
 {
 	struct spdk_nvme_ctrlr			ctrlr = {};
-	struct spdk_nvme_ctrlr_list		payload = {};
+	struct nvme_ctrlr_list		payload = {};
 
 	verify_fn = verify_namespace_detach;
 
@@ -510,7 +510,7 @@ static void
 test_namespace_create(void)
 {
 	struct spdk_nvme_ctrlr			ctrlr = {};
-	struct spdk_nvme_ns_data		payload = {};
+	struct nvme_namespace_data		payload = {};
 
 	verify_fn = verify_namespace_create;
 	nvme_ctrlr_cmd_create_ns(&ctrlr, &payload, NULL, NULL);
@@ -529,7 +529,7 @@ static void
 test_format_nvme(void)
 {
 	struct spdk_nvme_ctrlr	ctrlr = {};
-	struct spdk_nvme_format format = {};
+	struct nvme_format format = {};
 
 	verify_fn = verify_format_nvme;
 
@@ -540,9 +540,9 @@ static void
 test_fw_commit(void)
 {
 	struct spdk_nvme_ctrlr	ctrlr = {};
-	struct spdk_nvme_fw_commit fw_commit = {};
+	struct nvme_fw_commit fw_commit = {};
 
-	fw_commit.ca = SPDK_NVME_FW_COMMIT_REPLACE_AND_ENABLE_IMG;
+	fw_commit.ca = NVME_FW_COMMIT_REPLACE_AND_ENABLE_IMG;
 	fw_commit.fs = 1;
 
 	verify_fn = verify_fw_commit;

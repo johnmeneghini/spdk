@@ -52,56 +52,56 @@ scsi_nvme_translate_test(void)
 	struct spdk_bdev_io bdev_io;
 	int sc, sk, asc, ascq;
 
-	/* SPDK_NVME_SCT_GENERIC */
-	bdev_io.error.nvme.sct = SPDK_NVME_SCT_GENERIC;
-	bdev_io.error.nvme.sc = SPDK_NVME_SC_ABORTED_POWER_LOSS;
+	/* NVME_SCT_GENERIC */
+	bdev_io.error.nvme.sct = NVME_SCT_GENERIC;
+	bdev_io.error.nvme.sc = NVME_SC_ABORTED_POWER_LOSS;
 	spdk_scsi_nvme_translate(&bdev_io, &sc, &sk, &asc, &ascq);
 	CU_ASSERT_EQUAL(sc, SPDK_SCSI_STATUS_TASK_ABORTED);
 	CU_ASSERT_EQUAL(sk, SPDK_SCSI_SENSE_ABORTED_COMMAND);
 	CU_ASSERT_EQUAL(asc, SPDK_SCSI_ASC_WARNING);
 	CU_ASSERT_EQUAL(ascq, SPDK_SCSI_ASCQ_POWER_LOSS_EXPECTED);
 
-	bdev_io.error.nvme.sc = SPDK_NVME_SC_INVALID_NUM_SGL_DESCIRPTORS;
+	bdev_io.error.nvme.sc = NVME_SC_INVALID_NUM_SGL_DESCIRPTORS;
 	spdk_scsi_nvme_translate(&bdev_io, &sc, &sk, &asc, &ascq);
 	CU_ASSERT_EQUAL(sc, SPDK_SCSI_STATUS_CHECK_CONDITION);
 	CU_ASSERT_EQUAL(sk, SPDK_SCSI_SENSE_ILLEGAL_REQUEST);
 	CU_ASSERT_EQUAL(asc, SPDK_SCSI_ASC_NO_ADDITIONAL_SENSE);
 	CU_ASSERT_EQUAL(ascq, SPDK_SCSI_ASCQ_CAUSE_NOT_REPORTABLE);
 
-	/* SPDK_NVME_SCT_COMMAND_SPECIFIC */
-	bdev_io.error.nvme.sct = SPDK_NVME_SCT_COMMAND_SPECIFIC;
-	bdev_io.error.nvme.sc = SPDK_NVME_SC_INVALID_FORMAT;
+	/* NVME_SCT_COMMAND_SPECIFIC */
+	bdev_io.error.nvme.sct = NVME_SCT_COMMAND_SPECIFIC;
+	bdev_io.error.nvme.sc = NVME_SC_INVALID_FORMAT;
 	spdk_scsi_nvme_translate(&bdev_io, &sc, &sk, &asc, &ascq);
 	CU_ASSERT_EQUAL(sc, SPDK_SCSI_STATUS_CHECK_CONDITION);
 	CU_ASSERT_EQUAL(sk, SPDK_SCSI_SENSE_ILLEGAL_REQUEST);
 	CU_ASSERT_EQUAL(asc, SPDK_SCSI_ASC_FORMAT_COMMAND_FAILED);
 	CU_ASSERT_EQUAL(ascq, SPDK_SCSI_ASCQ_FORMAT_COMMAND_FAILED);
 
-	bdev_io.error.nvme.sc = SPDK_NVME_SC_OVERLAPPING_RANGE;
+	bdev_io.error.nvme.sc = NVME_SC_OVERLAPPING_RANGE;
 	spdk_scsi_nvme_translate(&bdev_io, &sc, &sk, &asc, &ascq);
 	CU_ASSERT_EQUAL(sc, SPDK_SCSI_STATUS_CHECK_CONDITION);
 	CU_ASSERT_EQUAL(sk, SPDK_SCSI_SENSE_ILLEGAL_REQUEST);
 	CU_ASSERT_EQUAL(asc, SPDK_SCSI_ASC_NO_ADDITIONAL_SENSE);
 	CU_ASSERT_EQUAL(ascq, SPDK_SCSI_ASCQ_CAUSE_NOT_REPORTABLE);
 
-	/* SPDK_NVME_SCT_MEDIA_ERROR */
-	bdev_io.error.nvme.sct = SPDK_NVME_SCT_MEDIA_ERROR;
-	bdev_io.error.nvme.sc = SPDK_NVME_SC_GUARD_CHECK_ERROR;
+	/* NVME_SCT_MEDIA_ERROR */
+	bdev_io.error.nvme.sct = NVME_SCT_MEDIA_ERROR;
+	bdev_io.error.nvme.sc = NVME_SC_GUARD_CHECK_ERROR;
 	spdk_scsi_nvme_translate(&bdev_io, &sc, &sk, &asc, &ascq);
 	CU_ASSERT_EQUAL(sc, SPDK_SCSI_STATUS_CHECK_CONDITION);
 	CU_ASSERT_EQUAL(sk, SPDK_SCSI_SENSE_MEDIUM_ERROR);
 	CU_ASSERT_EQUAL(asc, SPDK_SCSI_ASC_LOGICAL_BLOCK_GUARD_CHECK_FAILED);
 	CU_ASSERT_EQUAL(ascq, SPDK_SCSI_ASCQ_LOGICAL_BLOCK_GUARD_CHECK_FAILED);
 
-	bdev_io.error.nvme.sc = SPDK_NVME_SC_DEALLOCATED_OR_UNWRITTEN_BLOCK;
+	bdev_io.error.nvme.sc = NVME_SC_DEALLOCATED_OR_UNWRITTEN_BLOCK;
 	spdk_scsi_nvme_translate(&bdev_io, &sc, &sk, &asc, &ascq);
 	CU_ASSERT_EQUAL(sc, SPDK_SCSI_STATUS_CHECK_CONDITION);
 	CU_ASSERT_EQUAL(sk, SPDK_SCSI_SENSE_ILLEGAL_REQUEST);
 	CU_ASSERT_EQUAL(asc, SPDK_SCSI_ASC_NO_ADDITIONAL_SENSE);
 	CU_ASSERT_EQUAL(ascq, SPDK_SCSI_ASCQ_CAUSE_NOT_REPORTABLE);
 
-	/* SPDK_NVME_SCT_VENDOR_SPECIFIC */
-	bdev_io.error.nvme.sct = SPDK_NVME_SCT_VENDOR_SPECIFIC;
+	/* NVME_SCT_VENDOR_SPECIFIC */
+	bdev_io.error.nvme.sct = NVME_SCT_VENDOR_SPECIFIC;
 	bdev_io.error.nvme.sc = 0xff;
 	spdk_scsi_nvme_translate(&bdev_io, &sc, &sk, &asc, &ascq);
 	CU_ASSERT_EQUAL(sc, SPDK_SCSI_STATUS_CHECK_CONDITION);

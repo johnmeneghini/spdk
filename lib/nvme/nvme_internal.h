@@ -147,7 +147,7 @@ struct __attribute__((packed)) nvme_payload {
 };
 
 struct nvme_request {
-	struct spdk_nvme_cmd		cmd;
+	struct nvme_command		cmd;
 
 	/**
 	 * Data payload for this request's command.
@@ -182,7 +182,7 @@ struct nvme_request {
 	 * NOTE: these below two fields are only used for admin request.
 	 */
 	pid_t				pid;
-	struct spdk_nvme_cpl		cpl;
+	struct nvme_completion		cpl;
 
 	/**
 	 * The following members should not be reordered with members
@@ -217,7 +217,7 @@ struct nvme_request {
 	 *  to ensure that the parent request is also completed with error
 	 *  status once all child requests are completed.
 	 */
-	struct spdk_nvme_cpl		parent_status;
+	struct nvme_completion		parent_status;
 
 	/**
 	 * The user_cb_fn and user_cb_arg fields are used for holding the original
@@ -229,14 +229,14 @@ struct nvme_request {
 };
 
 struct nvme_completion_poll_status {
-	struct spdk_nvme_cpl	cpl;
+	struct nvme_completion	cpl;
 	bool			done;
 };
 
 struct nvme_async_event_request {
 	struct spdk_nvme_ctrlr		*ctrlr;
 	struct nvme_request		*req;
-	struct spdk_nvme_cpl		cpl;
+	struct nvme_completion		cpl;
 };
 
 struct spdk_nvme_qpair {
@@ -352,7 +352,7 @@ struct spdk_nvme_ctrlr {
 
 	/* Cold data (not accessed in normal I/O path) is after this point. */
 
-	union spdk_nvme_cap_register	cap;
+	union nvme_cap_register	cap;
 
 	enum nvme_ctrlr_state		state;
 	uint64_t			state_timeout_tsc;
@@ -388,14 +388,14 @@ struct spdk_nvme_ctrlr {
 	/**
 	 * Identify Controller data.
 	 */
-	struct spdk_nvme_ctrlr_data	cdata;
+	struct nvme_controller_data	cdata;
 
 	/**
 	 * Array of Identify Namespace data.
 	 *
 	 * Stored separately from ns since nsdata should not normally be accessed during I/O.
 	 */
-	struct spdk_nvme_ns_data	*nsdata;
+	struct nvme_namespace_data	*nsdata;
 
 	struct spdk_bit_array		*free_io_qids;
 	TAILQ_HEAD(, spdk_nvme_qpair)	active_io_qpairs;
@@ -491,27 +491,27 @@ int	nvme_ctrlr_cmd_set_num_queues(struct spdk_nvme_ctrlr *ctrlr,
 				      uint32_t num_queues, spdk_nvme_cmd_cb cb_fn,
 				      void *cb_arg);
 int	nvme_ctrlr_cmd_set_async_event_config(struct spdk_nvme_ctrlr *ctrlr,
-		union spdk_nvme_critical_warning_state state,
+		union nvme_critical_warning_state state,
 		spdk_nvme_cmd_cb cb_fn, void *cb_arg);
 int	nvme_ctrlr_cmd_abort(struct spdk_nvme_ctrlr *ctrlr, uint16_t cid,
 			     uint16_t sqid, spdk_nvme_cmd_cb cb_fn, void *cb_arg);
 int	nvme_ctrlr_cmd_attach_ns(struct spdk_nvme_ctrlr *ctrlr, uint32_t nsid,
-				 struct spdk_nvme_ctrlr_list *payload, spdk_nvme_cmd_cb cb_fn, void *cb_arg);
+				 struct nvme_ctrlr_list *payload, spdk_nvme_cmd_cb cb_fn, void *cb_arg);
 int	nvme_ctrlr_cmd_detach_ns(struct spdk_nvme_ctrlr *ctrlr, uint32_t nsid,
-				 struct spdk_nvme_ctrlr_list *payload, spdk_nvme_cmd_cb cb_fn, void *cb_arg);
-int	nvme_ctrlr_cmd_create_ns(struct spdk_nvme_ctrlr *ctrlr, struct spdk_nvme_ns_data *payload,
+				 struct nvme_ctrlr_list *payload, spdk_nvme_cmd_cb cb_fn, void *cb_arg);
+int	nvme_ctrlr_cmd_create_ns(struct spdk_nvme_ctrlr *ctrlr, struct nvme_namespace_data *payload,
 				 spdk_nvme_cmd_cb cb_fn, void *cb_arg);
 int	nvme_ctrlr_cmd_delete_ns(struct spdk_nvme_ctrlr *ctrlr, uint32_t nsid, spdk_nvme_cmd_cb cb_fn,
 				 void *cb_arg);
 int	nvme_ctrlr_cmd_format(struct spdk_nvme_ctrlr *ctrlr, uint32_t nsid,
-			      struct spdk_nvme_format *format, spdk_nvme_cmd_cb cb_fn, void *cb_arg);
+			      struct nvme_format *format, spdk_nvme_cmd_cb cb_fn, void *cb_arg);
 int	nvme_ctrlr_cmd_fw_commit(struct spdk_nvme_ctrlr *ctrlr,
-				 const struct spdk_nvme_fw_commit *fw_commit,
+				 const struct nvme_fw_commit *fw_commit,
 				 spdk_nvme_cmd_cb cb_fn, void *cb_arg);
 int	nvme_ctrlr_cmd_fw_image_download(struct spdk_nvme_ctrlr *ctrlr,
 		uint32_t size, uint32_t offset, void *payload,
 		spdk_nvme_cmd_cb cb_fn, void *cb_arg);
-void	nvme_completion_poll_cb(void *arg, const struct spdk_nvme_cpl *cpl);
+void	nvme_completion_poll_cb(void *arg, const struct nvme_completion *cpl);
 
 int	nvme_ctrlr_add_process(struct spdk_nvme_ctrlr *ctrlr, void *devhandle);
 void	nvme_ctrlr_free_processes(struct spdk_nvme_ctrlr *ctrlr);
@@ -527,12 +527,12 @@ int	nvme_ctrlr_start(struct spdk_nvme_ctrlr *ctrlr);
 
 int	nvme_ctrlr_submit_admin_request(struct spdk_nvme_ctrlr *ctrlr,
 					struct nvme_request *req);
-int	nvme_ctrlr_get_cap(struct spdk_nvme_ctrlr *ctrlr, union spdk_nvme_cap_register *cap);
-void	nvme_ctrlr_init_cap(struct spdk_nvme_ctrlr *ctrlr, const union spdk_nvme_cap_register *cap);
+int	nvme_ctrlr_get_cap(struct spdk_nvme_ctrlr *ctrlr, union nvme_cap_register *cap);
+void	nvme_ctrlr_init_cap(struct spdk_nvme_ctrlr *ctrlr, const union nvme_cap_register *cap);
 int	nvme_qpair_init(struct spdk_nvme_qpair *qpair, uint16_t id,
 			uint16_t num_entries,
 			struct spdk_nvme_ctrlr *ctrlr,
-			enum spdk_nvme_qprio qprio);
+			enum nvme_qprio qprio);
 void	nvme_qpair_enable(struct spdk_nvme_qpair *qpair);
 void	nvme_qpair_disable(struct spdk_nvme_qpair *qpair);
 int	nvme_qpair_submit_request(struct spdk_nvme_qpair *qpair,
@@ -559,9 +559,9 @@ void	spdk_nvme_ctrlr_opts_set_defaults(struct spdk_nvme_ctrlr_opts *opts);
 int	nvme_robust_mutex_init_shared(pthread_mutex_t *mtx);
 int	nvme_robust_mutex_init_recursive_shared(pthread_mutex_t *mtx);
 
-bool	nvme_completion_is_retry(const struct spdk_nvme_cpl *cpl);
-void	nvme_qpair_print_command(struct spdk_nvme_qpair *qpair, struct spdk_nvme_cmd *cmd);
-void	nvme_qpair_print_completion(struct spdk_nvme_qpair *qpair, struct spdk_nvme_cpl *cpl);
+bool	nvme_completion_is_retry(const struct nvme_completion *cpl);
+void	nvme_qpair_print_command(struct spdk_nvme_qpair *qpair, struct nvme_command *cmd);
+void	nvme_qpair_print_completion(struct spdk_nvme_qpair *qpair, struct nvme_completion *cpl);
 
 /* Transport specific functions */
 #define DECLARE_TRANSPORT(name) \
@@ -578,7 +578,7 @@ void	nvme_qpair_print_completion(struct spdk_nvme_qpair *qpair, struct spdk_nvme
 	int nvme_ ## name ## _ctrlr_get_reg_8(struct spdk_nvme_ctrlr *ctrlr, uint32_t offset, uint64_t *value); \
 	uint32_t nvme_ ## name ## _ctrlr_get_max_xfer_size(struct spdk_nvme_ctrlr *ctrlr); \
 	uint32_t nvme_ ## name ## _ctrlr_get_max_io_queue_size(struct spdk_nvme_ctrlr *ctrlr); \
-	struct spdk_nvme_qpair *nvme_ ## name ## _ctrlr_create_io_qpair(struct spdk_nvme_ctrlr *ctrlr, uint16_t qid, enum spdk_nvme_qprio qprio); \
+	struct spdk_nvme_qpair *nvme_ ## name ## _ctrlr_create_io_qpair(struct spdk_nvme_ctrlr *ctrlr, uint16_t qid, enum nvme_qprio qprio); \
 	int nvme_ ## name ## _ctrlr_delete_io_qpair(struct spdk_nvme_ctrlr *ctrlr, struct spdk_nvme_qpair *qpair); \
 	int nvme_ ## name ## _ctrlr_reinit_io_qpair(struct spdk_nvme_ctrlr *ctrlr, struct spdk_nvme_qpair *qpair); \
 	int nvme_ ## name ## _qpair_enable(struct spdk_nvme_qpair *qpair); \

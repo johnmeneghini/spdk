@@ -50,7 +50,7 @@ nvmf_find_subsystem(const char *subnqn)
 	return NULL;
 }
 
-const struct spdk_nvme_ctrlr_data *
+const struct nvme_controller_data *
 spdk_nvme_ctrlr_get_data(struct spdk_nvme_ctrlr *ctrlr)
 {
 	return NULL;

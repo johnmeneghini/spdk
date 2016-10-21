@@ -45,7 +45,7 @@ typedef enum _spdk_nvmf_request_exec_status {
 
 union nvmf_h2c_msg {
 	struct spdk_nvmf_capsule_cmd			nvmf_cmd;
-	struct spdk_nvme_cmd				nvme_cmd;
+	struct nvme_command				nvme_cmd;
 	struct spdk_nvmf_fabric_prop_set_cmd		prop_set_cmd;
 	struct spdk_nvmf_fabric_prop_get_cmd		prop_get_cmd;
 	struct spdk_nvmf_fabric_connect_cmd		connect_cmd;
@@ -53,7 +53,7 @@ union nvmf_h2c_msg {
 SPDK_STATIC_ASSERT(sizeof(union nvmf_h2c_msg) == 64, "Incorrect size");
 
 union nvmf_c2h_msg {
-	struct spdk_nvme_cpl				nvme_cpl;
+	struct nvme_completion				nvme_cpl;
 	struct spdk_nvmf_fabric_prop_get_rsp		prop_get_rsp;
 	struct spdk_nvmf_fabric_connect_rsp		connect_rsp;
 };
@@ -62,7 +62,7 @@ SPDK_STATIC_ASSERT(sizeof(union nvmf_c2h_msg) == 16, "Incorrect size");
 struct spdk_nvmf_request {
 	struct spdk_nvmf_conn		*conn;
 	uint32_t			length;
-	enum spdk_nvme_data_transfer	xfer;
+	enum nvme_data_transfer	xfer;
 	void				*data;
 	union nvmf_h2c_msg		*cmd;
 	union nvmf_c2h_msg		*rsp;

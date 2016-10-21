@@ -167,19 +167,19 @@ nvme_ctrlr_get_ref_count(struct spdk_nvme_ctrlr *ctrlr)
 static void
 test_opc_data_transfer(void)
 {
-	enum spdk_nvme_data_transfer xfer;
+	enum nvme_data_transfer xfer;
 
-	xfer = spdk_nvme_opc_get_data_transfer(SPDK_NVME_OPC_FLUSH);
-	CU_ASSERT(xfer == SPDK_NVME_DATA_NONE);
+	xfer = nvme_opc_get_data_transfer(NVME_OPC_FLUSH);
+	CU_ASSERT(xfer == NVME_DATA_NONE);
 
-	xfer = spdk_nvme_opc_get_data_transfer(SPDK_NVME_OPC_WRITE);
-	CU_ASSERT(xfer == SPDK_NVME_DATA_HOST_TO_CONTROLLER);
+	xfer = nvme_opc_get_data_transfer(NVME_OPC_WRITE);
+	CU_ASSERT(xfer == NVME_DATA_HOST_TO_CONTROLLER);
 
-	xfer = spdk_nvme_opc_get_data_transfer(SPDK_NVME_OPC_READ);
-	CU_ASSERT(xfer == SPDK_NVME_DATA_CONTROLLER_TO_HOST);
+	xfer = nvme_opc_get_data_transfer(NVME_OPC_READ);
+	CU_ASSERT(xfer == NVME_DATA_CONTROLLER_TO_HOST);
 
-	xfer = spdk_nvme_opc_get_data_transfer(SPDK_NVME_OPC_GET_LOG_PAGE);
-	CU_ASSERT(xfer == SPDK_NVME_DATA_CONTROLLER_TO_HOST);
+	xfer = nvme_opc_get_data_transfer(NVME_OPC_GET_LOG_PAGE);
+	CU_ASSERT(xfer == NVME_DATA_CONTROLLER_TO_HOST);
 }
 
 int main(int argc, char **argv)

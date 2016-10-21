@@ -101,7 +101,7 @@ static void
 register_ns(struct spdk_nvme_ctrlr *ctrlr, struct spdk_nvme_ns *ns)
 {
 	struct ns_entry *entry;
-	const struct spdk_nvme_ctrlr_data *cdata;
+	const struct nvme_controller_data *cdata;
 
 	if (!spdk_nvme_ns_is_active(ns)) {
 		printf("Skipping inactive NS %u\n", spdk_nvme_ns_get_id(ns));
@@ -161,7 +161,7 @@ static void task_ctor(struct rte_mempool *mp, void *arg, void *__task, unsigned 
 	}
 }
 
-static void io_complete(void *ctx, const struct spdk_nvme_cpl *completion);
+static void io_complete(void *ctx, const struct nvme_completion *completion);
 
 static __thread unsigned int seed = 0;
 
@@ -209,7 +209,7 @@ submit_single_io(struct ns_worker_ctx *ns_ctx)
 }
 
 static void
-task_complete(struct reset_task *task, const struct spdk_nvme_cpl *completion)
+task_complete(struct reset_task *task, const struct nvme_completion *completion)
 {
 	struct ns_worker_ctx	*ns_ctx;
 
@@ -236,7 +236,7 @@ task_complete(struct reset_task *task, const struct spdk_nvme_cpl *completion)
 }
 
 static void
-io_complete(void *ctx, const struct spdk_nvme_cpl *completion)
+io_complete(void *ctx, const struct nvme_completion *completion)
 {
 	task_complete((struct reset_task *)ctx, completion);
 }

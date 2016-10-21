@@ -160,7 +160,7 @@ static void
 register_ns(struct spdk_nvme_ctrlr *ctrlr, struct spdk_nvme_ns *ns)
 {
 	struct ns_entry *entry;
-	const struct spdk_nvme_ctrlr_data *cdata;
+	const struct nvme_controller_data *cdata;
 
 	cdata = spdk_nvme_ctrlr_get_data(ctrlr);
 
@@ -214,7 +214,7 @@ unregister_namespaces(void)
 }
 
 static void
-enable_latency_tracking_complete(void *cb_arg, const struct spdk_nvme_cpl *cpl)
+enable_latency_tracking_complete(void *cb_arg, const struct nvme_completion *cpl)
 {
 	if (spdk_nvme_cpl_is_error(cpl)) {
 		printf("enable_latency_tracking_complete failed\n");
@@ -252,7 +252,7 @@ register_ctrlr(struct spdk_nvme_ctrlr *ctrlr)
 {
 	int nsid, num_ns;
 	struct ctrlr_entry *entry = malloc(sizeof(struct ctrlr_entry));
-	const struct spdk_nvme_ctrlr_data *cdata = spdk_nvme_ctrlr_get_data(ctrlr);
+	const struct nvme_controller_data *cdata = spdk_nvme_ctrlr_get_data(ctrlr);
 
 	if (entry == NULL) {
 		perror("ctrlr_entry malloc");
@@ -396,7 +396,7 @@ static void task_ctor(struct rte_mempool *mp, void *arg, void *__task, unsigned 
 	memset(task->buf, id % 8, g_io_size_bytes);
 }
 
-static void io_complete(void *ctx, const struct spdk_nvme_cpl *completion);
+static void io_complete(void *ctx, const struct nvme_completion *completion);
 
 static __thread unsigned int seed = 0;
 
@@ -492,7 +492,7 @@ task_complete(struct perf_task *task)
 }
 
 static void
-io_complete(void *ctx, const struct spdk_nvme_cpl *completion)
+io_complete(void *ctx, const struct nvme_completion *completion)
 {
 	task_complete((struct perf_task *)ctx);
 }

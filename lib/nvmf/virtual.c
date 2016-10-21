@@ -85,7 +85,7 @@ nvmf_virtual_ctrlr_get_data(struct spdk_nvmf_session *session)
 {
 	struct spdk_nvmf_subsystem *subsys = session->subsys;
 
-	memset(&session->vcdata, 0, sizeof(struct spdk_nvme_ctrlr_data));
+	memset(&session->vcdata, 0, sizeof(struct nvme_controller_data));
 	spdk_strcpy_pad(session->vcdata.fr, FW_VERSION, sizeof(session->vcdata.fr), ' ');
 	spdk_strcpy_pad(session->vcdata.mn, MODEL_NUMBER, sizeof(session->vcdata.mn), ' ');
 	spdk_strcpy_pad(session->vcdata.sn, subsys->dev.virt.sn, sizeof(session->vcdata.sn), ' ');
@@ -123,20 +123,20 @@ nvmf_virtual_ctrlr_complete_cmd(spdk_event_t event)
 	struct spdk_bdev_io		*bdev_io = spdk_event_get_arg2(event);
 	struct spdk_nvmf_request 	*req = spdk_event_get_arg1(event);
 	enum spdk_bdev_io_status	status = bdev_io->status;
-	struct spdk_nvme_cpl 		*response = &req->rsp->nvme_cpl;
-	struct spdk_nvme_cmd 		*cmd = &req->cmd->nvme_cmd;
+	struct nvme_completion 		*response = &req->rsp->nvme_cpl;
+	struct nvme_command 		*cmd = &req->cmd->nvme_cmd;
 
-	if (cmd->opc == SPDK_NVME_OPC_DATASET_MANAGEMENT) {
+	if (cmd->opc == NVME_OPC_DATASET_MANAGEMENT) {
 		free(bdev_io->u.unmap.unmap_bdesc);
 	}
 
 	if (status == SPDK_BDEV_IO_STATUS_SUCCESS) {
-		response->status.sc = SPDK_NVME_SC_SUCCESS;
+		response->status.sc = NVME_SC_SUCCESS;
 	} else if (status == SPDK_BDEV_IO_STATUS_NVME_ERROR) {
 		response->status.sct = bdev_io->error.nvme.sct;
 		response->status.sc = bdev_io->error.nvme.sc;
 	} else {
-		response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
+		response->status.sc = NVME_SC_INTERNAL_DEVICE_ERROR;
 	}
 	spdk_nvmf_request_complete(req);
 	spdk_bdev_free_io(bdev_io);
@@ -146,13 +146,13 @@ static int
 nvmf_virtual_ctrlr_get_log_page(struct spdk_nvmf_request *req)
 {
 	uint8_t lid;
-	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
-	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
+	struct nvme_command *cmd = &req->cmd->nvme_cmd;
+	struct nvme_completion *response = &req->rsp->nvme_cpl;
 	uint64_t log_page_offset;
 
 	if (req->data == NULL) {
 		SPDK_ERRLOG("get log command with no buffer\n");
-		response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+		response->status.sc = NVME_SC_INVALID_FIELD;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 
@@ -161,35 +161,34 @@ nvmf_virtual_ctrlr_get_log_page(struct spdk_nvmf_request *req)
 	log_page_offset = (uint64_t)cmd->cdw12 | ((uint64_t)cmd->cdw13 << 32);
 	if (log_page_offset & 3) {
 		SPDK_ERRLOG("Invalid log page offset 0x%" PRIx64 "\n", log_page_offset);
-		response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+		response->status.sc = NVME_SC_INVALID_FIELD;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 
 	lid = cmd->cdw10 & 0xFF;
 	switch (lid) {
-	case SPDK_NVME_LOG_ERROR:
-	case SPDK_NVME_LOG_HEALTH_INFORMATION:
-	case SPDK_NVME_LOG_FIRMWARE_SLOT:
+	case NVME_LOG_ERROR:
+	case NVME_LOG_HEALTH_INFORMATION:
+	case NVME_LOG_FIRMWARE_SLOT:
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	default:
 		SPDK_ERRLOG("Unsupported Get Log Page 0x%02X\n", lid);
-		response->status.sct = SPDK_NVME_SCT_COMMAND_SPECIFIC;
-		response->status.sc = SPDK_NVME_SC_INVALID_LOG_PAGE;
+		response->status.sc = NVME_SC_INVALID_FIELD;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 }
 
 static int
 identify_ns(struct spdk_nvmf_subsystem *subsystem,
-	    struct spdk_nvme_cmd *cmd,
-	    struct spdk_nvme_cpl *rsp,
-	    struct spdk_nvme_ns_data *nsdata)
+	    struct nvme_command *cmd,
+	    struct nvme_completion *rsp,
+	    struct nvme_namespace_data *nsdata)
 {
 	struct spdk_bdev *bdev;
 
 	if (cmd->nsid > subsystem->dev.virt.ns_count || cmd->nsid == 0) {
 		SPDK_ERRLOG("Identify Namespace for invalid NSID %u\n", cmd->nsid);
-		rsp->status.sc = SPDK_NVME_SC_INVALID_NAMESPACE_OR_FORMAT;
+		rsp->status.sc = NVME_SC_INVALID_NAMESPACE_OR_FORMAT;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 
@@ -206,7 +205,7 @@ identify_ns(struct spdk_nvmf_subsystem *subsystem,
 }
 
 static int
-identify_ctrlr(struct spdk_nvmf_session *session, struct spdk_nvme_ctrlr_data *cdata)
+identify_ctrlr(struct spdk_nvmf_session *session, struct nvme_controller_data *cdata)
 {
 	*cdata = session->vcdata;
 	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
@@ -214,15 +213,15 @@ identify_ctrlr(struct spdk_nvmf_session *session, struct spdk_nvme_ctrlr_data *c
 
 static int
 identify_active_ns_list(struct spdk_nvmf_subsystem *subsystem,
-			struct spdk_nvme_cmd *cmd,
-			struct spdk_nvme_cpl *rsp,
-			struct spdk_nvme_ns_list *ns_list)
+			struct nvme_command *cmd,
+			struct nvme_completion *rsp,
+			struct nvme_ns_list *ns_list)
 {
 	uint32_t i, num_ns, count = 0;
 
 	if (cmd->nsid >= 0xfffffffeUL) {
 		SPDK_ERRLOG("Identify Active Namespace List with invalid NSID %u\n", cmd->nsid);
-		rsp->status.sc = SPDK_NVME_SC_INVALID_NAMESPACE_OR_FORMAT;
+		rsp->status.sc = NVME_SC_INVALID_NAMESPACE_OR_FORMAT;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 
@@ -246,13 +245,13 @@ nvmf_virtual_ctrlr_identify(struct spdk_nvmf_request *req)
 {
 	uint8_t cns;
 	struct spdk_nvmf_session *session = req->conn->sess;
-	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
-	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
+	struct nvme_command *cmd = &req->cmd->nvme_cmd;
+	struct nvme_completion *rsp = &req->rsp->nvme_cpl;
 	struct spdk_nvmf_subsystem *subsystem = session->subsys;
 
 	if (req->data == NULL || req->length < 4096) {
 		SPDK_ERRLOG("identify command with invalid buffer\n");
-		rsp->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+		rsp->status.sc = NVME_SC_INVALID_FIELD;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 
@@ -260,15 +259,15 @@ nvmf_virtual_ctrlr_identify(struct spdk_nvmf_request *req)
 
 	cns = cmd->cdw10 & 0xFF;
 	switch (cns) {
-	case SPDK_NVME_IDENTIFY_NS:
+	case NVME_IDENTIFY_NS:
 		return identify_ns(subsystem, cmd, rsp, req->data);
-	case SPDK_NVME_IDENTIFY_CTRLR:
+	case NVME_IDENTIFY_CTRLR:
 		return identify_ctrlr(session, req->data);
-	case SPDK_NVME_IDENTIFY_ACTIVE_NS_LIST:
+	case NVME_IDENTIFY_ACTIVE_NS_LIST:
 		return identify_active_ns_list(subsystem, cmd, rsp, req->data);
 	default:
 		SPDK_ERRLOG("Identify command with unsupported CNS 0x%02x\n", cns);
-		rsp->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+		rsp->status.sc = NVME_SC_INVALID_FIELD;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 }
@@ -278,27 +277,27 @@ nvmf_virtual_ctrlr_get_features(struct spdk_nvmf_request *req)
 {
 	uint8_t feature;
 	struct spdk_nvmf_session *session = req->conn->sess;
-	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
-	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
+	struct nvme_command *cmd = &req->cmd->nvme_cmd;
+	struct nvme_completion *response = &req->rsp->nvme_cpl;
 
 	feature = cmd->cdw10 & 0xff; /* mask out the FID value */
 	switch (feature) {
-	case SPDK_NVME_FEAT_NUMBER_OF_QUEUES:
+	case NVME_FEAT_NUMBER_OF_QUEUES:
 		return spdk_nvmf_session_get_features_number_of_queues(req);
-	case SPDK_NVME_FEAT_VOLATILE_WRITE_CACHE:
+	case NVME_FEAT_VOLATILE_WRITE_CACHE:
 		response->cdw0 = 1;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
-	case SPDK_NVME_FEAT_KEEP_ALIVE_TIMER:
+	case NVME_FEAT_KEEP_ALIVE_TIMER:
 		return spdk_nvmf_session_get_features_keep_alive_timer(req);
-	case SPDK_NVME_FEAT_ASYNC_EVENT_CONFIGURATION:
+	case NVME_FEAT_ASYNC_EVENT_CONFIGURATION:
 		SPDK_TRACELOG(SPDK_TRACE_NVMF, "Get Features - Async Event Configuration\n");
 		response->cdw0 = session->async_event_config.raw;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
-	case SPDK_NVME_FEAT_HOST_IDENTIFIER:
+	case NVME_FEAT_HOST_IDENTIFIER:
 		return spdk_nvmf_session_get_features_host_identifier(req);
 	default:
 		SPDK_ERRLOG("Get Features command with unsupported feature ID 0x%02x\n", feature);
-		response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+		response->status.sc = NVME_SC_INVALID_FIELD;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 }
@@ -308,25 +307,25 @@ nvmf_virtual_ctrlr_set_features(struct spdk_nvmf_request *req)
 {
 	uint8_t feature;
 	struct spdk_nvmf_session *session = req->conn->sess;
-	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
-	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
+	struct nvme_command *cmd = &req->cmd->nvme_cmd;
+	struct nvme_completion *response = &req->rsp->nvme_cpl;
 
 	feature = cmd->cdw10 & 0xff; /* mask out the FID value */
 	switch (feature) {
-	case SPDK_NVME_FEAT_NUMBER_OF_QUEUES:
+	case NVME_FEAT_NUMBER_OF_QUEUES:
 		return spdk_nvmf_session_set_features_number_of_queues(req);
-	case SPDK_NVME_FEAT_KEEP_ALIVE_TIMER:
+	case NVME_FEAT_KEEP_ALIVE_TIMER:
 		return spdk_nvmf_session_set_features_keep_alive_timer(req);
-	case SPDK_NVME_FEAT_ASYNC_EVENT_CONFIGURATION:
+	case NVME_FEAT_ASYNC_EVENT_CONFIGURATION:
 		SPDK_TRACELOG(SPDK_TRACE_NVMF, "Set Features - Async Event Configuration, cdw11 0x%08x\n",
 			      cmd->cdw11);
 		session->async_event_config.raw = cmd->cdw11;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
-	case SPDK_NVME_FEAT_HOST_IDENTIFIER:
+	case NVME_FEAT_HOST_IDENTIFIER:
 		return spdk_nvmf_session_set_features_host_identifier(req);
 	default:
 		SPDK_ERRLOG("Set Features command with unsupported feature ID 0x%02x\n", feature);
-		response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+		response->status.sc = NVME_SC_INVALID_FIELD;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 }
@@ -334,27 +333,27 @@ nvmf_virtual_ctrlr_set_features(struct spdk_nvmf_request *req)
 static int
 nvmf_virtual_ctrlr_process_admin_cmd(struct spdk_nvmf_request *req)
 {
-	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
-	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
+	struct nvme_command *cmd = &req->cmd->nvme_cmd;
+	struct nvme_completion *response = &req->rsp->nvme_cpl;
 
 	/* pre-set response details for this command */
-	response->status.sc = SPDK_NVME_SC_SUCCESS;
+	response->status.sc = NVME_SC_SUCCESS;
 
 	switch (cmd->opc) {
-	case SPDK_NVME_OPC_GET_LOG_PAGE:
+	case NVME_OPC_GET_LOG_PAGE:
 		return nvmf_virtual_ctrlr_get_log_page(req);
-	case SPDK_NVME_OPC_IDENTIFY:
+	case NVME_OPC_IDENTIFY:
 		return nvmf_virtual_ctrlr_identify(req);
-	case SPDK_NVME_OPC_GET_FEATURES:
+	case NVME_OPC_GET_FEATURES:
 		return nvmf_virtual_ctrlr_get_features(req);
-	case SPDK_NVME_OPC_SET_FEATURES:
+	case NVME_OPC_SET_FEATURES:
 		return nvmf_virtual_ctrlr_set_features(req);
-	case SPDK_NVME_OPC_ASYNC_EVENT_REQUEST:
+	case NVME_OPC_ASYNC_EVENT_REQUEST:
 		SPDK_TRACELOG(SPDK_TRACE_NVMF, "Async Event Request\n");
 		/* TODO: Just release the request as consumed. AER events will never
 		 * be triggered. */
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_RELEASE;
-	case SPDK_NVME_OPC_KEEP_ALIVE:
+	case NVME_OPC_KEEP_ALIVE:
 		SPDK_TRACELOG(SPDK_TRACE_NVMF, "Keep Alive\n");
 		/*
 		  To handle keep alive just clear or reset the
@@ -367,12 +366,12 @@ nvmf_virtual_ctrlr_process_admin_cmd(struct spdk_nvmf_request *req)
 		//session->keep_alive_timestamp = ;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 
-	case SPDK_NVME_OPC_CREATE_IO_SQ:
-	case SPDK_NVME_OPC_CREATE_IO_CQ:
-	case SPDK_NVME_OPC_DELETE_IO_SQ:
-	case SPDK_NVME_OPC_DELETE_IO_CQ:
+	case NVME_OPC_CREATE_IO_SQ:
+	case NVME_OPC_CREATE_IO_CQ:
+	case NVME_OPC_DELETE_IO_SQ:
+	case NVME_OPC_DELETE_IO_CQ:
 		SPDK_ERRLOG("Admin opc 0x%02X not allowed in NVMf\n", cmd->opc);
-		response->status.sc = SPDK_NVME_SC_INVALID_OPCODE;
+		response->status.sc = NVME_SC_INVALID_OPCODE;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	default:
 		SPDK_ERRLOG("Unsupported admin command\n");
@@ -390,8 +389,8 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 	uint64_t io_bytes;
 	uint64_t offset;
 	uint64_t llen;
-	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
-	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
+	struct nvme_command *cmd = &req->cmd->nvme_cmd;
+	struct nvme_completion *response = &req->rsp->nvme_cpl;
 	struct nvme_read_cdw12 *cdw12 = (struct nvme_read_cdw12 *)&cmd->cdw12;
 
 	blockcnt = bdev->blockcnt;
@@ -402,29 +401,29 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 
 	if (lba_address >= blockcnt || llen > blockcnt || lba_address > (blockcnt - llen)) {
 		SPDK_ERRLOG("end of media\n");
-		response->status.sc = SPDK_NVME_SC_LBA_OUT_OF_RANGE;
+		response->status.sc = NVME_SC_LBA_OUT_OF_RANGE;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 
 	io_bytes = llen * bdev->blocklen;
 	if (io_bytes > req->length) {
 		SPDK_ERRLOG("Read/Write NLB > SGL length\n");
-		response->status.sc = SPDK_NVME_SC_DATA_SGL_LENGTH_INVALID;
+		response->status.sc = NVME_SC_DATA_SGL_LENGTH_INVALID;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 
-	if (cmd->opc == SPDK_NVME_OPC_READ) {
+	if (cmd->opc == NVME_OPC_READ) {
 		spdk_trace_record(TRACE_NVMF_LIB_READ_START, 0, 0, (uint64_t)req, 0);
 		if (spdk_bdev_read(bdev, ch, req->data, offset, req->length, nvmf_virtual_ctrlr_complete_cmd,
 				   req) == NULL) {
-			response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
+			response->status.sc = NVME_SC_INTERNAL_DEVICE_ERROR;
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		}
 	} else {
 		spdk_trace_record(TRACE_NVMF_LIB_WRITE_START, 0, 0, (uint64_t)req, 0);
 		if (spdk_bdev_write(bdev, ch, req->data, offset, req->length, nvmf_virtual_ctrlr_complete_cmd,
 				    req) == NULL) {
-			response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
+			response->status.sc = NVME_SC_INTERNAL_DEVICE_ERROR;
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		}
 	}
@@ -438,11 +437,11 @@ nvmf_virtual_ctrlr_flush_cmd(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 {
 
 	uint64_t nbytes;
-	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
+	struct nvme_completion *response = &req->rsp->nvme_cpl;
 
 	nbytes = bdev->blockcnt * bdev->blocklen;
 	if (spdk_bdev_flush(bdev, ch, 0, nbytes, nvmf_virtual_ctrlr_complete_cmd, req) == NULL) {
-		response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
+		response->status.sc = NVME_SC_INTERNAL_DEVICE_ERROR;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 	return SPDK_NVMF_REQUEST_EXEC_STATUS_ASYNCHRONOUS;
@@ -456,24 +455,24 @@ nvmf_virtual_ctrlr_dsm_cmd(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 	uint32_t attribute;
 	uint16_t nr;
 	struct spdk_scsi_unmap_bdesc *unmap;
-	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
-	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
+	struct nvme_command *cmd = &req->cmd->nvme_cmd;
+	struct nvme_completion *response = &req->rsp->nvme_cpl;
 	bool async = false;
 
 	nr = ((cmd->cdw10 & 0x000000ff) + 1);
-	if (nr * sizeof(struct spdk_nvme_dsm_range) > req->length) {
+	if (nr * sizeof(struct nvme_dsm_range) > req->length) {
 		SPDK_ERRLOG("Dataset Management number of ranges > SGL length\n");
-		response->status.sc = SPDK_NVME_SC_DATA_SGL_LENGTH_INVALID;
+		response->status.sc = NVME_SC_DATA_SGL_LENGTH_INVALID;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 
 	attribute = cmd->cdw11 & 0x00000007;
-	if (attribute & SPDK_NVME_DSM_ATTR_DEALLOCATE) {
-		struct spdk_nvme_dsm_range *dsm_range = (struct spdk_nvme_dsm_range *)req->data;
+	if (attribute & NVME_DSM_ATTR_DEALLOCATE) {
+		struct nvme_dsm_range *dsm_range = (struct nvme_dsm_range *)req->data;
 		unmap = calloc(nr, sizeof(*unmap));
 		if (unmap == NULL) {
 			SPDK_ERRLOG("memory allocation failure\n");
-			response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
+			response->status.sc = NVME_SC_INTERNAL_DEVICE_ERROR;
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		}
 
@@ -483,7 +482,7 @@ nvmf_virtual_ctrlr_dsm_cmd(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 		}
 		if (spdk_bdev_unmap(bdev, ch, unmap, nr, nvmf_virtual_ctrlr_complete_cmd, req) == NULL) {
 			free(unmap);
-			response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
+			response->status.sc = NVME_SC_INTERNAL_DEVICE_ERROR;
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		}
 		async = true;
@@ -502,32 +501,32 @@ nvmf_virtual_ctrlr_process_io_cmd(struct spdk_nvmf_request *req)
 	struct spdk_bdev *bdev;
 	struct spdk_io_channel *ch;
 	struct spdk_nvmf_subsystem *subsystem = req->conn->sess->subsys;
-	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
-	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
+	struct nvme_command *cmd = &req->cmd->nvme_cmd;
+	struct nvme_completion *response = &req->rsp->nvme_cpl;
 
 	/* pre-set response details for this command */
-	response->status.sc = SPDK_NVME_SC_SUCCESS;
+	response->status.sc = NVME_SC_SUCCESS;
 	nsid = cmd->nsid;
 
 	if (nsid > subsystem->dev.virt.ns_count || nsid == 0) {
 		SPDK_ERRLOG("Unsuccessful query for nsid %u\n", cmd->nsid);
-		response->status.sc = SPDK_NVME_SC_INVALID_NAMESPACE_OR_FORMAT;
+		response->status.sc = NVME_SC_INVALID_NAMESPACE_OR_FORMAT;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 
 	bdev = subsystem->dev.virt.ns_list[nsid - 1];
 	ch = subsystem->dev.virt.ch[nsid - 1];
 	switch (cmd->opc) {
-	case SPDK_NVME_OPC_READ:
-	case SPDK_NVME_OPC_WRITE:
+	case NVME_OPC_READ:
+	case NVME_OPC_WRITE:
 		return nvmf_virtual_ctrlr_rw_cmd(bdev, ch, req);
-	case SPDK_NVME_OPC_FLUSH:
+	case NVME_OPC_FLUSH:
 		return nvmf_virtual_ctrlr_flush_cmd(bdev, ch, req);
-	case SPDK_NVME_OPC_DATASET_MANAGEMENT:
+	case NVME_OPC_DATASET_MANAGEMENT:
 		return nvmf_virtual_ctrlr_dsm_cmd(bdev, ch, req);
 	default:
 		SPDK_ERRLOG("Unsupported IO command opc: %x\n", cmd->opc);
-		response->status.sc = SPDK_NVME_SC_INVALID_OPCODE;
+		response->status.sc = NVME_SC_INVALID_OPCODE;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 }

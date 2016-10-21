@@ -62,7 +62,7 @@ static void
 register_ns(struct spdk_nvme_ctrlr *ctrlr, struct spdk_nvme_ns *ns)
 {
 	struct ns_entry *entry;
-	const struct spdk_nvme_ctrlr_data *cdata;
+	const struct nvme_controller_data *cdata;
 
 	/*
 	 * spdk_nvme_ctrlr is the logical abstraction in SPDK for an NVMe
@@ -103,7 +103,7 @@ struct hello_world_sequence {
 };
 
 static void
-read_complete(void *arg, const struct spdk_nvme_cpl *completion)
+read_complete(void *arg, const struct nvme_completion *completion)
 {
 	struct hello_world_sequence *sequence = arg;
 
@@ -119,7 +119,7 @@ read_complete(void *arg, const struct spdk_nvme_cpl *completion)
 }
 
 static void
-write_complete(void *arg, const struct spdk_nvme_cpl *completion)
+write_complete(void *arg, const struct nvme_completion *completion)
 {
 	struct hello_world_sequence	*sequence = arg;
 	struct ns_entry			*ns_entry = sequence->ns_entry;
@@ -252,7 +252,7 @@ attach_cb(void *cb_ctx, const struct spdk_nvme_transport_id *trid,
 {
 	int nsid, num_ns;
 	struct ctrlr_entry *entry;
-	const struct spdk_nvme_ctrlr_data *cdata = spdk_nvme_ctrlr_get_data(ctrlr);
+	const struct nvme_controller_data *cdata = spdk_nvme_ctrlr_get_data(ctrlr);
 
 	entry = malloc(sizeof(struct ctrlr_entry));
 	if (entry == NULL) {

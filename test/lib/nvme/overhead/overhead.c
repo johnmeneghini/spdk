@@ -122,7 +122,7 @@ static void
 register_ns(struct spdk_nvme_ctrlr *ctrlr, struct spdk_nvme_ns *ns)
 {
 	struct ns_entry *entry;
-	const struct spdk_nvme_ctrlr_data *cdata;
+	const struct nvme_controller_data *cdata;
 
 	cdata = spdk_nvme_ctrlr_get_data(ctrlr);
 
@@ -166,7 +166,7 @@ register_ctrlr(struct spdk_nvme_ctrlr *ctrlr)
 {
 	int num_ns;
 	struct ctrlr_entry *entry = malloc(sizeof(struct ctrlr_entry));
-	const struct spdk_nvme_ctrlr_data *cdata = spdk_nvme_ctrlr_get_data(ctrlr);
+	const struct nvme_controller_data *cdata = spdk_nvme_ctrlr_get_data(ctrlr);
 
 	if (entry == NULL) {
 		perror("ctrlr_entry malloc");
@@ -278,7 +278,7 @@ aio_check_io(void)
 }
 #endif /* HAVE_LIBAIO */
 
-static void io_complete(void *ctx, const struct spdk_nvme_cpl *completion);
+static void io_complete(void *ctx, const struct nvme_completion *completion);
 
 static __thread unsigned int seed = 0;
 
@@ -325,7 +325,7 @@ submit_single_io(void)
 }
 
 static void
-io_complete(void *ctx, const struct spdk_nvme_cpl *completion)
+io_complete(void *ctx, const struct nvme_completion *completion)
 {
 	g_ns->current_queue_depth--;
 }

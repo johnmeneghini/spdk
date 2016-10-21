@@ -89,7 +89,7 @@ static void
 register_dev(struct spdk_nvme_ctrlr *ctrlr)
 {
 	struct dev_ctx *dev;
-	const struct spdk_nvme_ctrlr_data *cdata = spdk_nvme_ctrlr_get_data(ctrlr);
+	const struct nvme_controller_data *cdata = spdk_nvme_ctrlr_get_data(ctrlr);
 
 	dev = calloc(1, sizeof(*dev));
 	if (dev == NULL) {
@@ -161,7 +161,7 @@ static void task_ctor(struct rte_mempool *mp, void *arg, void *__task, unsigned 
 	memset(task->buf, id % 8, g_io_size_bytes);
 }
 
-static void io_complete(void *ctx, const struct spdk_nvme_cpl *completion);
+static void io_complete(void *ctx, const struct nvme_completion *completion);
 
 static void
 submit_single_io(struct dev_ctx *dev)
@@ -217,7 +217,7 @@ task_complete(struct perf_task *task)
 }
 
 static void
-io_complete(void *ctx, const struct spdk_nvme_cpl *completion)
+io_complete(void *ctx, const struct nvme_completion *completion)
 {
 	task_complete((struct perf_task *)ctx);
 }

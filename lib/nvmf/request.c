@@ -48,7 +48,7 @@
 int
 spdk_nvmf_request_complete(struct spdk_nvmf_request *req)
 {
-	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
+	struct nvme_completion *response = &req->rsp->nvme_cpl;
 
 	response->sqid = 0;
 	response->status.p = 0;
@@ -68,7 +68,7 @@ spdk_nvmf_request_complete(struct spdk_nvmf_request *req)
 }
 
 static inline uint32_t
-nvmf_get_log_page_len(struct spdk_nvme_cmd *cmd)
+nvmf_get_log_page_len(struct nvme_command *cmd)
 {
 	uint32_t numdl = (cmd->cdw10 >> 16) & 0xFFFFu;
 	uint32_t numdu = (cmd->cdw11) & 0xFFFFu;
@@ -79,38 +79,38 @@ static spdk_nvmf_request_exec_status
 nvmf_process_discovery_cmd(struct spdk_nvmf_request *req)
 {
 	struct spdk_nvmf_session *session = req->conn->sess;
-	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
-	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
+	struct nvme_command *cmd = &req->cmd->nvme_cmd;
+	struct nvme_completion *response = &req->rsp->nvme_cpl;
 	uint64_t log_page_offset;
 	uint32_t len;
 
 	/* pre-set response details for this command */
-	response->status.sc = SPDK_NVME_SC_SUCCESS;
+	response->status.sc = NVME_SC_SUCCESS;
 
 	if (req->data == NULL) {
 		SPDK_ERRLOG("discovery command with no buffer\n");
-		response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+		response->status.sc = NVME_SC_INVALID_FIELD;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 
 	switch (cmd->opc) {
-	case SPDK_NVME_OPC_IDENTIFY:
+	case NVME_OPC_IDENTIFY:
 		/* Only identify controller can be supported */
-		if ((cmd->cdw10 & 0xFF) == SPDK_NVME_IDENTIFY_CTRLR) {
+		if ((cmd->cdw10 & 0xFF) == NVME_IDENTIFY_CTRLR) {
 			SPDK_TRACELOG(SPDK_TRACE_NVMF, "Identify Controller\n");
-			memcpy(req->data, (char *)&session->vcdata, sizeof(struct spdk_nvme_ctrlr_data));
+			memcpy(req->data, (char *)&session->vcdata, sizeof(struct nvme_controller_data));
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		} else {
 			SPDK_ERRLOG("Unsupported identify command\n");
-			response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+			response->status.sc = NVME_SC_INVALID_FIELD;
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		}
 		break;
-	case SPDK_NVME_OPC_GET_LOG_PAGE:
+	case NVME_OPC_GET_LOG_PAGE:
 		log_page_offset = (uint64_t)cmd->cdw12 | ((uint64_t)cmd->cdw13 << 32);
 		if (log_page_offset & 3) {
 			SPDK_ERRLOG("Invalid log page offset 0x%" PRIx64 "\n", log_page_offset);
-			response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+			response->status.sc = NVME_SC_INVALID_FIELD;
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		}
 
@@ -118,22 +118,22 @@ nvmf_process_discovery_cmd(struct spdk_nvmf_request *req)
 		if (len > req->length) {
 			SPDK_ERRLOG("Get log page: len (%u) > buf size (%u)\n",
 				    len, req->length);
-			response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+			response->status.sc = NVME_SC_INVALID_FIELD;
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		}
 
-		if ((cmd->cdw10 & 0xFF) == SPDK_NVME_LOG_DISCOVERY) {
+		if ((cmd->cdw10 & 0xFF) == NVME_LOG_DISCOVERY) {
 			spdk_nvmf_get_discovery_log_page(req->data, log_page_offset, len);
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		} else {
 			SPDK_ERRLOG("Unsupported log page %u\n", cmd->cdw10 & 0xFF);
-			response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+			response->status.sc = NVME_SC_INVALID_FIELD;
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		}
 		break;
 	default:
 		SPDK_ERRLOG("Unsupported Opcode 0x%x for Discovery service\n", cmd->opc);
-		response->status.sc = SPDK_NVME_SC_INVALID_OPCODE;
+		response->status.sc = NVME_SC_INVALID_OPCODE;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 
@@ -187,7 +187,7 @@ spdk_nvmf_handle_connect(struct spdk_nvmf_request *req)
 static void
 invalid_connect_response(struct spdk_nvmf_fabric_connect_rsp *rsp, uint8_t iattr, uint16_t ipo)
 {
-	rsp->status.sct = SPDK_NVME_SCT_COMMAND_SPECIFIC;
+	rsp->status.sct = NVME_SCT_COMMAND_SPECIFIC;
 	rsp->status.sc = SPDK_NVMF_FABRIC_SC_INVALID_PARAM;
 	rsp->status_code_specific.invalid.iattr = iattr;
 	rsp->status_code_specific.invalid.ipo = ipo;
@@ -207,14 +207,14 @@ nvmf_process_connect(struct spdk_nvmf_request *req)
 
 	if (cmd->recfmt != 0) {
 		SPDK_ERRLOG("Connect command unsupported RECFMT %u\n", cmd->recfmt);
-		rsp->status.sct = SPDK_NVME_SCT_COMMAND_SPECIFIC;
+		rsp->status.sct = NVME_SCT_COMMAND_SPECIFIC;
 		rsp->status.sc = SPDK_NVMF_FABRIC_SC_INCOMPATIBLE_FORMAT;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 
 	if (req->length < sizeof(struct spdk_nvmf_fabric_connect_data)) {
 		SPDK_ERRLOG("Connect command data length 0x%x too small\n", req->length);
-		req->rsp->nvme_cpl.status.sc = SPDK_NVME_SC_INVALID_FIELD;
+		req->rsp->nvme_cpl.status.sc = NVME_SC_INVALID_FIELD;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 
@@ -242,7 +242,7 @@ nvmf_process_connect(struct spdk_nvmf_request *req)
 
 	if (!spdk_nvmf_subsystem_host_allowed(subsystem, data->hostnqn)) {
 		SPDK_ERRLOG("Subsystem '%s' does not allow host '%s'\n", data->subnqn, data->hostnqn);
-		rsp->status.sct = SPDK_NVME_SCT_COMMAND_SPECIFIC;
+		rsp->status.sct = NVME_SCT_COMMAND_SPECIFIC;
 		rsp->status.sc = SPDK_NVMF_FABRIC_SC_INVALID_HOST;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
@@ -267,7 +267,7 @@ nvmf_process_fabrics_command(struct spdk_nvmf_request *req)
 		} else {
 			SPDK_TRACELOG(SPDK_TRACE_NVMF, "Got fctype 0x%x, expected Connect\n",
 				      cap_hdr->fctype);
-			req->rsp->nvme_cpl.status.sc = SPDK_NVME_SC_COMMAND_SEQUENCE_ERROR;
+			req->rsp->nvme_cpl.status.sc = NVME_SC_COMMAND_SEQUENCE_ERROR;
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		}
 	} else if (conn->type == CONN_TYPE_AQ) {
@@ -283,14 +283,14 @@ nvmf_process_fabrics_command(struct spdk_nvmf_request *req)
 		default:
 			SPDK_TRACELOG(SPDK_TRACE_NVMF, "recv capsule header type invalid [%x]!\n",
 				      cap_hdr->fctype);
-			req->rsp->nvme_cpl.status.sc = SPDK_NVME_SC_INVALID_OPCODE;
+			req->rsp->nvme_cpl.status.sc = NVME_SC_INVALID_OPCODE;
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		}
 	} else {
 		/* Session is established, and this is an I/O queue */
 		/* For now, no I/O-specific Fabrics commands are implemented (other than Connect) */
 		SPDK_TRACELOG(SPDK_TRACE_NVMF, "Unexpected I/O fctype 0x%x\n", cap_hdr->fctype);
-		req->rsp->nvme_cpl.status.sc = SPDK_NVME_SC_INVALID_OPCODE;
+		req->rsp->nvme_cpl.status.sc = NVME_SC_INVALID_OPCODE;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 }
@@ -299,11 +299,11 @@ static void
 nvmf_trace_command(union nvmf_h2c_msg *h2c_msg, enum conn_type conn_type)
 {
 	struct spdk_nvmf_capsule_cmd *cap_hdr = &h2c_msg->nvmf_cmd;
-	struct spdk_nvme_cmd *cmd = &h2c_msg->nvme_cmd;
-	struct spdk_nvme_sgl_descriptor *sgl = &cmd->dptr.sgl1;
+	struct nvme_command *cmd = &h2c_msg->nvme_cmd;
+	struct nvme_sgl_descriptor *sgl = &cmd->dptr.sgl1;
 	uint8_t opc;
 
-	if (cmd->opc == SPDK_NVME_OPC_FABRIC) {
+	if (cmd->opc == NVME_OPC_FABRIC) {
 		opc = cap_hdr->fctype;
 		SPDK_TRACELOG(SPDK_TRACE_NVMF, "%s Fabrics cmd: fctype 0x%02x cid %u\n",
 			      conn_type == CONN_TYPE_AQ ? "Admin" : "I/O",
@@ -316,21 +316,21 @@ nvmf_trace_command(union nvmf_h2c_msg *h2c_msg, enum conn_type conn_type)
 		if (cmd->mptr) {
 			SPDK_TRACELOG(SPDK_TRACE_NVMF, "mptr 0x%" PRIx64 "\n", cmd->mptr);
 		}
-		if (cmd->psdt != SPDK_NVME_PSDT_SGL_MPTR_CONTIG &&
-		    cmd->psdt != SPDK_NVME_PSDT_SGL_MPTR_SGL) {
+		if (cmd->psdt != NVME_PSDT_SGL_MPTR_CONTIG &&
+		    cmd->psdt != NVME_PSDT_SGL_MPTR_SGL) {
 			SPDK_TRACELOG(SPDK_TRACE_NVMF, "psdt %u\n", cmd->psdt);
 		}
 	}
 
-	if (spdk_nvme_opc_get_data_transfer(opc) != SPDK_NVME_DATA_NONE) {
-		if (sgl->generic.type == SPDK_NVME_SGL_TYPE_KEYED_DATA_BLOCK) {
+	if (nvme_opc_get_data_transfer(opc) != NVME_DATA_NONE) {
+		if (sgl->generic.type == NVME_SGL_TYPE_KEYED_DATA_BLOCK) {
 			SPDK_TRACELOG(SPDK_TRACE_NVMF,
 				      "SGL: Keyed%s: addr 0x%" PRIx64 " key 0x%x len 0x%x\n",
-				      sgl->generic.subtype == SPDK_NVME_SGL_SUBTYPE_INVALIDATE_KEY ? " (Inv)" : "",
+				      sgl->generic.subtype == NVME_SGL_SUBTYPE_INVALIDATE_KEY ? " (Inv)" : "",
 				      sgl->address, sgl->keyed.key, sgl->keyed.length);
-		} else if (sgl->generic.type == SPDK_NVME_SGL_TYPE_DATA_BLOCK) {
+		} else if (sgl->generic.type == NVME_SGL_TYPE_DATA_BLOCK) {
 			SPDK_TRACELOG(SPDK_TRACE_NVMF, "SGL: Data block: %s 0x%" PRIx64 " len 0x%x\n",
-				      sgl->unkeyed.subtype == SPDK_NVME_SGL_SUBTYPE_OFFSET ? "offs" : "addr",
+				      sgl->unkeyed.subtype == NVME_SGL_SUBTYPE_OFFSET ? "offs" : "addr",
 				      sgl->address, sgl->unkeyed.length);
 		} else {
 			SPDK_TRACELOG(SPDK_TRACE_NVMF, "SGL type 0x%x subtype 0x%x\n",
@@ -343,18 +343,18 @@ int
 spdk_nvmf_request_exec(struct spdk_nvmf_request *req)
 {
 	struct spdk_nvmf_session *session = req->conn->sess;
-	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
-	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
+	struct nvme_command *cmd = &req->cmd->nvme_cmd;
+	struct nvme_completion *rsp = &req->rsp->nvme_cpl;
 	spdk_nvmf_request_exec_status status;
 
 	nvmf_trace_command(req->cmd, req->conn->type);
 
-	if (cmd->opc == SPDK_NVME_OPC_FABRIC) {
+	if (cmd->opc == NVME_OPC_FABRIC) {
 		status = nvmf_process_fabrics_command(req);
 	} else if (session == NULL || !session->vcprop.cc.bits.en) {
 		/* Only Fabric commands are allowed when the controller is disabled */
 		SPDK_ERRLOG("Non-Fabric command sent to disabled controller\n");
-		rsp->status.sc = SPDK_NVME_SC_COMMAND_SEQUENCE_ERROR;
+		rsp->status.sc = NVME_SC_COMMAND_SEQUENCE_ERROR;
 		status = SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	} else if (req->conn->type == CONN_TYPE_AQ) {
 		struct spdk_nvmf_subsystem *subsystem;

@@ -57,7 +57,7 @@ spdk_nvmf_session_connect(struct spdk_nvmf_conn *conn,
 
 int
 spdk_nvme_ctrlr_cmd_admin_raw(struct spdk_nvme_ctrlr *ctrlr,
-			      struct spdk_nvme_cmd *cmd,
+			      struct nvme_command *cmd,
 			      void *buf, uint32_t len,
 			      spdk_nvme_cmd_cb cb_fn, void *cb_arg)
 {
@@ -67,7 +67,7 @@ spdk_nvme_ctrlr_cmd_admin_raw(struct spdk_nvme_ctrlr *ctrlr,
 int
 spdk_nvme_ctrlr_cmd_io_raw(struct spdk_nvme_ctrlr *ctrlr,
 			   struct spdk_nvme_qpair *qpair,
-			   struct spdk_nvme_cmd *cmd,
+			   struct nvme_command *cmd,
 			   void *buf, uint32_t len,
 			   spdk_nvme_cmd_cb cb_fn, void *cb_arg)
 {
@@ -80,9 +80,9 @@ spdk_nvme_ctrlr_get_num_ns(struct spdk_nvme_ctrlr *ctrlr)
 	return 0;
 }
 
-union spdk_nvme_vs_register spdk_nvme_ctrlr_get_regs_vs(struct spdk_nvme_ctrlr *ctrlr)
+union nvme_vs_register spdk_nvme_ctrlr_get_regs_vs(struct spdk_nvme_ctrlr *ctrlr)
 {
-	union spdk_nvme_vs_register vs;
+	union nvme_vs_register vs;
 
 	vs.raw = 0;
 	return vs;
@@ -114,7 +114,7 @@ spdk_nvmf_property_get(struct spdk_nvmf_session *session,
 void
 spdk_nvmf_property_set(struct spdk_nvmf_session *session,
 		       struct spdk_nvmf_fabric_prop_set_cmd *cmd,
-		       struct spdk_nvme_cpl *rsp)
+		       struct nvme_completion *rsp)
 {
 }
 
@@ -144,7 +144,7 @@ test_nvmf_process_discovery_cmd(void)
 	int	req_length = 122;
 	struct	spdk_nvmf_conn req_conn = {};
 	struct	spdk_nvmf_session req_sess = {};
-	struct	spdk_nvme_ctrlr_data req_data = {};
+	struct	nvme_controller_data req_data = {};
 	struct	spdk_nvmf_discovery_log_page req_page = {};
 	union	nvmf_h2c_msg  req_cmd = {};
 	union	nvmf_c2h_msg   req_rsp = {};
@@ -156,34 +156,34 @@ test_nvmf_process_discovery_cmd(void)
 	/* no request data check */
 	ret = nvmf_process_discovery_cmd(&req);
 	CU_ASSERT_EQUAL(ret, SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE);
-	CU_ASSERT_EQUAL(req.rsp->nvme_cpl.status.sc, SPDK_NVME_SC_INVALID_FIELD);
+	CU_ASSERT_EQUAL(req.rsp->nvme_cpl.status.sc, NVME_SC_INVALID_FIELD);
 
 	/* IDENTIFY opcode return value check */
-	req.cmd->nvme_cmd.opc = SPDK_NVME_OPC_IDENTIFY;
-	req.cmd->nvme_cmd.cdw10 = SPDK_NVME_IDENTIFY_CTRLR;
+	req.cmd->nvme_cmd.opc = NVME_OPC_IDENTIFY;
+	req.cmd->nvme_cmd.cdw10 = NVME_IDENTIFY_CTRLR;
 	req.conn->sess = &req_sess;
 	req.data = &req_data;
 	ret = nvmf_process_discovery_cmd(&req);
-	CU_ASSERT_EQUAL(req.rsp->nvme_cpl.status.sc, SPDK_NVME_SC_SUCCESS);
+	CU_ASSERT_EQUAL(req.rsp->nvme_cpl.status.sc, NVME_SC_SUCCESS);
 	CU_ASSERT_EQUAL(ret, SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE);
 
 	/* GET_LOG_PAGE opcode return value check */
-	req.cmd->nvme_cmd.opc = SPDK_NVME_OPC_GET_LOG_PAGE;
-	req.cmd->nvme_cmd.cdw10 = SPDK_NVME_LOG_DISCOVERY;
+	req.cmd->nvme_cmd.opc = NVME_OPC_GET_LOG_PAGE;
+	req.cmd->nvme_cmd.cdw10 = NVME_LOG_DISCOVERY;
 	req.data = &req_page;
 	req.length = req_length;
 	ret = nvmf_process_discovery_cmd(&req);
-	CU_ASSERT_EQUAL(req.rsp->nvme_cpl.status.sc, SPDK_NVME_SC_SUCCESS);
+	CU_ASSERT_EQUAL(req.rsp->nvme_cpl.status.sc, NVME_SC_SUCCESS);
 	CU_ASSERT_EQUAL(ret, SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE);
 	req.cmd->nvme_cmd.cdw10 = 15;
 	ret = nvmf_process_discovery_cmd(&req);
-	CU_ASSERT_EQUAL(req.rsp->nvme_cpl.status.sc, SPDK_NVME_SC_INVALID_FIELD);
+	CU_ASSERT_EQUAL(req.rsp->nvme_cpl.status.sc, NVME_SC_INVALID_FIELD);
 	CU_ASSERT_EQUAL(ret, SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE);
 
 	/* Invalid opcode return value check */
 	req.cmd->nvme_cmd.opc = 100;
 	ret = nvmf_process_discovery_cmd(&req);
-	CU_ASSERT_EQUAL(req.rsp->nvme_cpl.status.sc, SPDK_NVME_SC_INVALID_OPCODE);
+	CU_ASSERT_EQUAL(req.rsp->nvme_cpl.status.sc, NVME_SC_INVALID_OPCODE);
 	CU_ASSERT_EQUAL(ret, SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE);
 }
 
@@ -204,7 +204,7 @@ test_nvmf_process_fabrics_cmd(void)
 	/* No session and invalid command check */
 	req.cmd->nvmf_cmd.fctype = SPDK_NVMF_FABRIC_COMMAND_PROPERTY_GET;
 	ret = nvmf_process_fabrics_command(&req);
-	CU_ASSERT_EQUAL(req.rsp->nvme_cpl.status.sc, SPDK_NVME_SC_COMMAND_SEQUENCE_ERROR);
+	CU_ASSERT_EQUAL(req.rsp->nvme_cpl.status.sc, NVME_SC_COMMAND_SEQUENCE_ERROR);
 	CU_ASSERT_EQUAL(ret, SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE);
 }
 

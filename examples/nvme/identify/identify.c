@@ -57,9 +57,9 @@ struct feature {
 
 static struct feature features[256];
 
-static struct spdk_nvme_error_information_entry error_page[256];
+static struct nvme_error_information_entry error_page[256];
 
-static struct spdk_nvme_health_information_page health_page;
+static struct nvme_health_information_page health_page;
 
 static struct spdk_nvme_intel_smart_information_page intel_smart_page;
 
@@ -118,7 +118,7 @@ hex_dump(const void *data, size_t size)
 }
 
 static void
-get_feature_completion(void *cb_arg, const struct spdk_nvme_cpl *cpl)
+get_feature_completion(void *cb_arg, const struct nvme_completion *cpl)
 {
 	struct feature *feature = cb_arg;
 	int fid = feature - features;
@@ -133,7 +133,7 @@ get_feature_completion(void *cb_arg, const struct spdk_nvme_cpl *cpl)
 }
 
 static void
-get_log_page_completion(void *cb_arg, const struct spdk_nvme_cpl *cpl)
+get_log_page_completion(void *cb_arg, const struct nvme_completion *cpl)
 {
 	if (spdk_nvme_cpl_is_error(cpl)) {
 		printf("get log page failed\n");
@@ -144,9 +144,9 @@ get_log_page_completion(void *cb_arg, const struct spdk_nvme_cpl *cpl)
 static int
 get_feature(struct spdk_nvme_ctrlr *ctrlr, uint8_t fid)
 {
-	struct spdk_nvme_cmd cmd = {};
+	struct nvme_command cmd = {};
 
-	cmd.opc = SPDK_NVME_OPC_GET_FEATURES;
+	cmd.opc = NVME_OPC_GET_FEATURES;
 	cmd.cdw10 = fid;
 
 	return spdk_nvme_ctrlr_cmd_admin_raw(ctrlr, &cmd, NULL, 0, get_feature_completion, &features[fid]);
@@ -158,10 +158,10 @@ get_features(struct spdk_nvme_ctrlr *ctrlr)
 	size_t i;
 
 	uint8_t features_to_get[] = {
-		SPDK_NVME_FEAT_ARBITRATION,
-		SPDK_NVME_FEAT_POWER_MANAGEMENT,
-		SPDK_NVME_FEAT_TEMPERATURE_THRESHOLD,
-		SPDK_NVME_FEAT_ERROR_RECOVERY,
+		NVME_FEAT_ARBITRATION,
+		NVME_FEAT_POWER_MANAGEMENT,
+		NVME_FEAT_TEMPERATURE_THRESHOLD,
+		NVME_FEAT_ERROR_RECOVERY,
 	};
 
 	/* Submit several GET FEATURES commands and wait for them to complete */
@@ -182,11 +182,11 @@ get_features(struct spdk_nvme_ctrlr *ctrlr)
 static int
 get_error_log_page(struct spdk_nvme_ctrlr *ctrlr)
 {
-	const struct spdk_nvme_ctrlr_data *cdata;
+	const struct nvme_controller_data *cdata;
 
 	cdata = spdk_nvme_ctrlr_get_data(ctrlr);
 
-	if (spdk_nvme_ctrlr_cmd_get_log_page(ctrlr, SPDK_NVME_LOG_ERROR,
+	if (spdk_nvme_ctrlr_cmd_get_log_page(ctrlr, NVME_LOG_ERROR,
 					     SPDK_NVME_GLOBAL_NS_TAG, error_page,
 					     sizeof(*error_page) * (cdata->elpe + 1),
 					     0,
@@ -201,7 +201,7 @@ get_error_log_page(struct spdk_nvme_ctrlr *ctrlr)
 static int
 get_health_log_page(struct spdk_nvme_ctrlr *ctrlr)
 {
-	if (spdk_nvme_ctrlr_cmd_get_log_page(ctrlr, SPDK_NVME_LOG_HEALTH_INFORMATION,
+	if (spdk_nvme_ctrlr_cmd_get_log_page(ctrlr, NVME_LOG_HEALTH_INFORMATION,
 					     SPDK_NVME_GLOBAL_NS_TAG, &health_page, sizeof(health_page), 0, get_log_page_completion, NULL)) {
 		printf("spdk_nvme_ctrlr_cmd_get_log_page() failed\n");
 		exit(1);
@@ -249,7 +249,7 @@ get_intel_md_log_page(struct spdk_nvme_ctrlr *ctrlr)
 static void
 get_log_pages(struct spdk_nvme_ctrlr *ctrlr)
 {
-	const struct spdk_nvme_ctrlr_data *cdata;
+	const struct nvme_controller_data *cdata;
 	outstanding_commands = 0;
 
 	cdata = spdk_nvme_ctrlr_get_data(ctrlr);
@@ -335,7 +335,7 @@ print_uint_var_dec(uint8_t *array, unsigned int len)
 static void
 print_namespace(struct spdk_nvme_ns *ns)
 {
-	const struct spdk_nvme_ns_data		*nsdata;
+	const struct nvme_namespace_data		*nsdata;
 	uint32_t				i;
 	uint32_t				flags;
 
@@ -355,12 +355,12 @@ print_namespace(struct spdk_nvme_ns *ns)
 	}
 
 	printf("Deallocate:                  %s\n",
-	       (flags & SPDK_NVME_NS_DEALLOCATE_SUPPORTED) ? "Supported" : "Not Supported");
+	       (flags & NVME_NS_DEALLOCATE_SUPPORTED) ? "Supported" : "Not Supported");
 	printf("Flush:                       %s\n",
-	       (flags & SPDK_NVME_NS_FLUSH_SUPPORTED) ? "Supported" : "Not Supported");
+	       (flags & NVME_NS_FLUSH_SUPPORTED) ? "Supported" : "Not Supported");
 	printf("Reservation:                 %s\n",
-	       (flags & SPDK_NVME_NS_RESERVATION_SUPPORTED) ? "Supported" : "Not Supported");
-	if (flags & SPDK_NVME_NS_DPS_PI_SUPPORTED) {
+	       (flags & NVME_NS_RESERVATION_SUPPORTED) ? "Supported" : "Not Supported");
+	if (flags & NVME_NS_DPS_PI_SUPPORTED) {
 		printf("End-to-End Data Protection:  Supported\n");
 		printf("Protection Type:             Type%d\n", nsdata->dps.pit);
 		printf("Metadata Transfered as:      %s\n",
@@ -391,12 +391,12 @@ print_namespace(struct spdk_nvme_ns *ns)
 static void
 print_controller(struct spdk_nvme_ctrlr *ctrlr, const struct spdk_nvme_transport_id *trid)
 {
-	const struct spdk_nvme_ctrlr_data	*cdata;
-	union spdk_nvme_cap_register		cap;
-	union spdk_nvme_vs_register		vs;
+	const struct nvme_controller_data	*cdata;
+	union nvme_cap_register		cap;
+	union nvme_vs_register		vs;
 	uint8_t					str[512];
 	uint32_t				i;
-	struct spdk_nvme_error_information_entry *error_entry;
+	struct nvme_error_information_entry *error_entry;
 	struct spdk_pci_addr 			pci_addr;
 	struct spdk_pci_device			*pci_dev;
 	struct spdk_pci_id			pci_id;
@@ -459,8 +459,8 @@ print_controller(struct spdk_nvme_ctrlr *ctrlr, const struct spdk_nvme_transport
 		printf("Unlimited\n");
 	else
 		printf("%" PRIu64 "\n", (uint64_t)1 << (12 + cap.bits.mpsmin + cdata->mdts));
-	if (features[SPDK_NVME_FEAT_ERROR_RECOVERY].valid) {
-		unsigned tler = features[SPDK_NVME_FEAT_ERROR_RECOVERY].result & 0xFFFF;
+	if (features[NVME_FEAT_ERROR_RECOVERY].valid) {
+		unsigned tler = features[NVME_FEAT_ERROR_RECOVERY].result & 0xFFFF;
 		printf("Error Recovery Timeout:                ");
 		if (tler == 0) {
 			printf("Unlimited\n");
@@ -485,9 +485,9 @@ print_controller(struct spdk_nvme_ctrlr *ctrlr, const struct spdk_nvme_transport
 	printf("Contiguous Queues Required:            %s\n", cap.bits.cqr ? "Yes" : "No");
 	printf("Arbitration Mechanisms Supported\n");
 	printf("  Weighted Round Robin:                %s\n",
-	       cap.bits.ams & SPDK_NVME_CAP_AMS_WRR ? "Supported" : "Not Supported");
+	       cap.bits.ams & NVME_CAP_AMS_WRR ? "Supported" : "Not Supported");
 	printf("  Vendor Specific:                     %s\n",
-	       cap.bits.ams & SPDK_NVME_CAP_AMS_VS ? "Supported" : "Not Supported");
+	       cap.bits.ams & NVME_CAP_AMS_VS ? "Supported" : "Not Supported");
 	printf("Reset Timeout:                         %" PRIu64 " ms\n", (uint64_t)500 * cap.bits.to);
 	printf("Doorbell Stride:                       %" PRIu64 " bytes\n",
 	       (uint64_t)1 << (2 + cap.bits.dstrd));
@@ -599,8 +599,8 @@ print_controller(struct spdk_nvme_ctrlr *ctrlr, const struct spdk_nvme_transport
 	}
 	printf("\n");
 
-	if (features[SPDK_NVME_FEAT_ARBITRATION].valid) {
-		uint32_t arb = features[SPDK_NVME_FEAT_ARBITRATION].result;
+	if (features[NVME_FEAT_ARBITRATION].valid) {
+		uint32_t arb = features[NVME_FEAT_ARBITRATION].result;
 		unsigned ab, lpw, mpw, hpw;
 
 		ab = arb & 0x7;
@@ -622,14 +622,14 @@ print_controller(struct spdk_nvme_ctrlr *ctrlr, const struct spdk_nvme_transport
 		printf("\n");
 	}
 
-	if (features[SPDK_NVME_FEAT_POWER_MANAGEMENT].valid) {
-		unsigned ps = features[SPDK_NVME_FEAT_POWER_MANAGEMENT].result & 0x1F;
+	if (features[NVME_FEAT_POWER_MANAGEMENT].valid) {
+		unsigned ps = features[NVME_FEAT_POWER_MANAGEMENT].result & 0x1F;
 		printf("Power Management\n");
 		printf("================\n");
 		printf("Number of Power States:      %u\n", cdata->npss + 1);
 		printf("Current Power State:         Power State #%u\n", ps);
 		for (i = 0; i <= cdata->npss; i++) {
-			const struct spdk_nvme_power_state *psd = &cdata->psd[i];
+			const struct nvme_power_state *psd = &cdata->psd[i];
 			printf("Power State #%u:  ", i);
 			if (psd->mps) {
 				/* MP scale is 0.0001 W */
@@ -647,7 +647,7 @@ print_controller(struct spdk_nvme_ctrlr *ctrlr, const struct spdk_nvme_transport
 		printf("\n");
 	}
 
-	if (features[SPDK_NVME_FEAT_TEMPERATURE_THRESHOLD].valid) {
+	if (features[NVME_FEAT_TEMPERATURE_THRESHOLD].valid) {
 		printf("Health Information\n");
 		printf("==================\n");
 
@@ -671,8 +671,8 @@ print_controller(struct spdk_nvme_ctrlr *ctrlr, const struct spdk_nvme_transport
 		       health_page.temperature,
 		       health_page.temperature - 273);
 		printf("Temperature Threshold:       %u Kelvin (%u Celsius)\n",
-		       features[SPDK_NVME_FEAT_TEMPERATURE_THRESHOLD].result,
-		       features[SPDK_NVME_FEAT_TEMPERATURE_THRESHOLD].result - 273);
+		       features[NVME_FEAT_TEMPERATURE_THRESHOLD].result,
+		       features[NVME_FEAT_TEMPERATURE_THRESHOLD].result - 273);
 		printf("Available Spare:             %u%%\n", health_page.available_spare);
 		printf("Life Percentage Used:        %u%%\n", health_page.percentage_used);
 		printf("Data Units Read:             ");

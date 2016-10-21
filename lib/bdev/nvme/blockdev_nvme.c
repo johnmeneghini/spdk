@@ -286,7 +286,7 @@ static bool
 blockdev_nvme_io_type_supported(struct spdk_bdev *bdev, enum spdk_bdev_io_type io_type)
 {
 	struct nvme_blockdev *nbdev = (struct nvme_blockdev *)bdev;
-	const struct spdk_nvme_ctrlr_data *cdata;
+	const struct nvme_controller_data *cdata;
 
 	switch (io_type) {
 	case SPDK_BDEV_IO_TYPE_READ:
@@ -343,10 +343,10 @@ blockdev_nvme_dump_config_json(struct spdk_bdev *bdev, struct spdk_json_write_ct
 {
 	struct nvme_blockdev *nvme_bdev = (struct nvme_blockdev *)bdev;
 	struct nvme_device *nvme_dev = nvme_bdev->dev;
-	const struct spdk_nvme_ctrlr_data *cdata;
+	const struct nvme_controller_data *cdata;
 	struct spdk_nvme_ns *ns;
-	union spdk_nvme_vs_register vs;
-	union spdk_nvme_csts_register csts;
+	union nvme_vs_register vs;
+	union nvme_csts_register csts;
 	char buf[128];
 
 	cdata = spdk_nvme_ctrlr_get_data(nvme_bdev->ctrlr);
@@ -664,7 +664,7 @@ nvme_ctrlr_initialize_blockdevs(struct nvme_device *nvme_dev, int bdev_per_ns, i
 	struct nvme_blockdev	*bdev;
 	struct spdk_nvme_ctrlr	*ctrlr = nvme_dev->ctrlr;
 	struct spdk_nvme_ns	*ns;
-	const struct spdk_nvme_ctrlr_data *cdata;
+	const struct nvme_controller_data *cdata;
 	uint64_t		bdev_size, lba_offset, sectors_per_stripe;
 	int			ns_id, num_ns, bdev_idx;
 	uint64_t lun_size_in_sector;
@@ -743,7 +743,7 @@ nvme_ctrlr_initialize_blockdevs(struct nvme_device *nvme_dev, int bdev_per_ns, i
 }
 
 static void
-queued_done(void *ref, const struct spdk_nvme_cpl *cpl)
+queued_done(void *ref, const struct nvme_completion *cpl)
 {
 	struct spdk_bdev_io *bdev_io = spdk_bdev_io_from_ctx((struct nvme_blockio *)ref);
 	enum spdk_bdev_io_status status;
@@ -858,7 +858,7 @@ blockdev_nvme_unmap(struct nvme_blockdev *nbdev, struct spdk_io_channel *ch,
 {
 	struct nvme_io_channel *nvme_ch = spdk_io_channel_get_ctx(ch);
 	int rc = 0, i;
-	struct spdk_nvme_dsm_range dsm_range[NVME_DEFAULT_MAX_UNMAP_BDESC_COUNT];
+	struct nvme_dsm_range dsm_range[NVME_DEFAULT_MAX_UNMAP_BDESC_COUNT];
 
 	if (bdesc_count > NVME_DEFAULT_MAX_UNMAP_BDESC_COUNT) {
 		return -1;
@@ -872,7 +872,7 @@ blockdev_nvme_unmap(struct nvme_blockdev *nbdev, struct spdk_io_channel *ch,
 	}
 
 	rc = spdk_nvme_ns_cmd_dataset_management(nbdev->ns, nvme_ch->qpair,
-			SPDK_NVME_DSM_ATTR_DEALLOCATE,
+			NVME_DSM_ATTR_DEALLOCATE,
 			dsm_range, bdesc_count,
 			queued_done, bio);
 

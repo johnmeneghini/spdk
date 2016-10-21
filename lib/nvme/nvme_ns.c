@@ -33,7 +33,7 @@
 
 #include "nvme_internal.h"
 
-static inline struct spdk_nvme_ns_data *
+static inline struct nvme_namespace_data *
 _nvme_ns_get_data(struct spdk_nvme_ns *ns)
 {
 	return &ns->ctrlr->nsdata[ns->id - 1];
@@ -43,7 +43,7 @@ static
 int nvme_ns_identify_update(struct spdk_nvme_ns *ns)
 {
 	struct nvme_completion_poll_status	status;
-	struct spdk_nvme_ns_data		*nsdata;
+	struct nvme_namespace_data		*nsdata;
 	int					rc;
 
 	nsdata = _nvme_ns_get_data(ns);
@@ -81,28 +81,28 @@ int nvme_ns_identify_update(struct spdk_nvme_ns *ns)
 	ns->flags = 0x0000;
 
 	if (ns->ctrlr->cdata.oncs.dsm) {
-		ns->flags |= SPDK_NVME_NS_DEALLOCATE_SUPPORTED;
+		ns->flags |= NVME_NS_DEALLOCATE_SUPPORTED;
 	}
 
 	if (ns->ctrlr->cdata.vwc.present) {
-		ns->flags |= SPDK_NVME_NS_FLUSH_SUPPORTED;
+		ns->flags |= NVME_NS_FLUSH_SUPPORTED;
 	}
 
 	if (ns->ctrlr->cdata.oncs.write_zeroes) {
-		ns->flags |= SPDK_NVME_NS_WRITE_ZEROES_SUPPORTED;
+		ns->flags |= NVME_NS_WRITE_ZEROES_SUPPORTED;
 	}
 
 	if (nsdata->nsrescap.raw) {
-		ns->flags |= SPDK_NVME_NS_RESERVATION_SUPPORTED;
+		ns->flags |= NVME_NS_RESERVATION_SUPPORTED;
 	}
 
 	ns->md_size = nsdata->lbaf[nsdata->flbas.format].ms;
-	ns->pi_type = SPDK_NVME_FMT_NVM_PROTECTION_DISABLE;
+	ns->pi_type = NVME_FMT_NVM_PROTECTION_DISABLE;
 	if (nsdata->lbaf[nsdata->flbas.format].ms && nsdata->dps.pit) {
-		ns->flags |= SPDK_NVME_NS_DPS_PI_SUPPORTED;
+		ns->flags |= NVME_NS_DPS_PI_SUPPORTED;
 		ns->pi_type = nsdata->dps.pit;
 		if (nsdata->flbas.extended)
-			ns->flags |= SPDK_NVME_NS_EXTENDED_LBA_SUPPORTED;
+			ns->flags |= NVME_NS_EXTENDED_LBA_SUPPORTED;
 	}
 	return rc;
 }
@@ -116,7 +116,7 @@ spdk_nvme_ns_get_id(struct spdk_nvme_ns *ns)
 bool
 spdk_nvme_ns_is_active(struct spdk_nvme_ns *ns)
 {
-	const struct spdk_nvme_ns_data *nsdata = _nvme_ns_get_data(ns);
+	const struct nvme_namespace_data *nsdata = _nvme_ns_get_data(ns);
 
 	/*
 	 * According to the spec, Identify Namespace will return a zero-filled structure for
@@ -156,7 +156,7 @@ spdk_nvme_ns_get_flags(struct spdk_nvme_ns *ns)
 	return ns->flags;
 }
 
-enum spdk_nvme_pi_type
+enum nvme_pi_type
 spdk_nvme_ns_get_pi_type(struct spdk_nvme_ns *ns) {
 	return ns->pi_type;
 }
@@ -164,7 +164,7 @@ spdk_nvme_ns_get_pi_type(struct spdk_nvme_ns *ns) {
 bool
 spdk_nvme_ns_supports_extended_lba(struct spdk_nvme_ns *ns)
 {
-	return (ns->flags & SPDK_NVME_NS_EXTENDED_LBA_SUPPORTED) ? true : false;
+	return (ns->flags & NVME_NS_EXTENDED_LBA_SUPPORTED) ? true : false;
 }
 
 uint32_t
@@ -173,7 +173,7 @@ spdk_nvme_ns_get_md_size(struct spdk_nvme_ns *ns)
 	return ns->md_size;
 }
 
-const struct spdk_nvme_ns_data *
+const struct nvme_namespace_data *
 spdk_nvme_ns_get_data(struct spdk_nvme_ns *ns)
 {
 	nvme_ns_identify_update(ns);

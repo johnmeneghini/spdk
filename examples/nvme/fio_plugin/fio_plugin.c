@@ -262,7 +262,7 @@ static void spdk_fio_io_u_free(struct thread_data *td, struct io_u *io_u)
 	}
 }
 
-static void spdk_fio_completion_cb(void *ctx, const struct spdk_nvme_cpl *cpl)
+static void spdk_fio_completion_cb(void *ctx, const struct nvme_completion *cpl)
 {
 	struct spdk_fio_request		*fio_req = ctx;
 	struct spdk_fio_thread		*fio_thread = fio_req->fio_thread;

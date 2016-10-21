@@ -60,7 +60,7 @@ struct spdk_nvmf_capsule_cmd {
 SPDK_STATIC_ASSERT(sizeof(struct spdk_nvmf_capsule_cmd) == 64, "Incorrect size");
 
 /* Fabric Command Set */
-#define SPDK_NVME_OPC_FABRIC 0x7f
+#define NVME_OPC_FABRIC 0x7f
 
 enum spdk_nvmf_fabric_cmd_types {
 	SPDK_NVMF_FABRIC_COMMAND_PROPERTY_SET			= 0x00,
@@ -185,7 +185,7 @@ struct spdk_nvmf_fabric_auth_recv_cmd {
 	uint16_t	cid;
 	uint8_t		fctype; /* NVMF_FABRIC_COMMAND_AUTHENTICATION_RECV (0x06) */
 	uint8_t		reserved2[19];
-	struct spdk_nvme_sgl_descriptor sgl1;
+	struct nvme_sgl_descriptor sgl1;
 	uint8_t		reserved3;
 	uint8_t		spsp0;
 	uint8_t		spsp1;
@@ -201,7 +201,7 @@ struct spdk_nvmf_fabric_auth_send_cmd {
 	uint16_t	cid;
 	uint8_t		fctype; /* NVMF_FABRIC_COMMAND_AUTHENTICATION_SEND (0x05) */
 	uint8_t		reserved2[19];
-	struct spdk_nvme_sgl_descriptor sgl1;
+	struct nvme_sgl_descriptor sgl1;
 	uint8_t		reserved3;
 	uint8_t		spsp0;
 	uint8_t		spsp1;
@@ -227,7 +227,7 @@ struct spdk_nvmf_fabric_connect_cmd {
 	uint16_t	cid;
 	uint8_t		fctype;
 	uint8_t		reserved2[19];
-	struct spdk_nvme_sgl_descriptor sgl1;
+	struct nvme_sgl_descriptor sgl1;
 	uint16_t	recfmt; /* Connect Record Format */
 	uint16_t	qid; /* Queue Identifier */
 	uint16_t	sqsize; /* Submission Queue Size */
@@ -258,7 +258,7 @@ struct spdk_nvmf_fabric_connect_rsp {
 	uint16_t	sqhd;
 	uint16_t	reserved1;
 	uint16_t	cid;
-	struct spdk_nvme_status status;
+	struct nvme_status status;
 };
 SPDK_STATIC_ASSERT(sizeof(struct spdk_nvmf_fabric_connect_rsp) == 16, "Incorrect size");
 
@@ -293,7 +293,7 @@ struct spdk_nvmf_fabric_prop_get_rsp {
 	uint16_t	sqhd;
 	uint16_t	reserved0;
 	uint16_t	cid;
-	struct spdk_nvme_status status;
+	struct nvme_status status;
 };
 SPDK_STATIC_ASSERT(sizeof(struct spdk_nvmf_fabric_prop_get_rsp) == 16, "Incorrect size");
 
@@ -438,7 +438,7 @@ SPDK_STATIC_ASSERT(sizeof(struct spdk_nvmf_rdma_accept_private_data) == 32, "Inc
 
 struct spdk_nvmf_rdma_reject_private_data {
 	uint16_t	recfmt; /* record format */
-	struct spdk_nvme_status status;
+	struct nvme_status status;
 };
 SPDK_STATIC_ASSERT(sizeof(struct spdk_nvmf_rdma_reject_private_data) == 4, "Incorrect size");
 

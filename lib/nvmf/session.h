@@ -72,12 +72,12 @@ struct spdk_nvmf_session {
 	struct spdk_nvmf_subsystem 	*subsys;
 
 	struct {
-		union spdk_nvme_cap_register	cap;
-		union spdk_nvme_vs_register	vs;
-		union spdk_nvme_cc_register	cc;
-		union spdk_nvme_csts_register	csts;
+		union nvme_cap_register	cap;
+		union nvme_vs_register	vs;
+		union nvme_cc_register	cc;
+		union nvme_csts_register	csts;
 	} vcprop; /* virtual controller properties */
-	struct spdk_nvme_ctrlr_data	vcdata; /* virtual controller data */
+	struct nvme_controller_data	vcdata; /* virtual controller data */
 
 	TAILQ_HEAD(connection_q, spdk_nvmf_conn) connections;
 	int num_connections;
@@ -86,7 +86,7 @@ struct spdk_nvmf_session {
 	union {
 		uint32_t raw;
 		struct {
-			union spdk_nvme_critical_warning_state crit_warn;
+			union nvme_critical_warning_state crit_warn;
 			uint8_t ns_attr_notice : 1;
 			uint8_t fw_activation_notice : 1;
 		} bits;
@@ -110,7 +110,7 @@ spdk_nvmf_property_get(struct spdk_nvmf_session *session,
 void
 spdk_nvmf_property_set(struct spdk_nvmf_session *session,
 		       struct spdk_nvmf_fabric_prop_set_cmd *cmd,
-		       struct spdk_nvme_cpl *rsp);
+		       struct nvme_completion *rsp);
 
 int spdk_nvmf_session_poll(struct spdk_nvmf_session *session);
 

@@ -365,9 +365,9 @@ nvmf_ibv_send_wr_init(struct ibv_send_wr *wr,
 static inline void
 nvmf_ibv_send_wr_set_rkey(struct ibv_send_wr *wr, struct spdk_nvmf_request *req)
 {
-	struct spdk_nvme_sgl_descriptor *sgl = &req->cmd->nvme_cmd.dptr.sgl1;
+	struct nvme_sgl_descriptor *sgl = &req->cmd->nvme_cmd.dptr.sgl1;
 
-	assert(sgl->generic.type == SPDK_NVME_SGL_TYPE_KEYED_DATA_BLOCK);
+	assert(sgl->generic.type == NVME_SGL_TYPE_KEYED_DATA_BLOCK);
 
 	wr->wr.rdma.rkey = sgl->keyed.key;
 	wr->wr.rdma.remote_addr = sgl->address;
@@ -535,16 +535,16 @@ spdk_nvmf_rdma_request_transfer_data(struct spdk_nvmf_request *req)
 	struct spdk_nvmf_conn *conn = req->conn;
 	struct spdk_nvmf_rdma_conn *rdma_conn = get_rdma_conn(conn);
 
-	assert(req->xfer != SPDK_NVME_DATA_NONE);
+	assert(req->xfer != NVME_DATA_NONE);
 
 	if (rdma_conn->cur_rdma_rw_depth < rdma_conn->max_rw_depth) {
-		if (req->xfer == SPDK_NVME_DATA_CONTROLLER_TO_HOST) {
+		if (req->xfer == NVME_DATA_CONTROLLER_TO_HOST) {
 			rc = nvmf_post_rdma_write(req);
 			if (rc) {
 				SPDK_ERRLOG("Unable to transfer data from target to host\n");
 				return -1;
 			}
-		} else if (req->xfer == SPDK_NVME_DATA_HOST_TO_CONTROLLER) {
+		} else if (req->xfer == NVME_DATA_HOST_TO_CONTROLLER) {
 			rc = nvmf_post_rdma_read(req);
 			if (rc) {
 				SPDK_ERRLOG("Unable to transfer data from host to target\n");
@@ -564,7 +564,7 @@ spdk_nvmf_rdma_request_send_completion(struct spdk_nvmf_request *req)
 {
 	int rc;
 	struct spdk_nvmf_conn		*conn = req->conn;
-	struct spdk_nvme_cpl		*rsp = &req->rsp->nvme_cpl;
+	struct nvme_completion		*rsp = &req->rsp->nvme_cpl;
 	struct spdk_nvmf_rdma_session	*rdma_sess;
 	struct spdk_nvmf_rdma_buf	*buf;
 
@@ -805,39 +805,39 @@ typedef enum _spdk_nvmf_request_prep_type {
 static spdk_nvmf_request_prep_type
 spdk_nvmf_request_prep_data(struct spdk_nvmf_request *req)
 {
-	struct spdk_nvme_cmd		*cmd = &req->cmd->nvme_cmd;
-	struct spdk_nvme_cpl		*rsp = &req->rsp->nvme_cpl;
+	struct nvme_command		*cmd = &req->cmd->nvme_cmd;
+	struct nvme_completion		*rsp = &req->rsp->nvme_cpl;
 	struct spdk_nvmf_rdma_request	*rdma_req = get_rdma_req(req);
 	struct spdk_nvmf_rdma_session	*rdma_sess;
-	struct spdk_nvme_sgl_descriptor *sgl;
+	struct nvme_sgl_descriptor *sgl;
 
 	req->length = 0;
 	req->data = NULL;
 
-	if (cmd->opc == SPDK_NVME_OPC_FABRIC) {
-		req->xfer = spdk_nvme_opc_get_data_transfer(req->cmd->nvmf_cmd.fctype);
+	if (cmd->opc == NVME_OPC_FABRIC) {
+		req->xfer = nvme_opc_get_data_transfer(req->cmd->nvmf_cmd.fctype);
 	} else {
-		req->xfer = spdk_nvme_opc_get_data_transfer(cmd->opc);
+		req->xfer = nvme_opc_get_data_transfer(cmd->opc);
 	}
 
-	if (req->xfer == SPDK_NVME_DATA_NONE) {
+	if (req->xfer == NVME_DATA_NONE) {
 		return SPDK_NVMF_REQUEST_PREP_READY;
 	}
 
 	sgl = &cmd->dptr.sgl1;
 
-	if (sgl->generic.type == SPDK_NVME_SGL_TYPE_KEYED_DATA_BLOCK &&
-	    (sgl->keyed.subtype == SPDK_NVME_SGL_SUBTYPE_ADDRESS ||
+	if (sgl->generic.type == NVME_SGL_TYPE_KEYED_DATA_BLOCK &&
+	    (sgl->keyed.subtype == NVME_SGL_SUBTYPE_ADDRESS ||
 	     sgl->keyed.subtype == SPDK_NVME_SGL_SUBTYPE_INVALIDATE_KEY)) {
 		if (sgl->keyed.length > g_rdma.max_io_size) {
 			SPDK_ERRLOG("SGL length 0x%x exceeds max io size 0x%x\n",
 				    sgl->keyed.length, g_rdma.max_io_size);
-			rsp->status.sc = SPDK_NVME_SC_DATA_SGL_LENGTH_INVALID;
+			rsp->status.sc = NVME_SC_DATA_SGL_LENGTH_INVALID;
 			return SPDK_NVMF_REQUEST_PREP_ERROR;
 		}
 
 		if (sgl->keyed.length == 0) {
-			req->xfer = SPDK_NVME_DATA_NONE;
+			req->xfer = NVME_DATA_NONE;
 			return SPDK_NVMF_REQUEST_PREP_READY;
 		}
 
@@ -860,13 +860,13 @@ spdk_nvmf_request_prep_data(struct spdk_nvmf_request *req)
 			SPDK_TRACELOG(SPDK_TRACE_RDMA, "Request using in capsule buffer for non-capsule data\n");
 			req->data = rdma_req->buf;
 		}
-		if (req->xfer == SPDK_NVME_DATA_HOST_TO_CONTROLLER) {
+		if (req->xfer == NVME_DATA_HOST_TO_CONTROLLER) {
 			return SPDK_NVMF_REQUEST_PREP_PENDING_DATA;
 		} else {
 			return SPDK_NVMF_REQUEST_PREP_READY;
 		}
-	} else if (sgl->generic.type == SPDK_NVME_SGL_TYPE_DATA_BLOCK &&
-		   sgl->unkeyed.subtype == SPDK_NVME_SGL_SUBTYPE_OFFSET) {
+	} else if (sgl->generic.type == NVME_SGL_TYPE_DATA_BLOCK &&
+		   sgl->unkeyed.subtype == NVME_SGL_SUBTYPE_OFFSET) {
 		uint64_t offset = sgl->address;
 		uint32_t max_len = g_rdma.in_capsule_data_size;
 
@@ -876,7 +876,7 @@ spdk_nvmf_request_prep_data(struct spdk_nvmf_request *req)
 		if (offset > max_len) {
 			SPDK_ERRLOG("In-capsule offset 0x%" PRIx64 " exceeds capsule length 0x%x\n",
 				    offset, max_len);
-			rsp->status.sc = SPDK_NVME_SC_INVALID_SGL_OFFSET;
+			rsp->status.sc = NVME_SC_INVALID_SGL_OFFSET;
 			return SPDK_NVMF_REQUEST_PREP_ERROR;
 		}
 		max_len -= (uint32_t)offset;
@@ -884,12 +884,12 @@ spdk_nvmf_request_prep_data(struct spdk_nvmf_request *req)
 		if (sgl->unkeyed.length > max_len) {
 			SPDK_ERRLOG("In-capsule data length 0x%x exceeds capsule length 0x%x\n",
 				    sgl->unkeyed.length, max_len);
-			rsp->status.sc = SPDK_NVME_SC_DATA_SGL_LENGTH_INVALID;
+			rsp->status.sc = NVME_SC_DATA_SGL_LENGTH_INVALID;
 			return SPDK_NVMF_REQUEST_PREP_ERROR;
 		}
 
 		if (sgl->unkeyed.length == 0) {
-			req->xfer = SPDK_NVME_DATA_NONE;
+			req->xfer = NVME_DATA_NONE;
 			return SPDK_NVMF_REQUEST_PREP_READY;
 		}
 
@@ -900,7 +900,7 @@ spdk_nvmf_request_prep_data(struct spdk_nvmf_request *req)
 
 	SPDK_ERRLOG("Invalid NVMf I/O Command SGL:  Type 0x%x, Subtype 0x%x\n",
 		    sgl->generic.type, sgl->generic.subtype);
-	rsp->status.sc = SPDK_NVME_SC_SGL_DESCRIPTOR_TYPE_INVALID;
+	rsp->status.sc = NVME_SC_SGL_DESCRIPTOR_TYPE_INVALID;
 	return SPDK_NVMF_REQUEST_PREP_ERROR;
 }
 
@@ -924,7 +924,7 @@ spdk_nvmf_rdma_handle_pending_rdma_rw(struct spdk_nvmf_conn *conn)
 			}
 			SLIST_REMOVE_HEAD(&rdma_sess->data_buf_pool, link);
 			TAILQ_REMOVE(&rdma_conn->pending_data_buf_queue, rdma_req, link);
-			if (rdma_req->req.xfer == SPDK_NVME_DATA_HOST_TO_CONTROLLER) {
+			if (rdma_req->req.xfer == NVME_DATA_HOST_TO_CONTROLLER) {
 				TAILQ_INSERT_TAIL(&rdma_conn->pending_rdma_rw_queue, rdma_req, link);
 			} else {
 				rc = spdk_nvmf_request_exec(&rdma_req->req);
@@ -1284,11 +1284,11 @@ spdk_nvmf_rdma_session_remove_conn(struct spdk_nvmf_session *session,
 static int
 spdk_nvmf_rdma_request_complete(struct spdk_nvmf_request *req)
 {
-	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
+	struct nvme_completion *rsp = &req->rsp->nvme_cpl;
 	int rc;
 
-	if (rsp->status.sc == SPDK_NVME_SC_SUCCESS &&
-	    req->xfer == SPDK_NVME_DATA_CONTROLLER_TO_HOST) {
+	if (rsp->status.sc == NVME_SC_SUCCESS &&
+	    req->xfer == NVME_DATA_CONTROLLER_TO_HOST) {
 		rc = spdk_nvmf_rdma_request_transfer_data(req);
 	} else {
 		rc = spdk_nvmf_rdma_request_send_completion(req);

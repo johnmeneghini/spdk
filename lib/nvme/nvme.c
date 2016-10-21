@@ -60,7 +60,7 @@ spdk_nvme_detach(struct spdk_nvme_ctrlr *ctrlr)
 }
 
 void
-nvme_completion_poll_cb(void *arg, const struct spdk_nvme_cpl *cpl)
+nvme_completion_poll_cb(void *arg, const struct nvme_completion *cpl)
 {
 	struct nvme_completion_poll_status	*status = arg;
 
@@ -122,17 +122,17 @@ nvme_allocate_request_null(spdk_nvme_cmd_cb cb_fn, void *cb_arg)
 }
 
 static void
-nvme_user_copy_cmd_complete(void *arg, const struct spdk_nvme_cpl *cpl)
+nvme_user_copy_cmd_complete(void *arg, const struct nvme_completion *cpl)
 {
 	struct nvme_request *req = arg;
-	enum spdk_nvme_data_transfer xfer;
+	enum nvme_data_transfer xfer;
 
 	if (req->user_buffer && req->payload_size) {
 		/* Copy back to the user buffer and free the contig buffer */
 		assert(req->payload.type == NVME_PAYLOAD_TYPE_CONTIG);
-		xfer = spdk_nvme_opc_get_data_transfer(req->cmd.opc);
-		if (xfer == SPDK_NVME_DATA_CONTROLLER_TO_HOST ||
-		    xfer == SPDK_NVME_DATA_BIDIRECTIONAL) {
+		xfer = nvme_opc_get_data_transfer(req->cmd.opc);
+		if (xfer == NVME_DATA_CONTROLLER_TO_HOST ||
+		    xfer == NVME_DATA_BIDIRECTIONAL) {
 			assert(req->pid == getpid());
 			memcpy(req->user_buffer, req->payload.u.contig, req->payload_size);
 		}

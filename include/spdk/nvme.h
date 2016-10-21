@@ -50,10 +50,18 @@ extern "C" {
 #include "spdk/nvme_spec.h"
 #include "spdk/nvmf_spec.h"
 
+#define SPDK_NVME_GLOBAL_NS_TAG			NVME_GLOBAL_NS_TAG
+#define SPDK_NVME_MAX_IO_QUEUES			NVME_MAX_IO_QUEUES
+#define SPDK_NVME_ADMIN_QUEUE_MIN_ENTRIES	NVME_ADMIN_QUEUE_MIN_ENTRIES 
+#define SPDK_NVME_ADMIN_QUEUE_MAX_ENTRIES	NVME_ADMIN_QUEUE_MAX_ENTRIES
+#define SPDK_NVME_IO_QUEUE_MIN_ENTRIES		NVME_IO_QUEUE_MIN_ENTRIES
+#define SPDK_NVME_IO_QUEUE_MAX_ENTRIES		NVME_IO_QUEUE_MAX_ENTRIES
+
 #define SPDK_NVME_DEFAULT_RETRY_COUNT	(4)
 extern int32_t		spdk_nvme_retry_count;
 
-
+#define spdk_nvme_cpl_is_error(cpl)                                  \
+  ((cpl)->status.sc != 0 || (cpl)->status.sct != 0)
 
 /** \brief Opaque handle to a controller. Returned by \ref spdk_nvme_probe()'s attach_cb. */
 struct spdk_nvme_ctrlr;
@@ -79,7 +87,7 @@ struct spdk_nvme_ctrlr_opts {
 	/**
 	 * Type of arbitration mechanism
 	 */
-	enum spdk_nvme_cc_ams arb_mechanism;
+	enum nvme_cc_ams arb_mechanism;
 
 	/**
 	 * Keep alive timeout in milliseconds (0 = disabled).
@@ -277,22 +285,22 @@ int spdk_nvme_ctrlr_reset(struct spdk_nvme_ctrlr *ctrlr);
  *  the SPDK NVMe driver.
  *
  */
-const struct spdk_nvme_ctrlr_data *spdk_nvme_ctrlr_get_data(struct spdk_nvme_ctrlr *ctrlr);
+const struct nvme_controller_data *spdk_nvme_ctrlr_get_data(struct spdk_nvme_ctrlr *ctrlr);
 
 /**
  * \brief Get the NVMe controller CSTS (Status) register.
  */
-union spdk_nvme_csts_register spdk_nvme_ctrlr_get_regs_csts(struct spdk_nvme_ctrlr *ctrlr);
+union nvme_csts_register spdk_nvme_ctrlr_get_regs_csts(struct spdk_nvme_ctrlr *ctrlr);
 
 /**
  * \brief Get the NVMe controller CAP (Capabilities) register.
  */
-union spdk_nvme_cap_register spdk_nvme_ctrlr_get_regs_cap(struct spdk_nvme_ctrlr *ctrlr);
+union nvme_cap_register spdk_nvme_ctrlr_get_regs_cap(struct spdk_nvme_ctrlr *ctrlr);
 
 /**
  * \brief Get the NVMe controller VS (Version) register.
  */
-union spdk_nvme_vs_register spdk_nvme_ctrlr_get_regs_vs(struct spdk_nvme_ctrlr *ctrlr);
+union nvme_vs_register spdk_nvme_ctrlr_get_regs_vs(struct spdk_nvme_ctrlr *ctrlr);
 
 /**
  * \brief Get the number of namespaces for the given NVMe controller.
@@ -301,7 +309,7 @@ union spdk_nvme_vs_register spdk_nvme_ctrlr_get_regs_vs(struct spdk_nvme_ctrlr *
  *  the SPDK NVMe driver.
  *
  * This is equivalent to calling spdk_nvme_ctrlr_get_data() to get the
- * spdk_nvme_ctrlr_data and then reading the nn field.
+ * struct nvme_controller_data and then reading the nn field.
  *
  */
 uint32_t spdk_nvme_ctrlr_get_num_ns(struct spdk_nvme_ctrlr *ctrlr);
@@ -331,7 +339,7 @@ bool spdk_nvme_ctrlr_is_feature_supported(struct spdk_nvme_ctrlr *ctrlr, uint8_t
  *
  * The spdk_nvme_cpl parameter contains the completion status.
  */
-typedef void (*spdk_nvme_cmd_cb)(void *, const struct spdk_nvme_cpl *);
+typedef void (*spdk_nvme_cmd_cb)(void *, const struct nvme_completion *);
 
 /**
  * Signature for callback function invoked when an asynchronous error
@@ -343,7 +351,7 @@ typedef void (*spdk_nvme_cmd_cb)(void *, const struct spdk_nvme_cpl *);
  *  asynchronous event request that was completed.
  */
 typedef void (*spdk_nvme_aer_cb)(void *aer_cb_arg,
-				 const struct spdk_nvme_cpl *);
+				 const struct nvme_completion *);
 
 void spdk_nvme_ctrlr_register_aer_callback(struct spdk_nvme_ctrlr *ctrlr,
 		spdk_nvme_aer_cb aer_cb_fn,
@@ -389,7 +397,7 @@ void spdk_nvme_ctrlr_register_timeout_callback(struct spdk_nvme_ctrlr *ctrlr,
  * method is in use, pass 0.
  */
 struct spdk_nvme_qpair *spdk_nvme_ctrlr_alloc_io_qpair(struct spdk_nvme_ctrlr *ctrlr,
-		enum spdk_nvme_qprio qprio);
+		enum nvme_qprio qprio);
 
 /**
  * \brief Free an I/O queue pair that was allocated by spdk_nvme_ctrlr_alloc_io_qpair().
@@ -411,7 +419,7 @@ int spdk_nvme_ctrlr_free_io_qpair(struct spdk_nvme_qpair *qpair);
  */
 int spdk_nvme_ctrlr_cmd_io_raw(struct spdk_nvme_ctrlr *ctrlr,
 			       struct spdk_nvme_qpair *qpair,
-			       struct spdk_nvme_cmd *cmd,
+			       struct nvme_command *cmd,
 			       void *buf, uint32_t len,
 			       spdk_nvme_cmd_cb cb_fn, void *cb_arg);
 
@@ -458,7 +466,7 @@ int32_t spdk_nvme_qpair_process_completions(struct spdk_nvme_qpair *qpair,
  * of commands submitted through this function.
  */
 int spdk_nvme_ctrlr_cmd_admin_raw(struct spdk_nvme_ctrlr *ctrlr,
-				  struct spdk_nvme_cmd *cmd,
+				  struct nvme_command *cmd,
 				  void *buf, uint32_t len,
 				  spdk_nvme_cmd_cb cb_fn, void *cb_arg);
 
@@ -592,7 +600,7 @@ int spdk_nvme_ctrlr_cmd_get_feature(struct spdk_nvme_ctrlr *ctrlr,
  * of commands submitted through this function.
  */
 int spdk_nvme_ctrlr_attach_ns(struct spdk_nvme_ctrlr *ctrlr, uint32_t nsid,
-			      struct spdk_nvme_ctrlr_list *payload);
+			      struct nvme_ctrlr_list *payload);
 
 /**
  * \brief Detach the specified namespace from controllers.
@@ -609,7 +617,7 @@ int spdk_nvme_ctrlr_attach_ns(struct spdk_nvme_ctrlr *ctrlr, uint32_t nsid,
  * of commands submitted through this function.
  */
 int spdk_nvme_ctrlr_detach_ns(struct spdk_nvme_ctrlr *ctrlr, uint32_t nsid,
-			      struct spdk_nvme_ctrlr_list *payload);
+			      struct nvme_ctrlr_list *payload);
 
 /**
  * \brief Create a namespace.
@@ -622,7 +630,7 @@ int spdk_nvme_ctrlr_detach_ns(struct spdk_nvme_ctrlr *ctrlr, uint32_t nsid,
  * This function is thread safe and can be called at any point after spdk_nvme_attach().
  */
 uint32_t spdk_nvme_ctrlr_create_ns(struct spdk_nvme_ctrlr *ctrlr,
-				   struct spdk_nvme_ns_data *payload);
+				   struct nvme_namespace_data *payload);
 
 /**
  * \brief Delete a namespace.
@@ -653,7 +661,7 @@ int spdk_nvme_ctrlr_delete_ns(struct spdk_nvme_ctrlr *ctrlr, uint32_t nsid);
  * This function is thread safe and can be called at any point after spdk_nvme_attach().
  */
 int spdk_nvme_ctrlr_format(struct spdk_nvme_ctrlr *ctrlr, uint32_t nsid,
-			   struct spdk_nvme_format *format);
+			   struct nvme_format *format);
 
 /**
  * \brief Download a new firmware image.
@@ -676,7 +684,7 @@ int spdk_nvme_ctrlr_update_firmware(struct spdk_nvme_ctrlr *ctrlr, void *payload
  * This function is thread safe and can be called at any point while the controller is attached to
  *  the SPDK NVMe driver.
  */
-const struct spdk_nvme_ns_data *spdk_nvme_ns_get_data(struct spdk_nvme_ns *ns);
+const struct nvme_namespace_data *spdk_nvme_ns_get_data(struct spdk_nvme_ns *ns);
 
 /**
  * \brief Get the namespace id (index number) from the given namespace handle.
@@ -731,7 +739,7 @@ uint64_t spdk_nvme_ns_get_size(struct spdk_nvme_ns *ns);
  * This function is thread safe and can be called at any point while the controller is attached to
  *  the SPDK NVMe driver.
  */
-enum spdk_nvme_pi_type spdk_nvme_ns_get_pi_type(struct spdk_nvme_ns *ns);
+enum nvme_pi_type spdk_nvme_ns_get_pi_type(struct spdk_nvme_ns *ns);
 
 /**
  * \brief Get the metadata size, in bytes, of the given namespace.
@@ -753,12 +761,12 @@ bool spdk_nvme_ns_supports_extended_lba(struct spdk_nvme_ns *ns);
  * \brief Namespace command support flags.
  */
 enum spdk_nvme_ns_flags {
-	SPDK_NVME_NS_DEALLOCATE_SUPPORTED	= 0x1, /**< The deallocate command is supported */
-	SPDK_NVME_NS_FLUSH_SUPPORTED		= 0x2, /**< The flush command is supported */
-	SPDK_NVME_NS_RESERVATION_SUPPORTED	= 0x4, /**< The reservation command is supported */
-	SPDK_NVME_NS_WRITE_ZEROES_SUPPORTED	= 0x8, /**< The write zeroes command is supported */
-	SPDK_NVME_NS_DPS_PI_SUPPORTED		= 0x10, /**< The end-to-end data protection is supported */
-	SPDK_NVME_NS_EXTENDED_LBA_SUPPORTED	= 0x20, /**< The extended lba format is supported,
+	NVME_NS_DEALLOCATE_SUPPORTED	= 0x1, /**< The deallocate command is supported */
+	NVME_NS_FLUSH_SUPPORTED		= 0x2, /**< The flush command is supported */
+	NVME_NS_RESERVATION_SUPPORTED	= 0x4, /**< The reservation command is supported */
+	NVME_NS_WRITE_ZEROES_SUPPORTED	= 0x8, /**< The write zeroes command is supported */
+	NVME_NS_DPS_PI_SUPPORTED		= 0x10, /**< The end-to-end data protection is supported */
+	NVME_NS_EXTENDED_LBA_SUPPORTED	= 0x20, /**< The extended lba format is supported,
 							      metadata is transferred as a contiguous
 							      part of the logical block that it is associated with */
 };
@@ -800,7 +808,7 @@ typedef int (*spdk_nvme_req_next_sge_cb)(void *cb_arg, void **address, uint32_t 
  * \param lba_count length (in sectors) for the write operation
  * \param cb_fn callback function to invoke when the I/O is completed
  * \param cb_arg argument to pass to the callback function
- * \param io_flags set flags, defined by the SPDK_NVME_IO_FLAGS_* entries
+ * \param io_flags set flags, defined by the NVME_IO_FLAGS_* entries
  * 			in spdk/nvme_spec.h, for this I/O.
  *
  * \return 0 if successfully submitted, ENOMEM if an nvme_request
@@ -851,7 +859,7 @@ int spdk_nvme_ns_cmd_writev(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpa
  * \param lba_count length (in sectors) for the write operation
  * \param cb_fn callback function to invoke when the I/O is completed
  * \param cb_arg argument to pass to the callback function
- * \param io_flags set flags, defined by the SPDK_NVME_IO_FLAGS_* entries
+ * \param io_flags set flags, defined by the NVME_IO_FLAGS_* entries
  * 			in spdk/nvme_spec.h, for this I/O.
  * \param apptag_mask application tag mask.
  * \param apptag application tag to use end-to-end protection information.
@@ -877,7 +885,7 @@ int spdk_nvme_ns_cmd_write_with_md(struct spdk_nvme_ns *ns, struct spdk_nvme_qpa
  * \param lba_count length (in sectors) for the write zero operation
  * \param cb_fn callback function to invoke when the I/O is completed
  * \param cb_arg argument to pass to the callback function
- * \param io_flags set flags, defined by the SPDK_NVME_IO_FLAGS_* entries
+ * \param io_flags set flags, defined by the NVME_IO_FLAGS_* entries
  * 			in spdk/nvme_spec.h, for this I/O.
  *
  * \return 0 if successfully submitted, ENOMEM if an nvme_request
@@ -974,9 +982,9 @@ int spdk_nvme_ns_cmd_read_with_md(struct spdk_nvme_ns *ns, struct spdk_nvme_qpai
  *        deallocate, which is often referred to as TRIM or UNMAP.
  *
  * \param ns NVMe namespace to submit the DSM request
- * \param type A bit field constructed from \ref enum spdk_nvme_dsm_attribute.
+ * \param type A bit field constructed from \ref enum nvme_dsm_attribute.
  * \param qpair I/O queue pair to submit the request
- * \param ranges An array of \ref spdk_nvme_dsm_range elements describing
+ * \param ranges An array of \ref nvme_dsm_range elements describing
  		 the LBAs to operate on.
  * \param num_ranges The number of elements in the ranges array.
  * \param cb_fn callback function to invoke when the I/O is completed
@@ -994,7 +1002,7 @@ int spdk_nvme_ns_cmd_read_with_md(struct spdk_nvme_ns *ns, struct spdk_nvme_qpai
  */
 int spdk_nvme_ns_cmd_dataset_management(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
 					uint32_t type,
-					const struct spdk_nvme_dsm_range *ranges,
+					const struct nvme_dsm_range *ranges,
 					uint16_t num_ranges,
 					spdk_nvme_cmd_cb cb_fn,
 					void *cb_arg);
@@ -1036,10 +1044,10 @@ int spdk_nvme_ns_cmd_flush(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpai
  */
 int spdk_nvme_ns_cmd_reservation_register(struct spdk_nvme_ns *ns,
 		struct spdk_nvme_qpair *qpair,
-		struct spdk_nvme_reservation_register_data *payload,
+		struct nvme_reservation_register_data *payload,
 		bool ignore_key,
-		enum spdk_nvme_reservation_register_action action,
-		enum spdk_nvme_reservation_register_cptpl cptpl,
+		enum nvme_reservation_register_action action,
+		enum nvme_reservation_register_cptpl cptpl,
 		spdk_nvme_cmd_cb cb_fn, void *cb_arg);
 
 /**
@@ -1062,10 +1070,10 @@ int spdk_nvme_ns_cmd_reservation_register(struct spdk_nvme_ns *ns,
  */
 int spdk_nvme_ns_cmd_reservation_release(struct spdk_nvme_ns *ns,
 		struct spdk_nvme_qpair *qpair,
-		struct spdk_nvme_reservation_key_data *payload,
+		struct nvme_reservation_key_data *payload,
 		bool ignore_key,
-		enum spdk_nvme_reservation_release_action action,
-		enum spdk_nvme_reservation_type type,
+		enum nvme_reservation_release_action action,
+		enum nvme_reservation_type type,
 		spdk_nvme_cmd_cb cb_fn, void *cb_arg);
 
 /**
@@ -1088,10 +1096,10 @@ int spdk_nvme_ns_cmd_reservation_release(struct spdk_nvme_ns *ns,
  */
 int spdk_nvme_ns_cmd_reservation_acquire(struct spdk_nvme_ns *ns,
 		struct spdk_nvme_qpair *qpair,
-		struct spdk_nvme_reservation_acquire_data *payload,
+		struct nvme_reservation_acquire_data *payload,
 		bool ignore_key,
-		enum spdk_nvme_reservation_acquire_action action,
-		enum spdk_nvme_reservation_type type,
+		enum nvme_reservation_acquire_action action,
+		enum nvme_reservation_type type,
 		spdk_nvme_cmd_cb cb_fn, void *cb_arg);
 
 /**

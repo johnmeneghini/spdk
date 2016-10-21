@@ -83,7 +83,7 @@ struct worker_thread {
 	struct ns_worker_ctx			*ns_ctx;
 	struct worker_thread			*next;
 	unsigned				lcore;
-	enum spdk_nvme_qprio			qprio;
+	enum nvme_qprio			qprio;
 };
 
 struct arb_context {
@@ -127,7 +127,7 @@ static struct arb_context g_arbitration = {
 	.time_in_sec				= 60,
 	.io_count				= 100000,
 	.latency_tracking_enable		= 0,
-	.arbitration_mechanism			= SPDK_NVME_CC_AMS_RR,
+	.arbitration_mechanism			= NVME_CC_AMS_RR,
 	.arbitration_config			= 0,
 	.io_size_bytes				= 131072,
 	.max_completions			= 0,
@@ -160,24 +160,24 @@ static struct arb_context g_arbitration = {
 #define SPDK_NVME_PRIO_WEIGHT_MASK		0xFF
 #define SPDK_NVME_ARB_BURST_MASK		0x7
 
-#define SPDK_NVME_QPRIO_MAX			(SPDK_NVME_QPRIO_LOW + 1)
+#define SPDK_NVME_QPRIO_MAX			(NVME_QPRIO_LOW + 1)
 
 static void task_complete(struct arb_task *task);
 
-static void io_complete(void *ctx, const struct spdk_nvme_cpl *completion);
+static void io_complete(void *ctx, const struct nvme_completion *completion);
 
 static void get_arb_feature(struct spdk_nvme_ctrlr *ctrlr);
 
 static int set_arb_feature(struct spdk_nvme_ctrlr *ctrlr);
 
-static const char *print_qprio(enum spdk_nvme_qprio);
+static const char *print_qprio(enum nvme_qprio);
 
 
 static void
 register_ns(struct spdk_nvme_ctrlr *ctrlr, struct spdk_nvme_ns *ns)
 {
 	struct ns_entry *entry;
-	const struct spdk_nvme_ctrlr_data *cdata;
+	const struct nvme_controller_data *cdata;
 
 	cdata = spdk_nvme_ctrlr_get_data(ctrlr);
 
@@ -218,7 +218,7 @@ register_ns(struct spdk_nvme_ctrlr *ctrlr, struct spdk_nvme_ns *ns)
 }
 
 static void
-enable_latency_tracking_complete(void *cb_arg, const struct spdk_nvme_cpl *cpl)
+enable_latency_tracking_complete(void *cb_arg, const struct nvme_completion *cpl)
 {
 	if (spdk_nvme_cpl_is_error(cpl)) {
 		printf("enable_latency_tracking_complete failed\n");
@@ -256,7 +256,7 @@ register_ctrlr(struct spdk_nvme_ctrlr *ctrlr)
 {
 	int nsid, num_ns;
 	struct ctrlr_entry *entry = calloc(1, sizeof(struct ctrlr_entry));
-	const struct spdk_nvme_ctrlr_data *cdata = spdk_nvme_ctrlr_get_data(ctrlr);
+	const struct nvme_controller_data *cdata = spdk_nvme_ctrlr_get_data(ctrlr);
 
 	if (entry == NULL) {
 		perror("ctrlr_entry malloc");
@@ -278,7 +278,7 @@ register_ctrlr(struct spdk_nvme_ctrlr *ctrlr)
 		register_ns(ctrlr, spdk_nvme_ctrlr_get_ns(ctrlr, nsid));
 	}
 
-	if (g_arbitration.arbitration_mechanism == SPDK_NVME_CAP_AMS_WRR) {
+	if (g_arbitration.arbitration_mechanism == NVME_CAP_AMS_WRR) {
 		get_arb_feature(ctrlr);
 
 		if (g_arbitration.arbitration_config != 0) {
@@ -367,7 +367,7 @@ task_complete(struct arb_task *task)
 }
 
 static void
-io_complete(void *ctx, const struct spdk_nvme_cpl *completion)
+io_complete(void *ctx, const struct nvme_completion *completion)
 {
 	task_complete((struct arb_task *)ctx);
 }
@@ -396,7 +396,7 @@ drain_io(struct ns_worker_ctx *ns_ctx)
 }
 
 static int
-init_ns_worker_ctx(struct ns_worker_ctx *ns_ctx, enum spdk_nvme_qprio qprio)
+init_ns_worker_ctx(struct ns_worker_ctx *ns_ctx, enum nvme_qprio qprio)
 {
 	ns_ctx->qpair = spdk_nvme_ctrlr_alloc_io_qpair(ns_ctx->entry->nvme.ctrlr, qprio);
 	if (!ns_ctx->qpair) {
@@ -525,16 +525,16 @@ usage(char *program_name)
 }
 
 static const char *
-print_qprio(enum spdk_nvme_qprio qprio)
+print_qprio(enum nvme_qprio qprio)
 {
 	switch (qprio) {
-	case SPDK_NVME_QPRIO_URGENT:
+	case NVME_QPRIO_URGENT:
 		return "urgent priority queue";
-	case SPDK_NVME_QPRIO_HIGH:
+	case NVME_QPRIO_HIGH:
 		return "high priority queue";
-	case SPDK_NVME_QPRIO_MEDIUM:
+	case NVME_QPRIO_MEDIUM:
 		return "medium priority queue";
-	case SPDK_NVME_QPRIO_LOW:
+	case NVME_QPRIO_LOW:
 		return "low priority queue";
 	default:
 		return "invalid priority queue";
@@ -785,9 +785,9 @@ parse_args(int argc, char **argv)
 	}
 
 	switch (g_arbitration.arbitration_mechanism) {
-	case SPDK_NVME_CC_AMS_RR:
-	case SPDK_NVME_CC_AMS_WRR:
-	case SPDK_NVME_CC_AMS_VS:
+	case NVME_CC_AMS_RR:
+	case NVME_CC_AMS_WRR:
+	case NVME_CC_AMS_VS:
 		break;
 	default:
 		fprintf(stderr,
@@ -801,7 +801,7 @@ parse_args(int argc, char **argv)
 			"-b must be specified to value 0 or 1.\n");
 		return 1;
 	} else if (g_arbitration.arbitration_config == 1 &&
-		   g_arbitration.arbitration_mechanism != SPDK_NVME_CC_AMS_WRR) {
+		   g_arbitration.arbitration_mechanism != NVME_CC_AMS_WRR) {
 		fprintf(stderr,
 			"-a must be specified to 1 (WRR) together.\n");
 		return 1;
@@ -816,7 +816,7 @@ register_workers(void)
 	unsigned lcore;
 	struct worker_thread *worker;
 	struct worker_thread *prev_worker;
-	enum spdk_nvme_qprio qprio = SPDK_NVME_QPRIO_URGENT;
+	enum nvme_qprio qprio = NVME_QPRIO_URGENT;
 
 	worker = malloc(sizeof(struct worker_thread));
 	if (worker == NULL) {
@@ -844,7 +844,7 @@ register_workers(void)
 		prev_worker->next = worker;
 		g_arbitration.num_workers++;
 
-		if (g_arbitration.arbitration_mechanism == SPDK_NVME_CAP_AMS_WRR) {
+		if (g_arbitration.arbitration_mechanism == NVME_CAP_AMS_WRR) {
 			qprio++;
 		}
 		worker->qprio = qprio % SPDK_NVME_QPRIO_MAX;
@@ -954,7 +954,7 @@ associate_workers_with_ns(void)
 }
 
 static void
-get_feature_completion(void *cb_arg, const struct spdk_nvme_cpl *cpl)
+get_feature_completion(void *cb_arg, const struct nvme_completion *cpl)
 {
 	struct feature *feature = cb_arg;
 	int fid = feature - features;
@@ -972,9 +972,9 @@ get_feature_completion(void *cb_arg, const struct spdk_nvme_cpl *cpl)
 static int
 get_feature(struct spdk_nvme_ctrlr *ctrlr, uint8_t fid)
 {
-	struct spdk_nvme_cmd cmd = {};
+	struct nvme_command cmd = {};
 
-	cmd.opc = SPDK_NVME_OPC_GET_FEATURES;
+	cmd.opc = NVME_OPC_GET_FEATURES;
 	cmd.cdw10 = fid;
 
 	return spdk_nvme_ctrlr_cmd_admin_raw(ctrlr, &cmd, NULL, 0, get_feature_completion, &features[fid]);
@@ -983,7 +983,7 @@ get_feature(struct spdk_nvme_ctrlr *ctrlr, uint8_t fid)
 static void
 get_arb_feature(struct spdk_nvme_ctrlr *ctrlr)
 {
-	get_feature(ctrlr, SPDK_NVME_FEAT_ARBITRATION);
+	get_feature(ctrlr, NVME_FEAT_ARBITRATION);
 
 	g_arbitration.outstanding_commands++;
 
@@ -991,8 +991,8 @@ get_arb_feature(struct spdk_nvme_ctrlr *ctrlr)
 		spdk_nvme_ctrlr_process_admin_completions(ctrlr);
 	}
 
-	if (features[SPDK_NVME_FEAT_ARBITRATION].valid) {
-		uint32_t arb = features[SPDK_NVME_FEAT_ARBITRATION].result;
+	if (features[NVME_FEAT_ARBITRATION].valid) {
+		uint32_t arb = features[NVME_FEAT_ARBITRATION].result;
 		unsigned ab, lpw, mpw, hpw;
 
 		ab = arb & SPDK_NVME_ARB_BURST_MASK;
@@ -1017,7 +1017,7 @@ get_arb_feature(struct spdk_nvme_ctrlr *ctrlr)
 }
 
 static void
-set_feature_completion(void *cb_arg, const struct spdk_nvme_cpl *cpl)
+set_feature_completion(void *cb_arg, const struct nvme_completion *cpl)
 {
 	struct feature *feature = cb_arg;
 	int fid = feature - features;
@@ -1036,16 +1036,16 @@ static int
 set_arb_feature(struct spdk_nvme_ctrlr *ctrlr)
 {
 	int ret;
-	struct spdk_nvme_cmd cmd = {};
+	struct nvme_command cmd = {};
 	uint32_t arb = 0;
 	unsigned ab, lpw, mpw, hpw;
 
-	cmd.opc = SPDK_NVME_OPC_SET_FEATURES;
-	cmd.cdw10 = SPDK_NVME_FEAT_ARBITRATION;
+	cmd.opc = NVME_OPC_SET_FEATURES;
+	cmd.cdw10 = NVME_FEAT_ARBITRATION;
 
 	g_arbitration.outstanding_commands = 0;
 
-	if (features[SPDK_NVME_FEAT_ARBITRATION].valid) {
+	if (features[NVME_FEAT_ARBITRATION].valid) {
 		ab = USER_SPECIFIED_ARBITRATION_BURST & SPDK_NVME_ARB_BURST_MASK;
 		hpw = USER_SPECIFIED_HIGH_PRIORITY_WEIGHT << SPDK_NVME_HIGH_PRIO_WEIGHT_SHIFT;
 		mpw = USER_SPECIFIED_MEDIUM_PRIORITY_WEIGHT << SPDK_NVME_MED_PRIO_WEIGHT_SHIFT;
@@ -1055,7 +1055,7 @@ set_arb_feature(struct spdk_nvme_ctrlr *ctrlr)
 	}
 
 	ret = spdk_nvme_ctrlr_cmd_admin_raw(ctrlr, &cmd, NULL, 0,
-					    set_feature_completion, &features[SPDK_NVME_FEAT_ARBITRATION]);
+					    set_feature_completion, &features[NVME_FEAT_ARBITRATION]);
 	if (ret) {
 		printf("Set Arbitration Feature: Failed 0x%x\n", ret);
 		return 1;
@@ -1067,7 +1067,7 @@ set_arb_feature(struct spdk_nvme_ctrlr *ctrlr)
 		spdk_nvme_ctrlr_process_admin_completions(ctrlr);
 	}
 
-	if (!features[SPDK_NVME_FEAT_ARBITRATION].valid) {
+	if (!features[NVME_FEAT_ARBITRATION].valid) {
 		printf("Set Arbitration Feature failed and use default configuration\n");
 	}
 
