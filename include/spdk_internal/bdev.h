@@ -181,7 +181,7 @@ spdk_bdev_io_from_ctx(void *ctx)
 }
 
 #define SPDK_BDEV_MODULE_REGISTER(init_fn, fini_fn, config_fn, ctx_size_fn)			\
-	struct spdk_bdev_module_if init_fn ## _if = {					        \
+	static struct spdk_bdev_module_if init_fn ## _if = {					\
 	.module_init 	= init_fn,								\
 	.module_fini	= fini_fn,								\
 	.config_text	= config_fn,								\

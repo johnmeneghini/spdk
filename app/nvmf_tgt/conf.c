@@ -39,12 +39,10 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <ifaddrs.h>
-
-#include <rte_config.h>
-#include <rte_lcore.h>
+#include <env_config.h>
+#include <env_lcore.h>
 
 #include "nvmf_tgt.h"
-
 #include "spdk/conf.h"
 #include "spdk/log.h"
 #include "spdk/bdev.h"
@@ -209,7 +207,7 @@ spdk_nvmf_parse_nvmf_tgt(void)
 
 	acceptor_lcore = spdk_conf_section_get_intval(sp, "AcceptorCore");
 	if (acceptor_lcore < 0) {
-		acceptor_lcore = rte_lcore_id();
+		acceptor_lcore = spdk_lcore_id();
 	}
 	g_spdk_nvmf_tgt_conf.acceptor_lcore = acceptor_lcore;
 
@@ -276,7 +274,7 @@ attach_cb(void *cb_ctx, const struct spdk_nvme_transport_id *trid,
 	}
 	if (numa_node >= 0) {
 		/* Running subsystem and NVMe device is on the same socket or not */
-		if (rte_lcore_to_socket_id(ctx->app_subsystem->lcore) != (unsigned)numa_node) {
+		if (spdk_lcore_to_socket_id(ctx->app_subsystem->lcore) != (unsigned)numa_node) {
 			SPDK_WARNLOG("Subsystem %s is configured to run on a CPU core %u belonging "
 				     "to a different NUMA node than the associated NVMe device. "
 				     "This may result in reduced performance.\n",
@@ -284,7 +282,7 @@ attach_cb(void *cb_ctx, const struct spdk_nvme_transport_id *trid,
 				     ctx->app_subsystem->lcore);
 			SPDK_WARNLOG("The NVMe device is on socket %u\n", numa_node);
 			SPDK_WARNLOG("The Subsystem is on socket %u\n",
-				     rte_lcore_to_socket_id(ctx->app_subsystem->lcore));
+				     spdk_lcore_to_socket_id(ctx->app_subsystem->lcore));
 		}
 	}
 

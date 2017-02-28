@@ -36,7 +36,7 @@ include $(SPDK_ROOT_DIR)/mk/spdk.common.mk
 
 CFLAGS += $(ENV_CFLAGS)
 C_SRCS = env.c pci.c vtophys.c init.c
-C_SRCS += pci_nvme.c pci_ioat.c
+C_SRCS += pci_nvme.c pci_ioat.c env_ring.c
 LIBNAME = env_dpdk
 
 include $(SPDK_ROOT_DIR)/mk/spdk.lib.mk
