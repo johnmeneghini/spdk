@@ -61,7 +61,7 @@ submit_new_event(void *arg1, void *arg2)
 	static __thread uint32_t next_lcore = RTE_MAX_LCORE;
 
 	if (next_lcore == RTE_MAX_LCORE) {
-		next_lcore = rte_get_next_lcore(rte_lcore_id(), 0, 1);
+		next_lcore = rte_get_next_lcore(spdk_lcore_id(), 0, 1);
 	}
 
 	++__call_count;
@@ -83,14 +83,14 @@ event_work_fn(void *arg)
 
 	while (1) {
 
-		spdk_event_queue_run_batch(rte_lcore_id());
+		spdk_event_queue_run_batch(spdk_lcore_id());
 
 		if (spdk_get_ticks() > tsc_end) {
 			break;
 		}
 	}
 
-	call_count[rte_lcore_id()] = __call_count;
+	call_count[spdk_lcore_id()] = __call_count;
 
 	return 0;
 }
