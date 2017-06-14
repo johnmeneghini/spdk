@@ -222,8 +222,18 @@ nvmf_subsystem_add_ctrlr(struct spdk_nvmf_subsystem *subsystem,
 
 void spdk_nvmf_subsystem_poll(struct spdk_nvmf_subsystem *subsystem);
 
-int
-spdk_nvmf_subsystem_add_ns(struct spdk_nvmf_subsystem *subsystem, struct spdk_bdev *bdev);
+/**
+ * Add a namespace to a subsytem.
+ *
+ * \param subsystem Subsystem to add namespace to.
+ * \param bdev Block device to add as a namespace.
+ * \param nsid Namespace ID to assign to the new namespace, or 0 to automatically use an available
+ *             NSID.
+ *
+ * \return Newly added NSID on success or 0 on failure.
+ */
+uint32_t spdk_nvmf_subsystem_add_ns(struct spdk_nvmf_subsystem *subsystem, struct spdk_bdev *bdev,
+				    uint32_t nsid);
 
 int spdk_nvmf_subsystem_set_sn(struct spdk_nvmf_subsystem *subsystem, const char *sn);
 
