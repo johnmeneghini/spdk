@@ -318,6 +318,23 @@ typedef struct fc_frame_hdr {
 
 } fc_frame_hdr_t;
 
+typedef struct fc_frame_hdr_le {
+	uint32_t	d_id: 24,
+			r_ctl: 8;
+	uint32_t	s_id: 24,
+			cs_ctl: 8;
+	uint32_t	f_ctl: 24,
+			type: 8;
+	uint32_t	seq_cnt: 16,
+			df_ctl: 8,
+			seq_id: 8;
+	uint32_t	rx_id: 16,
+			ox_id: 16;
+	uint32_t	parameter;
+
+} fc_frame_hdr_le_t;
+
+
 /* Generic DMA buffer descriptor */
 typedef struct bcm_buffer_desc {
 	void *virt;
@@ -1103,5 +1120,49 @@ typedef struct bcm_xmit_bls_rsp_wqe_s {
 	uint32_t	rsvd14;
 	uint32_t	rsvd15;
 } bcm_xmit_bls_rsp_wqe_t;
+
+typedef struct bcm_send_frame_wqe_s {
+	bcm_bde_t	bde;
+	uint32_t	frame_length;
+	uint32_t	fc_header_0_1[2];
+	uint32_t	xri_tag: 16,
+			context_tag: 16;
+	uint32_t	: 2,
+			ct: 2,
+			: 4,
+			command: 8,
+			class: 3,
+				: 1,
+				  pu: 2,
+				  : 2,
+				    timer: 8;
+	uint32_t        abort_tag;
+	uint32_t	request_tag: 16,
+			eof: 8,
+			sof: 8;
+	uint32_t	ebde_cnt: 4,
+			: 3,
+			lenloc: 2,
+			qosd: 1,
+			wchn: 1,
+			xbl: 1,
+			hlm: 1,
+			iod: 1,
+			dbde: 1,
+			wqes: 1,
+			pri: 3,
+			pv: 1,
+			eat: 1,
+			xc: 1,
+			: 1,
+			ccpe: 1,
+			ccp: 8;
+	uint32_t	cmd_type: 4,
+			: 3,
+			wqec: 1,
+			: 8,
+			cq_id: 16;
+	uint32_t	fc_header_2_5[4];
+} bcm_send_frame_wqe_t;
 
 #endif

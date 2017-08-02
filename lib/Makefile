@@ -34,14 +34,21 @@
 SPDK_ROOT_DIR := $(abspath $(CURDIR)/..)
 include $(SPDK_ROOT_DIR)/mk/spdk.common.mk
 
-DIRS-y += bdev blob blobfs conf copy cunit event json jsonrpc \
-          log env_dpdk net rpc trace util nvme nvmf scsi ioat \
-	  ut_mock
+ifeq ($(origin TARGET_LIBS), undefined)
+TARGET_LIBS := bdev blob blobfs conf copy cunit event json jsonrpc log env_dpdk net rpc trace util nvme nvmf scsi ioat ut_mock
+endif
 ifeq ($(OS),Linux)
-DIRS-y += iscsi
-DIRS-$(CONFIG_VHOST) += vhost
+TARGET_LIBS += iscsi
+ifeq ($(CONFIG_VHOST),y)
+TARGET_LIBS += vhost
+endif
 endif
 
+ifeq ($(CONFIG_BCM_FC_DRV),y)
+TARGET_LIBS +=fc
+endif
+
+DIRS-y += $(TARGET_LIBS) 
 
 .PHONY: all clean $(DIRS-y)
 

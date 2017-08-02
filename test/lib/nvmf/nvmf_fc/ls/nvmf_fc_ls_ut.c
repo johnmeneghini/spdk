@@ -42,7 +42,7 @@
 #include "spdk/env.h"
 #include "log/log_syslog.c"
 
-#include "bcm_fc.h"
+#include "nvmf_fc/bcm_fc.h"
 #include "nvmf/transport.h"
 #include "nvmf/nvmf_internal.h"
 
@@ -51,6 +51,8 @@
 
 struct spdk_nvmf_tgt g_nvmf_tgt = {
 	.max_associations = 4,
+	.max_aq_depth = 32,
+	.max_queue_depth = 1024,
 	.max_queues_per_session = 4,
 };
 
@@ -207,6 +209,9 @@ enum fcnvme_ls_rjt_reason {
 	FCNVME_RJT_RC_INPROG = 0x0e,
 	FCNVME_RJT_RC_INV_ASSOC = 0x40,
 	FCNVME_RJT_RC_INV_CONN = 0x41,
+	FCNVME_RJT_RC_INV_PARAM = 0x42,
+	FCNVME_RJT_RC_INSUFF_RES = 0x43,
+	FCNVME_RJT_RC_INV_HOST = 0x44,
 	FCNVME_RJT_RC_VENDOR = 0xff,
 };
 
@@ -217,6 +222,13 @@ enum fcnvme_ls_rjt_explan {
 	FCNVME_RJT_EXP_INSUF_RES = 0x29,
 	FCNVME_RJT_EXP_UNAB_DATA = 0x2a,
 	FCNVME_RJT_EXP_INV_LEN   = 0x2d,
+	FCNVME_RJT_EXP_INV_ESRP = 0x40,
+	FCNVME_RJT_EXP_INV_CTL_ID = 0x41,
+	FCNVME_RJT_EXP_INV_Q_ID = 0x42,
+	FCNVME_RJT_EXP_SQ_SIZE = 0x43,
+	FCNVME_RJT_EXP_INV_HOST_ID = 0x44,
+	FCNVME_RJT_EXP_INV_HOSTNQN = 0x45,
+	FCNVME_RJT_EXP_INV_SUBNQN = 0x46,
 };
 
 /* FCNVME_LSDESC_RJT */
@@ -268,7 +280,6 @@ spdk_dma_malloc(size_t size, size_t align, uint64_t *phys_addr)
 
 	return p;
 }
-
 
 void spdk_dma_free(void *buf)
 {
@@ -378,6 +389,20 @@ nvmf_fc_ls_ut_remove_conn(struct spdk_nvmf_session *session,
 	return 0;
 }
 
+struct spdk_nvmf_subsystem *
+spdk_nvmf_find_subsystem(const char *subnqn)
+{
+	/* don't care about subsystem check - return subnqn */
+	return (struct spdk_nvmf_subsystem *) subnqn;
+}
+
+bool
+spdk_nvmf_subsystem_host_allowed(struct spdk_nvmf_subsystem *subsystem,
+				 const char *hostnqn)
+{
+	return true;
+}
+
 /* ********* the tests ********* */
 
 static void
@@ -397,8 +422,8 @@ run_create_assoc_test(struct spdk_nvmf_fc_nport *tgtport)
 	to_be32(&ca_rqst.assoc_cmd.desc_len,
 		sizeof(struct nvmf_fc_lsdesc_cr_assoc_cmd) -
 		(2 * sizeof(uint32_t)));
-	to_be16(&ca_rqst.assoc_cmd.ersp_ratio, 20);
-	to_be16(&ca_rqst.assoc_cmd.sqsize, 100);
+	to_be16(&ca_rqst.assoc_cmd.ersp_ratio, 5);
+	to_be16(&ca_rqst.assoc_cmd.sqsize, 32);
 
 	ls_rqst.rqstbuf.virt = &ca_rqst;
 	ls_rqst.rspbuf.virt = respbuf;
@@ -433,7 +458,7 @@ run_create_conn_test(struct spdk_nvmf_fc_nport *tgtport,
 		sizeof(struct nvmf_fc_lsdesc_cr_conn_cmd) -
 		(2 * sizeof(uint32_t)));
 	to_be16(&cc_rqst.connect_cmd.ersp_ratio, 20);
-	to_be16(&cc_rqst.connect_cmd.sqsize, 100);
+	to_be16(&cc_rqst.connect_cmd.sqsize, 1024);
 
 	/* fill in association id descriptor */
 	to_be32(&cc_rqst.assoc_id.desc_tag, FCNVME_LSDESC_ASSOC_ID),
@@ -442,8 +467,8 @@ run_create_conn_test(struct spdk_nvmf_fc_nport *tgtport,
 			(2 * sizeof(uint32_t)));
 	cc_rqst.assoc_id.association_id = assoc_id; /* alreday be64 */
 
-	ls_rqst.rqstbuf->virt = &cc_rqst;
-	ls_rqst.rspbuf->virt = respbuf;
+	ls_rqst.rqstbuf.virt = &cc_rqst;
+	ls_rqst.rspbuf.virt = respbuf;
 	ls_rqst.rqst_len = sizeof(struct nvmf_fc_ls_cr_conn_rqst);
 	ls_rqst.rsp_len = 0;
 	ls_rqst.rpi = 5000;
@@ -495,13 +520,13 @@ static int
 handle_ca_rsp(struct nvmf_fc_ls_rqst *ls_rqst)
 {
 	struct nvmf_fc_ls_acc_hdr *acc_hdr =
-		(struct nvmf_fc_ls_acc_hdr *) ls_rqst->rspbuf->virt;
+		(struct nvmf_fc_ls_acc_hdr *) ls_rqst->rspbuf.virt;
 
 
 	if (acc_hdr->rqst.w0.ls_cmd == FCNVME_LS_CREATE_ASSOCIATION) {
 		if (acc_hdr->w0.ls_cmd == FCNVME_LS_ACC) {
 			struct nvmf_fc_ls_cr_assoc_acc *acc =
-				(struct nvmf_fc_ls_cr_assoc_acc *)ls_rqst->rspbuf->virt;
+				(struct nvmf_fc_ls_cr_assoc_acc *)ls_rqst->rspbuf.virt;
 
 			CU_ASSERT(from_be32(&acc_hdr->desc_list_len) ==
 				  sizeof(struct nvmf_fc_ls_cr_assoc_acc) - 8);
@@ -540,7 +565,7 @@ handle_cc_rsp(struct nvmf_fc_ls_rqst *ls_rqst)
 	if (acc_hdr->rqst.w0.ls_cmd == FCNVME_LS_CREATE_CONNECTION) {
 		if (acc_hdr->w0.ls_cmd == FCNVME_LS_ACC) {
 			struct nvmf_fc_ls_cr_conn_acc *acc =
-				(struct nvmf_fc_ls_cr_conn_acc *)ls_rqst->rspbuf->virt;
+				(struct nvmf_fc_ls_cr_conn_acc *)ls_rqst->rspbuf.virt;
 
 			CU_ASSERT(from_be32(&acc_hdr->desc_list_len) ==
 				  sizeof(struct nvmf_fc_ls_cr_conn_acc) - 8);
@@ -561,9 +586,9 @@ handle_cc_rsp(struct nvmf_fc_ls_rqst *ls_rqst)
 				(struct nvmf_fc_ls_rjt *)ls_rqst->rspbuf.virt;
 			if (g_create_conn_test_cnt == g_nvmf_tgt.max_queues_per_session) {
 				CU_ASSERT(rjt->rjt.reason_code ==
-					  FCNVME_RJT_RC_LOGIC);
+					  FCNVME_RJT_RC_INV_PARAM);
 				CU_ASSERT(rjt->rjt.reason_explanation ==
-					  FCNVME_RJT_EXP_INSUF_RES);
+					  FCNVME_RJT_EXP_INV_Q_ID);
 			} else {
 				CU_FAIL("Unexpected reject response for create connection");
 			}
@@ -653,6 +678,7 @@ test_process_ls_cmds(void)
 		fcport.io_queues[i].num_conns = 0;
 		fcport.io_queues[i].cid_cnt = 0;
 		TAILQ_INIT(&fcport.io_queues[i].connection_list);
+		TAILQ_INIT(&fcport.io_queues[i].in_use_reqs);
 	}
 
 	tgtport.fc_port = &fcport;
@@ -696,6 +722,8 @@ test_process_ls_cmds(void)
 			run_disconn_test(&tgtport, assoc_id[i]);
 		}
 	}
+
+	spdk_nvmf_fc_ls_fini();
 }
 
 int

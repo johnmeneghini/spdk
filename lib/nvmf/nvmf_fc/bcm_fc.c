@@ -130,7 +130,7 @@ spdk_nvmf_fc_add_poller(struct fc_hwqp *hwqp)
  * Return a fc nport with a matching handle.
  */
 struct spdk_nvmf_fc_nport *
-spdk_nvmf_fc_nport_get(uint8_t port_hdl, uint32_t nport_hdl)
+spdk_nvmf_fc_nport_get(uint8_t port_hdl, uint16_t nport_hdl)
 {
 	struct spdk_nvmf_fc_port *fc_port = NULL;
 	struct spdk_nvmf_fc_nport *fc_nport = NULL;
@@ -272,10 +272,133 @@ bcm_fc_queue_poller(void *arg)
 {
 	struct fc_hwqp *hwqp = arg;
 
-	if (hwqp->state == SPDK_FC_PORT_ONLINE) {
+	if (hwqp->state == SPDK_FC_HWQP_ONLINE) {
 		bcm_process_queues(hwqp);
 	}
 }
+
+/*** Accessor functions for the bcm-fc structures - BEGIN */
+spdk_err_t
+spdk_nvmf_fc_port_set_online(struct spdk_nvmf_fc_port *fc_port)
+{
+	if (fc_port && (fc_port->hw_port_status != SPDK_FC_PORT_ONLINE)) {
+		fc_port->hw_port_status = SPDK_FC_PORT_ONLINE;
+		return SPDK_SUCCESS;
+	} else {
+		return SPDK_ERR_INTERNAL;
+	}
+}
+
+spdk_err_t
+spdk_nvmf_fc_port_set_offline(struct spdk_nvmf_fc_port *fc_port)
+{
+	if (fc_port && (fc_port->hw_port_status != SPDK_FC_PORT_OFFLINE)) {
+		fc_port->hw_port_status = SPDK_FC_PORT_OFFLINE;
+		return SPDK_SUCCESS;
+	} else {
+		return SPDK_ERR_INTERNAL;
+	}
+}
+
+spdk_err_t
+spdk_nvmf_fc_port_add_nport(struct spdk_nvmf_fc_port *fc_port, struct spdk_nvmf_fc_nport *nport)
+{
+	if (fc_port) {
+		TAILQ_INSERT_TAIL(&fc_port->nport_list, nport, link);
+		fc_port->num_nports++;
+		return SPDK_SUCCESS;
+	} else {
+		return SPDK_ERR_INTERNAL;
+	}
+}
+
+spdk_err_t
+spdk_nvmf_fc_port_remove_nport(struct spdk_nvmf_fc_port *fc_port, struct spdk_nvmf_fc_nport *nport)
+{
+	if (fc_port && nport) {
+		TAILQ_REMOVE(&fc_port->nport_list, nport, link);
+		fc_port->num_nports--;
+		return SPDK_SUCCESS;
+	} else {
+		return SPDK_ERR_INTERNAL;
+	}
+}
+
+spdk_err_t
+spdk_nvmf_hwqp_port_set_online(struct fc_hwqp *hwqp)
+{
+	if (hwqp && (hwqp->state != SPDK_FC_HWQP_ONLINE)) {
+		hwqp->state = SPDK_FC_HWQP_ONLINE;
+		return SPDK_SUCCESS;
+	} else {
+		return SPDK_ERR_INTERNAL;
+	}
+}
+
+spdk_err_t
+spdk_nvmf_hwqp_port_set_offline(struct fc_hwqp *hwqp)
+{
+	if (hwqp && (hwqp->state != SPDK_FC_HWQP_OFFLINE)) {
+		hwqp->state = SPDK_FC_HWQP_OFFLINE;
+		return SPDK_SUCCESS;
+	} else {
+		return SPDK_ERR_INTERNAL;
+	}
+}
+
+/* Returns true if the Nport is empty of all associations */
+bool
+spdk_nvmf_fc_nport_is_association_empty(struct spdk_nvmf_fc_nport *nport)
+{
+	if (nport && (TAILQ_EMPTY(&nport->fc_associations) || (0 == nport->assoc_count))) {
+		return true;
+	} else {
+		return false;
+	}
+}
+
+spdk_err_t
+spdk_nvmf_fc_nport_set_state(struct spdk_nvmf_fc_nport *nport, spdk_fc_object_state_t state)
+{
+	if (nport) {
+		nport->nport_state = state;
+		return SPDK_SUCCESS;
+	} else {
+		return SPDK_ERR_INTERNAL;
+	}
+}
+
+spdk_err_t
+spdk_nvmf_fc_assoc_set_state(struct spdk_nvmf_fc_association *assoc, spdk_fc_object_state_t state)
+{
+	if (assoc) {
+		assoc->assoc_state = state;
+		return SPDK_SUCCESS;
+	} else {
+		return SPDK_ERR_INTERNAL;
+	}
+}
+
+bool
+spdk_nvmf_fc_nport_add_rem_port(struct spdk_nvmf_fc_nport *nport,
+				struct spdk_nvmf_fc_rem_port_info *rport)
+{
+	if (nport && rport) {
+		TAILQ_INSERT_TAIL(&nport->rem_port_list, rport, link);
+		return SPDK_SUCCESS;
+	} else {
+		return SPDK_ERR_INTERNAL;
+	}
+}
+
+uint32_t
+spdk_nvmf_fc_get_prli_service_params(void)
+{
+	return (SPDK_NVMF_FC_DISCOVERY_SERVICE | SPDK_NVMF_FC_TARGET_FUNCTION);
+}
+
+/*** Accessor functions for the bcm-fc structures - END */
+
 
 static inline struct spdk_nvmf_fc_session *
 get_fc_session(struct spdk_nvmf_session *session)
@@ -315,6 +438,22 @@ spdk_nvmf_fc_port_list_get(uint8_t port_hdl)
 		}
 	}
 	return NULL;
+}
+
+/*
+ * Function to calculate maximum queue depth (reported in mqes)
+ */
+uint32_t
+spdk_nvmf_bcm_fc_calc_max_q_depth(uint32_t nRQ, uint32_t RQsz,
+				  uint32_t mA, uint32_t mAC,
+				  uint32_t AQsz)
+{
+	/* adjusted max. AQ's is rounded up to neareset mult. of nRQ */
+	uint32_t adj_mA = mA % nRQ == 0 ? mA : ((mA / nRQ) * nRQ) + nRQ;
+	uint32_t mAQpRQ = adj_mA / nRQ; /* maximum AQ's per RQ */
+	uint32_t mIOQ = (mAC - 1) * mA; /* maximum IOQ's */
+	return ((RQsz - (mAQpRQ * AQsz)) / ((mIOQ / nRQ) +
+					    (mIOQ % nRQ == 0 ? 0 : 1)));
 }
 
 /* Public API callbacks begin here */
@@ -433,16 +572,26 @@ spdk_nvmf_fc_request_complete(struct spdk_nvmf_request *req)
 	struct spdk_event *event = NULL;
 
 	/* Check if we need to switch to correct lcore of HWQP. */
+#ifndef NETAPP
+	/* Right now spdk_env_get_current_core returns an incorrect
+	 * value (0) when called from non-EAL threads. This results in
+	 * an issue where the WAFL threads could potentially write or
+	 * clobber the h/w queues (or some other data structures.
+	 * TODO: Uncomment the below line when we solve the
+	 * spdk_env_get_current_core issue.
+	 */
 	if (spdk_env_get_current_core() != fc_req->poller_lcore) {
+#endif
 		/* Switch to correct HWQP lcore. */
 		event = spdk_event_allocate(fc_req->poller_lcore,
 					    spdk_nvmf_fc_request_complete_process,
 					    (void *)req, NULL);
 		spdk_event_call(event);
+#ifndef NETAPP
 	} else {
 		spdk_nvmf_fc_request_complete_process(req, NULL);
 	}
-
+#endif
 	return 0;
 }
 

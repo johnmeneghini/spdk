@@ -104,7 +104,6 @@ bcm_rqpair_get_buffer_id(struct fc_hwqp *hwqp, uint16_t rqindex)
 	return hwqp->queues.rq_hdr.rq_map[rqindex];
 }
 
-
 static fc_frame_hdr_t *
 bcm_rqpair_get_frame_header(struct fc_hwqp *hwqp, uint16_t rqindex)
 {
@@ -751,6 +750,17 @@ bcm_ls_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 	}
 }
 
+/* Remove #if 0 when being called by bcm_nvmf_fc_unsol_abort() */
+#if 0
+static void
+bcm_default_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
+{
+	if (status) {
+		SPDK_ERRLOG("Generic WQE Compl(%d) error\n", status);
+	}
+}
+#endif
+
 static void
 bcm_io_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 {
@@ -1188,6 +1198,9 @@ bcm_process_cq_entry(struct fc_hwqp *hwqp, struct fc_eventq *cq)
 			bcm_notify_queue(&cq->q, FALSE, n_processed);
 			n_processed = 0;
 		}
+
+		if (hwqp->state == SPDK_FC_HWQP_OFFLINE)
+			break;
 	}
 
 	bcm_notify_queue(&cq->q, cq->auto_arm_flag, n_processed);
@@ -1235,6 +1248,9 @@ bcm_process_queues(struct fc_hwqp *hwqp)
 				n_processed = 0;
 			}
 		}
+
+		if (hwqp->state == SPDK_FC_HWQP_OFFLINE)
+			break;
 	}
 
 	bcm_notify_queue(&eq->q, eq->auto_arm_flag, n_processed);
@@ -1608,6 +1624,7 @@ bcm_nvmf_fc_issue_abort(struct fc_hwqp *hwqp, fc_xri_t *xri, bool send_abts,
 	fc_caller_ctx_t *ctx = NULL;
 	int rc = -1;
 
+	/* XXX this is a problem. We need to remove the dependency on malloc in the Abort path. XXX */
 	ctx = malloc(sizeof(fc_caller_ctx_t));
 	if (!ctx) {
 		goto done;
@@ -1633,6 +1650,71 @@ done:
 
 	return rc;
 }
+
+/* TODO: Removed #if 0 when being called - currently causes compile warning */
+#if 0
+static int
+bcm_nvmf_fc_unsol_abort(struct fc_hwqp *hwqp, uint32_t s_id, uint32_t d_id, uint16_t ox_id)
+
+{
+	uint8_t wqe[128] = { 0 }, *p_hdr;
+	int rc = -1;
+	bcm_send_frame_wqe_t *sf = (bcm_send_frame_wqe_t *)wqe;
+	fc_frame_hdr_le_t hdr;
+
+	/* Build header */
+	memset(&hdr, 0, sizeof(fc_frame_hdr_le_t));
+
+	hdr.d_id	 = s_id;
+	hdr.s_id	 = d_id;
+	hdr.r_ctl	 = NVME_FC_R_CTL_BA_ABTS;
+	hdr.cs_ctl	 = 0;
+	hdr.f_ctl	 = NVME_FC_F_CTL_END_SEQ | NVME_FC_F_CTL_SEQ_INIT;
+	hdr.type	 = NVME_FC_TYPE_BLS;
+	hdr.seq_cnt	 = 0;
+	hdr.df_ctl	 = 0;
+	hdr.rx_id	 = 0xffff;
+	hdr.ox_id	 = ox_id;
+	hdr.parameter	 = 0;
+
+	/* Assign a SEQID. */
+	hdr.seq_id	 = hwqp->send_frame_seqid;
+	hwqp->send_frame_seqid ++;
+
+	p_hdr = (uint8_t *)&hdr;
+
+	/* WQE */
+	sf->dbde = FALSE;
+
+	sf->fc_header_0_1[0] = p_hdr[0];
+	sf->fc_header_0_1[1] = p_hdr[1];
+	sf->fc_header_2_5[0] = p_hdr[2];
+	sf->fc_header_2_5[1] = p_hdr[3];
+	sf->fc_header_2_5[2] = p_hdr[4];
+	sf->fc_header_2_5[3] = p_hdr[5];
+
+	sf->frame_length = 0; /* No payload */
+	sf->xri_tag	 = hwqp->send_frame_xri;
+	sf->pu		 = 0;
+	sf->context_tag	 = 0;
+	sf->ct		 = 0;
+	sf->command	 = BCM_WQE_SEND_FRAME;
+	sf->class	 = BCM_ELS_REQUEST64_CLASS_3;
+	sf->timer	 = 3;
+	sf->sof		 = 0x2e; /* SOFI3 */
+	sf->eof		 = 0x42; /* EOFT */
+	sf->qosd	 = 0;
+	sf->lenloc	 = 1;
+	sf->xc		 = 0;
+	sf->xbl		 = 1;
+	sf->cmd_type	 = BCM_CMD_SEND_FRAME_WQE;
+	sf->cq_id	 = 0xffff;
+
+	rc = bcm_post_wqe(hwqp, (uint8_t *)sf, TRUE, bcm_default_cmpl_cb, NULL);
+
+	return rc;
+}
+#endif
 
 int
 bcm_nvmf_fc_xmt_bls_rsp(struct fc_hwqp *hwqp, uint16_t ox_id, uint16_t rx_id,

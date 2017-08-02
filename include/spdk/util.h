@@ -44,6 +44,9 @@
 extern "C" {
 #endif
 
+#include "spdk/env.h"
+#include "spdk/nvmf.h"
+
 #define spdk_min(a,b) (((a)<(b))?(a):(b))
 #define spdk_max(a,b) (((a)>(b))?(a):(b))
 
@@ -65,6 +68,22 @@ static inline uint32_t
 spdk_align32pow2(uint32_t x)
 {
 	return 1u << (1 + spdk_u32log2(x - 1));
+}
+
+/*
+ * uuid1 == uuid2 return true
+ */
+static inline bool
+spdk_nvmf_uuids_equal(struct spdk_uuid *uuid1, struct spdk_uuid *uuid2)
+{
+	uint64_t *val1 = (uint64_t *)uuid1;
+	uint64_t *val2 = (uint64_t *)uuid2;
+
+	/*
+	 * The uuid is a 16-byte array.  However it is quicker for us to
+	 * treat it as 2 uint64_t's.
+	 */
+	return ((val1[0] == val2[0]) && (val1[1] == val2[1]));
 }
 
 #ifdef __cplusplus

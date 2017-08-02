@@ -41,9 +41,10 @@
 #include <nvmf/request.h>
 #include <nvmf/session.h>
 #include <spdk/nvmf.h>
-
+#include "spdk/assert.h"
 #include "spdk/nvme_spec.h"
 #include "spdk/event.h"
+#include "spdk/error.h"
 #include "bcm_sli_fc.h"
 
 #define TRUE  1
@@ -67,6 +68,12 @@
 #define NVME_FC_R_CTL_LS_REQUEST    	0x32
 #define NVME_FC_R_CTL_LS_RESPONSE   	0x33
 
+#define NVME_FC_R_CTL_BA_ABTS		0x81
+
+#define NVME_FC_F_CTL_END_SEQ		0x080000
+#define NVME_FC_F_CTL_SEQ_INIT		0x010000
+
+#define NVME_FC_TYPE_BLS		0x0
 #define NVME_FC_TYPE_FC_EXCHANGE    	0x08
 #define NVME_FC_TYPE_NVMF_DATA	    	0x28
 
@@ -82,6 +89,17 @@
 #define NVMF_BCM_FC_TRANSPORT_NAME "bcm_nvmf_fc"
 
 /*
+ * PRLI service parameters
+ */
+enum spdk_nvmf_fc_service_parameters {
+	SPDK_NVMF_FC_FIRST_BURST_SUPPORTED                      = 0x0001,
+	SPDK_NVMF_FC_DISCOVERY_SERVICE                          = 0x0008,
+	SPDK_NVMF_FC_TARGET_FUNCTION                            = 0x0010,
+	SPDK_NVMF_FC_INITIATOR_FUNCTION                         = 0x0020,
+	SPDK_NVMF_FC_CONFIRMED_COMPLETION_SUPPORTED             = 0x0080,
+};
+
+/*
  * FC HW port states.
  */
 typedef enum spdk_fc_port_state_e {
@@ -90,6 +108,13 @@ typedef enum spdk_fc_port_state_e {
 	SPDK_FC_PORT_ONLINE = 1,
 
 } spdk_fc_port_state_t;
+
+typedef enum spdk_fc_hwqp_state_e {
+
+	SPDK_FC_HWQP_OFFLINE = 0,
+	SPDK_FC_HWQP_ONLINE = 1,
+
+} spdk_fc_hwqp_state_t;
 
 /*
  * FC NPORT status.
@@ -107,11 +132,9 @@ typedef enum spdk_fc_nport_state_e {
  */
 typedef enum spdk_fc_object_state {
 
-	SPDK_FC_OBJECT_TO_BE_CREATED = 0,
-	SPDK_FC_OBJECT_CREATED_OFFLINE = 1,
-	SPDK_FC_OBJECT_CREATED_ONLINE = 2,
-	SPDK_FC_OBJECT_TO_BE_DELETED = 2,
-
+	SPDK_FC_OBJECT_CREATED = 0,
+	SPDK_FC_OBJECT_TO_BE_DELETED = 1,
+	SPDK_FC_OBJECT_ZOMBIE = 2,      /* Partial Create or Delete  */
 } spdk_fc_object_state_t;
 
 /*
@@ -200,7 +223,7 @@ struct fc_hwqp {
 	/* num_conns and cid_cnt used by master to generate (unique) connection IDs */
 	uint32_t num_conns;
 	uint16_t cid_cnt;
-	bool state;  /* Poller state SPDK_FC_PORT_OFFLINE, SPDK_FC_PORT_ONLINE */
+	spdk_fc_hwqp_state_t state;  /* Poller state SPDK_FC_HWQP_OFFLINE, SPDK_FC_HWQP_ONLINE  */
 
 	/* Internal */
 	struct spdk_mempool *fc_request_pool;
@@ -209,9 +232,9 @@ struct fc_hwqp {
 	TAILQ_HEAD(, fc_xri_s) pending_xri_list;
 
 	struct nvmf_fc_errors counters;
-
+	uint32_t send_frame_xri;
+	uint8_t send_frame_seqid;
 };
-
 
 /*
  * FC HW port.
@@ -251,12 +274,11 @@ struct spdk_nvmf_fc_rem_port_info {
  */
 struct spdk_nvmf_fc_nport {
 
-	uint32_t nport_hdl;
-	spdk_uuid_t nport_uuid; /* UUID for the nport */
+	uint16_t nport_hdl;
 	uint8_t port_hdl;
-	spdk_uuid_t container_uuid; /* Container systems UUID */
 	uint32_t d_id;
 	bool nport_status;
+	spdk_fc_object_state_t nport_state;
 	struct spdk_fc_wwn fc_nodename;
 	struct spdk_fc_wwn fc_portname;
 
@@ -459,6 +481,7 @@ struct spdk_nvmf_fc_association {
 	struct spdk_nvmf_fc_nport *tgtport;
 	struct spdk_nvmf_subsystem *subsystem;
 	struct spdk_nvmf_fc_session *fc_session;
+	spdk_fc_object_state_t assoc_state;
 
 	char host_id[SPDK_NVMF_FC_HOST_ID_LEN];
 	char host_nqn[SPDK_NVMF_FC_NQN_MAX_LEN];
@@ -468,6 +491,7 @@ struct spdk_nvmf_fc_association {
 	TAILQ_HEAD(fc_conns, spdk_nvmf_fc_conn) fc_conns;
 
 	TAILQ_ENTRY(spdk_nvmf_fc_association) link;
+	void *ls_del_op_ctx;
 };
 
 
@@ -525,7 +549,12 @@ typedef struct __attribute__((__packed__)) nvmf_fc_rq_buf_nvme_cmd {
 					   + (sizeof(struct bcm_sge) * (BCM_MAX_IOVECS + 2)))];
 } nvmf_fc_rq_buf_nvme_cmd_t;
 
-//SPDK_STATIC_ASSERT(sizeof(nvmf_fc_rq_buf_nvme_cmd_t) > BCM_RQ_BUFFER_SIZE, "RQ Buffer overflow");
+SPDK_STATIC_ASSERT((sizeof(struct nvme_cmnd_iu)
+		    + sizeof(struct nvme_xfer_rdy_iu)
+		    + sizeof(struct spdk_nvmf_fc_request *)
+		    + (sizeof(struct bcm_sge) * (BCM_MAX_IOVECS + 2))) <  BCM_RQ_BUFFER_SIZE, "RQ Buffer overflow");
+
+SPDK_STATIC_ASSERT(sizeof(nvmf_fc_rq_buf_nvme_cmd_t) == BCM_RQ_BUFFER_SIZE, "RQ Buffer overflow");
 
 /* RQ Buffer LS Overlay Structure */
 typedef struct __attribute__((__packed__)) nvmf_fc_rq_buf_ls_request {
@@ -536,7 +565,10 @@ typedef struct __attribute__((__packed__)) nvmf_fc_rq_buf_ls_request {
 					   BCM_MAX_RESP_BUFFER_SIZE + BCM_MAX_LS_REQ_CMD_SIZE)];
 } nvmf_fc_rq_buf_ls_request_t;
 
-//SPDK_STATIC_ASSERT(sizeof(nvmf_fc_rq_buf_ls_request_t) > BCM_RQ_BUFFER_SIZE, "RQ Buffer overflow");
+
+SPDK_STATIC_ASSERT(((sizeof(struct nvmf_fc_ls_rqst) + BCM_MAX_RESP_BUFFER_SIZE +
+		     BCM_MAX_LS_REQ_CMD_SIZE)) < BCM_RQ_BUFFER_SIZE, "RQ Buffer overflow");
+SPDK_STATIC_ASSERT(sizeof(nvmf_fc_rq_buf_ls_request_t) == BCM_RQ_BUFFER_SIZE, "RQ Buffer overflow");
 
 /* external LS handling functions */
 void spdk_nvmf_fc_ls_init(void);
@@ -555,7 +587,7 @@ void spdk_nvmf_fc_port_list_add(struct spdk_nvmf_fc_port *fc_port);
 /* Return a fc port with a matching handle from the global list. */
 
 /*  Return a fc nport with a matching handle. */
-struct spdk_nvmf_fc_nport *spdk_nvmf_fc_nport_get(uint8_t port_hdl, uint32_t nport_hdl);
+struct spdk_nvmf_fc_nport *spdk_nvmf_fc_nport_get(uint8_t port_hdl, uint16_t nport_hdl);
 
 /*  Return a fc port with a matching handle. */
 struct spdk_nvmf_fc_port *spdk_nvmf_fc_port_list_get(uint8_t port_hdl);
@@ -573,5 +605,37 @@ void spdk_nvmf_fc_subsys_disconnect_cb(void *cb_ctx, struct spdk_nvmf_conn *conn
 
 fc_xri_t *spdk_nvmf_fc_get_xri(struct fc_hwqp *hwqp);
 int spdk_nvmf_fc_put_xri(struct fc_hwqp *hwqp, fc_xri_t *xri);
+
+spdk_err_t spdk_nvmf_fc_port_set_online(struct spdk_nvmf_fc_port *fc_port);
+
+spdk_err_t spdk_nvmf_fc_port_set_offline(struct spdk_nvmf_fc_port *fc_port);
+
+spdk_err_t spdk_nvmf_fc_port_add_nport(struct spdk_nvmf_fc_port *fc_port,
+				       struct spdk_nvmf_fc_nport *nport);
+
+spdk_err_t spdk_nvmf_fc_port_remove_nport(struct spdk_nvmf_fc_port *fc_port,
+		struct spdk_nvmf_fc_nport *nport);
+
+spdk_err_t spdk_nvmf_hwqp_port_set_online(struct fc_hwqp *hwqp);
+
+spdk_err_t spdk_nvmf_hwqp_port_set_offline(struct fc_hwqp *hwqp);
+
+/* Returns true if the Nport is empty of all associations */
+bool spdk_nvmf_fc_nport_is_association_empty(struct spdk_nvmf_fc_nport *nport);
+
+spdk_err_t spdk_nvmf_fc_nport_set_state(struct spdk_nvmf_fc_nport *nport,
+					spdk_fc_object_state_t state);
+
+spdk_err_t spdk_nvmf_fc_assoc_set_state(struct spdk_nvmf_fc_association *assoc,
+					spdk_fc_object_state_t state);
+
+bool spdk_nvmf_fc_nport_add_rem_port(struct spdk_nvmf_fc_nport *nport,
+				     struct spdk_nvmf_fc_rem_port_info *rem_port);
+
+uint32_t spdk_nvmf_fc_get_prli_service_params(void);
+
+uint32_t spdk_nvmf_bcm_fc_calc_max_q_depth(uint32_t nRQ, uint32_t RQsz,
+		uint32_t mA, uint32_t mAC,
+		uint32_t AQsz);
 
 #endif

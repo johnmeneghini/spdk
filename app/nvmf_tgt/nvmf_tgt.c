@@ -39,8 +39,6 @@
 #include "spdk/event.h"
 #include "spdk/log.h"
 #include "spdk/nvme.h"
-//#include <nvmf/bcm_fc.h>
-//#include "../../lib/nvmf/nvmf_fc/bcm_fc.h"
 
 extern void spdk_nvmf_fc_subsys_connect_cb(void *cb_ctx, struct spdk_nvmf_request *req);
 extern void spdk_nvmf_fc_subsys_disconnect_cb(void *cb_ctx, struct spdk_nvmf_conn *conn);
