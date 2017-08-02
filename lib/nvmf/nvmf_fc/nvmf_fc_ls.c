@@ -1226,11 +1226,6 @@ nvmf_fc_ls_disconnect(struct spdk_nvmf_fc_nport *tgtport,
 void
 spdk_nvmf_fc_ls_init(void)
 {
-#ifdef DEBUG_FC_LS_TRACE
-	extern struct spdk_trace_flag SPDK_TRACE_FC_LS_PROCESSING;
-	SPDK_TRACE_FC_LS_PROCESSING.enabled = true;
-#endif
-
 	g_max_conns_per_assoc = g_nvmf_tgt.max_queues_per_session;
 
 	SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING,
@@ -1364,4 +1359,4 @@ void spdk_nvmf_fc_subsys_disconnect_cb(void *cb_ctx,
 	spdk_nvmf_session_disconnect(conn);
 }
 
-SPDK_LOG_REGISTER_TRACE_FLAG("fc_ls", SPDK_TRACE_FC_LS_PROCESSING)
+SPDK_LOG_REGISTER_TRACE_FLAG("nvmf_fc_ls", SPDK_TRACE_FC_LS_PROCESSING)

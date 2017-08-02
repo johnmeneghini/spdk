@@ -245,6 +245,8 @@ struct nvmf_fc_ls_rjt {
 
 int bcm_nvmf_fc_xmt_ls_rsp(struct spdk_nvmf_fc_nport *tgtport,
 			   struct nvmf_fc_ls_rqst *ls_rqst);
+int bcm_nvmf_fc_issue_abort(struct fc_hwqp *hwqp, fc_xri_t *xri, bool send_abts,
+			    bcm_fc_caller_cb cb, void *cb_args);
 
 static uint32_t g_test_run_type = 0;
 #define TEST_RUN_TYPE_CREATE_ASSOC   1
@@ -724,6 +726,13 @@ bcm_nvmf_fc_xmt_ls_rsp(struct spdk_nvmf_fc_nport *tgtport,
 
 	return g_last_rslt;
 }
+
+int bcm_nvmf_fc_issue_abort(struct fc_hwqp *hwqp, fc_xri_t *xri, bool send_abts,
+			    bcm_fc_caller_cb cb, void *cb_args)
+{
+	return 0;
+}
+
 
 int main(int argc, char **argv)
 {

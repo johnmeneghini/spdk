@@ -44,6 +44,7 @@
 
 struct spdk_nvmf_tgt {
 	uint16_t				max_associations;
+	uint16_t				max_aq_depth;
 	uint16_t				max_queue_depth;
 	uint16_t				max_queues_per_session;
 	uint32_t				in_capsule_data_size;

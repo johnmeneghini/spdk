@@ -54,13 +54,12 @@
 
 #include "bcm_fc.h"
 
-#ifdef DEBUG
-#define DEBUG_BCM_FC_NVME 1
-#endif
-
 /* externs */
 extern int bcm_nvmf_fc_handle_rsp(struct spdk_nvmf_request *req);
 extern int bcm_nvmf_fc_send_data(struct spdk_nvmf_fc_request *fc_req);
+extern void bcm_nvmf_fc_free_req(struct spdk_nvmf_fc_request *fc_req, bool free_xri);
+extern int bcm_nvmf_fc_xmt_bls_rsp(struct fc_hwqp *hwqp, uint16_t ox_id, uint16_t rx_id,
+				   uint16_t rpi, bool rjt, uint8_t rjt_exp, bcm_fc_caller_cb cb, void *cb_args);
 
 /* locals */
 static void bcm_fc_queue_poller(void *arg);
@@ -92,10 +91,6 @@ static TAILQ_HEAD(, spdk_nvmf_fc_conn)g_pending_conns = TAILQ_HEAD_INITIALIZER(g
 void
 spdk_nvmf_fc_init_poller(struct spdk_nvmf_fc_port *fc_port, struct fc_hwqp *hwqp)
 {
-#ifdef DEBUG_BCM_FC_NVME
-	extern struct spdk_trace_flag SPDK_TRACE_BCM_FC_NVME;
-	SPDK_TRACE_BCM_FC_NVME.enabled = true;
-#endif
 	hwqp->fc_port = fc_port;
 	hwqp->queues.eq.q.posted_limit = 64;
 	hwqp->queues.cq_wq.q.posted_limit = 64;
@@ -156,6 +151,91 @@ spdk_nvmf_fc_delete_poller(struct fc_hwqp *hwqp)
 {
 	spdk_poller_unregister(&hwqp->poller, NULL);
 }
+
+static void
+spdk_nvmf_fc_abts_handled_cb(void *cb_data, nvmf_fc_poller_api_ret_t ret)
+{
+	fc_abts_ctx_t *ctx = cb_data;
+
+	if (ret != NVMF_FC_POLLER_API_OXID_NOT_FOUND) {
+		ctx->handled = TRUE;
+	}
+
+	ctx->hwqps_responded ++;
+
+	if (ctx->hwqps_responded < NVMF_FC_MAX_IO_QUEUES) {
+		return; /* Wait for all pollers to complete. */
+	}
+
+	if (!ctx->handled) {
+		/* Send Reject */
+		bcm_nvmf_fc_xmt_bls_rsp(&ctx->nport->fc_port->ls_queue,
+					ctx->oxid, ctx->rxid, ctx->rpi, TRUE,
+					BCM_BLS_REJECT_EXP_INVALID_OXID, NULL, NULL);
+	} else {
+		/* Send Accept */
+		bcm_nvmf_fc_xmt_bls_rsp(&ctx->nport->fc_port->ls_queue,
+					ctx->oxid, ctx->rxid, ctx->rpi, FALSE,
+					0, NULL, NULL);
+	}
+
+	spdk_free(ctx->free_args);
+	spdk_free(ctx);
+}
+
+void
+spdk_nvmf_fc_handle_abts_frame(struct spdk_nvmf_fc_nport *nport, uint16_t rpi,
+			       uint16_t oxid, uint16_t rxid)
+{
+	fc_abts_ctx_t *ctx = NULL;
+	struct nvmf_fc_poller_api_abts_recvd_args *args = NULL, *poller_arg;
+
+	args = spdk_calloc(NVMF_FC_MAX_IO_QUEUES,
+			   sizeof(struct nvmf_fc_poller_api_abts_recvd_args));
+	if (!args) {
+		goto bls_rej;
+	}
+
+	ctx = spdk_calloc(1, sizeof(fc_abts_ctx_t));
+	if (!ctx) {
+		goto bls_rej;
+	}
+	ctx->rpi  = rpi;
+	ctx->oxid = oxid;
+	ctx->rxid = rxid;
+	ctx->nport = nport;
+	ctx->free_args = args;
+
+	/* Post ABTS to all HWQPs */
+	for (int i = 0; i < NVMF_FC_MAX_IO_QUEUES; i ++) {
+		poller_arg = args + i;
+		poller_arg->hwqp = &nport->fc_port->io_queues[i];
+		poller_arg->cb_info.cb_func = spdk_nvmf_fc_abts_handled_cb;
+		poller_arg->cb_info.cb_data = ctx;
+		poller_arg->ctx = ctx;
+
+		nvmf_fc_poller_api(poller_arg->hwqp->lcore_id,
+				   NVMF_FC_POLLER_API_ABTS_RECEIVED,
+				   poller_arg);
+	}
+
+	return;
+bls_rej:
+	if (ctx) {
+		spdk_free(ctx);
+	}
+
+	if (args) {
+		spdk_free(args);
+	}
+
+	/* Send Reject */
+	bcm_nvmf_fc_xmt_bls_rsp(&nport->fc_port->ls_queue, oxid, rxid, rpi,
+				TRUE, BCM_BLS_REJECT_EXP_NOINFO, NULL, NULL);
+	return;
+}
+
+
 
 /*
  * Helper function to return an XRI back. If XRI is not
@@ -314,13 +394,14 @@ static void
 spdk_nvmf_fc_request_complete_process(void *arg1, void *arg2)
 {
 	struct spdk_nvmf_request *req = (struct spdk_nvmf_request *)arg1;
+	struct spdk_nvmf_fc_request *fc_req = get_fc_req(req);
 	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
-	int rc;
+	int rc = 0;
 
-	if (rsp->status.sc == SPDK_NVME_SC_SUCCESS &&
-	    req->xfer == SPDK_NVME_DATA_CONTROLLER_TO_HOST) { // Read
-		struct spdk_nvmf_fc_request *fc_req = get_fc_req(req);
-
+	if (fc_req->is_aborted) {
+		bcm_nvmf_fc_free_req(fc_req, !fc_req->xri_activated);
+	} else if (rsp->status.sc == SPDK_NVME_SC_SUCCESS &&
+		   req->xfer == SPDK_NVME_DATA_CONTROLLER_TO_HOST) {
 		rc = bcm_nvmf_fc_send_data(fc_req);
 	} else {
 		rc = bcm_nvmf_fc_handle_rsp(req);
@@ -387,3 +468,6 @@ const struct spdk_nvmf_transport spdk_nvmf_transport_bcm_fc = {
 	.conn_is_idle = spdk_nvmf_fc_conn_is_idle,
 
 };
+
+
+SPDK_LOG_REGISTER_TRACE_FLAG("bcm_nvmf_fc", SPDK_TRACE_BCM_FC_NVME)

@@ -49,10 +49,10 @@
 #include "spdk_internal/log.h"
 
 #include "bcm_fc.h"
+#include "bcm_sli_fc.h"
 
-#ifdef DEBUG
-#define DEBUG_FC_POLLER_API_TRACE 1
-#endif
+extern int bcm_nvmf_fc_issue_abort(struct fc_hwqp *hwqp, fc_xri_t *xri, bool send_abts,
+				   bcm_fc_caller_cb cb, void *cb_args);
 
 static void
 nvmf_fc_poller_api_cb_event(void *arg1, void *arg2)
@@ -62,9 +62,8 @@ nvmf_fc_poller_api_cb_event(void *arg1, void *arg2)
 		struct nvmf_poller_api_cb_info *cb_info =
 			(struct nvmf_poller_api_cb_info *) arg1;
 
-		/* arg2 is the poller api return code */
-		cb_info->cb_func(cb_info->cb_data,
-				 *(nvmf_fc_poller_api_ret_t *)arg2);
+		cb_info->cb_func(cb_info->cb_data, cb_info->ret);
+		spdk_free(arg2);
 	}
 }
 
@@ -77,10 +76,12 @@ nvmf_fc_poller_api_perform_cb(struct nvmf_poller_api_cb_info *cb_info,
 	if (cb_info->cb_func) {
 		struct spdk_event *event = NULL;
 
+		cb_info->ret = ret;
+
 		/* callback to master thread */
 		event = spdk_event_allocate(spdk_env_get_master_lcore(),
 					    nvmf_fc_poller_api_cb_event,
-					    (void *) cb_info, (void *) &ret);
+					    (void *) cb_info, NULL);
 
 		SPDK_TRACELOG(SPDK_TRACE_POLLER_API, "nvmf_fc_poller_api_perform_cb");
 
@@ -161,6 +162,24 @@ nvmf_fc_poller_api_del_connection(void *arg1, void *arg2)
 		}
 	}
 	if (bfound) {
+		struct spdk_nvmf_fc_request *fc_req = NULL;
+		struct fc_hwqp *hwqp = conn_args->hwqp;
+
+		TAILQ_FOREACH(fc_req, &hwqp->in_use_reqs, link) {
+			if (fc_req->fc_conn->conn_id == fc_conn->conn_id) {
+				if (fc_req->is_aborted) {
+					continue;
+				}
+
+				fc_req->is_aborted = TRUE;
+				if (!fc_req->xri_activated) {
+					continue;
+				}
+
+				bcm_nvmf_fc_issue_abort(hwqp, fc_req->xri, TRUE,
+							NULL, NULL);
+			}
+		}
 		TAILQ_REMOVE(&conn_args->hwqp->connection_list,	fc_conn, link);
 	} else {
 		ret = NVMF_FC_POLLER_API_NO_CONN_ID;
@@ -170,14 +189,58 @@ nvmf_fc_poller_api_del_connection(void *arg1, void *arg2)
 	nvmf_fc_poller_api_perform_cb(&conn_args->cb_info, ret);
 }
 
+static void
+nvmf_fc_poller_abts_done(void *hwqp, int32_t status, void *cb_args)
+{
+	nvmf_fc_poller_api_ret_t ret = NVMF_FC_POLLER_API_SUCCESS;
+	struct nvmf_fc_poller_api_abts_recvd_args *args = cb_args;
+
+	if (status) {
+		ret = NVMF_FC_POLLER_API_ERROR;
+	}
+
+	nvmf_fc_poller_api_perform_cb(&args->cb_info, ret);
+}
+
+static void
+nvmf_fc_poller_api_abts_received(void *arg1, void *arg2)
+{
+	int rc;
+	nvmf_fc_poller_api_ret_t ret = NVMF_FC_POLLER_API_OXID_NOT_FOUND;
+	struct nvmf_fc_poller_api_abts_recvd_args *args = arg1;
+	struct spdk_nvmf_fc_request *fc_req = NULL;
+	struct fc_hwqp *hwqp = args->hwqp;
+
+	TAILQ_FOREACH(fc_req, &hwqp->in_use_reqs, link) {
+		if ((fc_req->rpi == args->ctx->rpi) &&
+		    (fc_req->oxid == args->ctx->oxid)) {
+
+			if (!fc_req->xri_activated) {
+				fc_req->is_aborted = TRUE;
+				ret = NVMF_FC_POLLER_API_SUCCESS;
+				break;
+			}
+
+			rc = bcm_nvmf_fc_issue_abort(hwqp, fc_req->xri, FALSE,
+						     nvmf_fc_poller_abts_done, args);
+			if (!rc) {
+				fc_req->is_aborted = TRUE;
+				return;
+			}
+
+			/* Convert to API Error. */
+			ret = NVMF_FC_POLLER_API_ERROR;
+			break;
+		}
+	}
+
+	nvmf_fc_poller_api_perform_cb(&args->cb_info, ret);
+}
+
 nvmf_fc_poller_api_ret_t
 nvmf_fc_poller_api(uint32_t lcore, nvmf_fc_poller_api_t api, void *api_args)
 {
 	struct spdk_event *event = NULL;
-#ifdef DEBUG_FC_POLLER_API_TRACE
-	extern struct spdk_trace_flag SPDK_TRACE_POLLER_API;
-	SPDK_TRACE_POLLER_API.enabled = true;
-#endif
 
 	switch (api) {
 	case NVMF_FC_POLLER_API_ADD_CONNECTION:
@@ -201,6 +264,10 @@ nvmf_fc_poller_api(uint32_t lcore, nvmf_fc_poller_api_t api, void *api_args)
 					    api_args, NULL);
 		break;
 	case NVMF_FC_POLLER_API_ABTS_RECEIVED:
+		event = spdk_event_allocate(lcore,
+					    nvmf_fc_poller_api_abts_received,
+					    api_args, NULL);
+		break;
 	case NVMF_FC_POLLER_API_ADAPTER_EVENT:
 	case NVMF_FC_POLLER_API_AEN:
 		break;
@@ -220,4 +287,4 @@ nvmf_fc_poller_api(uint32_t lcore, nvmf_fc_poller_api_t api, void *api_args)
 	return NVMF_FC_POLLER_API_ERROR;
 }
 
-SPDK_LOG_REGISTER_TRACE_FLAG("fc_poller_api", SPDK_TRACE_POLLER_API)
+SPDK_LOG_REGISTER_TRACE_FLAG("nmvf_fc_poller_api", SPDK_TRACE_POLLER_API)

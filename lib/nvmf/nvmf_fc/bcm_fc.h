@@ -177,6 +177,15 @@ struct nvmf_fc_errors {
 };
 
 /*
+ * Structure for maintaining the XRI's
+ */
+typedef struct fc_xri_s {
+	uint32_t xri;   /* The actual xri value */
+	/* Internal */
+	TAILQ_ENTRY(fc_xri_s) link;
+} fc_xri_t;
+
+/*
  *  HWQP poller structure passed from Master thread
  */
 struct fc_hwqp {
@@ -192,19 +201,17 @@ struct fc_hwqp {
 	uint32_t num_conns;
 	uint16_t cid_cnt;
 	bool state;  /* Poller state SPDK_FC_PORT_OFFLINE, SPDK_FC_PORT_ONLINE */
+
 	/* Internal */
 	struct spdk_mempool *fc_request_pool;
+	TAILQ_HEAD(, spdk_nvmf_fc_request) in_use_reqs;
+
+	TAILQ_HEAD(, fc_xri_s) pending_xri_list;
 
 	struct nvmf_fc_errors counters;
 
 };
 
-/*
- * Structure for maintaining the XRI's
- */
-typedef struct fc_xri_s {
-	uint32_t xri;   /* The actual xri value */
-} fc_xri_t;
 
 /*
  * FC HW port.
@@ -298,9 +305,12 @@ struct spdk_nvmf_fc_request {
 	uint16_t rpi;
 	struct spdk_nvmf_fc_conn *fc_conn;
 	struct fc_hwqp *hwqp;
+	bool xri_activated;
 	bool rsp_sent;
 	uint32_t transfered_len;
+	bool is_aborted;
 	TAILQ_ENTRY(spdk_nvmf_fc_request) link;
+	TAILQ_ENTRY(spdk_nvmf_fc_request) pending_link;
 };
 
 struct spdk_nvmf_fc_session {
@@ -379,6 +389,7 @@ typedef enum {
 	NVMF_FC_POLLER_API_INVALID_ARG,
 	NVMF_FC_POLLER_API_NO_CONN_ID,
 	NVMF_FC_POLLER_API_DUP_CONN_ID,
+	NVMF_FC_POLLER_API_OXID_NOT_FOUND,
 } nvmf_fc_poller_api_ret_t;
 
 /* Poller API definitions */
@@ -399,6 +410,7 @@ typedef void (*nvmf_fc_poller_api_cb)(void *cb_data,
 struct nvmf_poller_api_cb_info {
 	nvmf_fc_poller_api_cb cb_func;
 	void *cb_data;
+	nvmf_fc_poller_api_ret_t ret;
 };
 
 struct nvmf_fc_poller_api_add_connection_args {
@@ -419,6 +431,12 @@ struct nvmf_fc_poller_api_quiesce_queue_args {
 };
 
 struct nvmf_fc_poller_api_activate_queue_args {
+	struct fc_hwqp *hwqp;
+	struct nvmf_poller_api_cb_info cb_info;
+};
+
+struct nvmf_fc_poller_api_abts_recvd_args {
+	fc_abts_ctx_t *ctx;
 	struct fc_hwqp *hwqp;
 	struct nvmf_poller_api_cb_info cb_info;
 };
@@ -546,6 +564,8 @@ struct spdk_nvmf_fc_port *spdk_nvmf_fc_port_list_get(uint8_t port_hdl);
 void spdk_nvmf_fc_init_poller(struct spdk_nvmf_fc_port *fc_port, struct fc_hwqp *hwqp);
 void spdk_nvmf_fc_add_poller(struct fc_hwqp *hwqp);
 void spdk_nvmf_fc_delete_poller(struct fc_hwqp *hwqp);
+void spdk_nvmf_fc_handle_abts_frame(struct spdk_nvmf_fc_nport *nport, uint16_t rpi,
+				    uint16_t oxid, uint16_t rxid);
 
 /* Function protos for connect & disconnect callbacks from subsystem */
 void spdk_nvmf_fc_subsys_connect_cb(void *cb_ctx, struct spdk_nvmf_request *req);

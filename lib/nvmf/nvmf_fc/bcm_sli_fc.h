@@ -239,6 +239,13 @@
 #define BCM_SGE_TYPE_DATA		0x00
 #define BCM_SGE_TYPE_SKIP		0x0c
 
+#define BCM_ABORT_CRITERIA_XRI_TAG      0x01
+
+/* BLS RJT Error codes */
+#define BCM_BLS_REJECT_CODE_UNABLE_TO_PERFORM	0x09
+#define BCM_BLS_REJECT_EXP_NOINFO		0x00
+#define BCM_BLS_REJECT_EXP_INVALID_OXID		0x03
+
 /* FC CQE Types */
 typedef enum {
 	BCM_FC_QENTRY_ASYNC,
@@ -325,7 +332,7 @@ typedef struct bcm_buffer_desc {
 /* Common queue definition structure */
 typedef struct bcm_sli_queue {
 	/* general queue housekeeping fields */
-	uint32_t  head, tail, used;
+	uint16_t  head, tail, used;
 	uint32_t  posted_limit;    /* number of CQE/EQE to process before ringing doorbell */
 	uint32_t  processed_limit; /* number of CQE/EQE to process in a shot */
 	uint16_t  type;            /* bcm_fc_queue_type_e queue type */
@@ -344,11 +351,42 @@ typedef struct fc_eventq {
 	bool auto_arm_flag;     /* set by poller thread only */
 } fc_eventq_t;
 
-/* WQ structure */
+/* ABTS hadling context */
+typedef struct fc_abts_ctx {
+	bool handled;
+	uint16_t hwqps_responded;
+	uint16_t rpi;
+	uint16_t oxid;
+	uint16_t rxid;
+	struct spdk_nvmf_fc_nport *nport;
+	void *free_args;
+} fc_abts_ctx_t;
+
+/* Caller context */
+typedef void (*bcm_fc_caller_cb)(void *hwqp, int32_t status, void *args);
+
+typedef struct fc_caller_ctx {
+	void *ctx;
+	bcm_fc_caller_cb cb;
+	void *cb_args;
+} fc_caller_ctx_t;
+
+/* WQ related */
+typedef void (*bcm_fc_wqe_cb)(void *hwqp, uint8_t *cqe, int32_t status, void *args);
+
+typedef struct fc_wqe_ctx {
+	bcm_fc_wqe_cb cb;
+	void *cb_args;
+} fc_wqe_ctx_t;
+
+#define MAX_WQ_ENTRIES 4096
 typedef struct fc_wrkq {
 	bcm_sli_queue_t q;
 	uint32_t num_buffers;
 	bcm_buffer_desc_t *buffer;  /* BDE buffer descriptor array */
+
+	/* internal */
+	fc_wqe_ctx_t ctx_map[MAX_WQ_ENTRIES];
 } fc_wrkq_t;
 
 #define MAX_RQ_ENTRIES 4096
@@ -926,5 +964,144 @@ typedef struct bcm_xmit_sequence64_wqe_s {
 	uint32_t        rsvd15;
 	uint32_t	rsvd16[16];
 } bcm_xmit_sequence64_wqe_t;
+
+typedef struct bcm_generic_wqe_s {
+	uint32_t	rsvd[6];
+	uint32_t        xri_tag: 16,
+			context_tag: 16;
+	uint32_t	rsvd1;
+	uint32_t	abort_tag;
+	uint32_t        request_tag: 16,
+			: 16;
+	uint32_t        ebde_cnt: 4,
+			: 3,
+			len_loc: 2,
+			qosd: 1,
+			: 1,
+			xbl: 1,
+			hlm: 1,
+			iod: 1,
+			dbde: 1,
+			wqes: 1,
+			pri: 3,
+			pv: 1,
+			eat: 1,
+			xc: 1,
+			sr: 1,
+			ccpe: 1,
+			ccp: 8;
+	uint32_t        cmd_type: 4,
+			: 3,
+			wqec: 1,
+			: 8,
+			cq_id: 16;
+	uint32_t	rsvd2[20];
+} bcm_generic_wqe_t;
+
+
+typedef struct bcm_abort_wqe_s {
+	uint32_t	rsvd0;
+	uint32_t	rsvd1;
+	uint32_t	ext_t_tag;
+	uint32_t	ia: 1,
+			ir: 1,
+			: 6,
+			criteria: 8,
+			: 16;
+	uint32_t	ext_t_mask;
+	uint32_t	t_mask;
+	uint32_t	xri_tag: 16,
+			context_tag: 16;
+	uint32_t	: 2,
+			ct: 2,
+			: 4,
+			command: 8,
+			class: 3,
+				: 1,
+				  pu: 2,
+				  : 2,
+				    timer: 8;
+	uint32_t	t_tag;
+	uint32_t	request_tag: 16,
+			: 16;
+	uint32_t	ebde_cnt: 4,
+			: 3,
+			len_loc: 2,
+			qosd: 1,
+			: 1,
+			xbl: 1,
+			: 1,
+			iod: 1,
+			dbde: 1,
+			wqes: 1,
+			pri: 3,
+			pv: 1,
+			eat: 1,
+			xc: 1,
+			: 1,
+			ccpe: 1,
+			ccp: 8;
+	uint32_t	cmd_type: 4,
+			: 3,
+			wqec: 1,
+			: 8,
+			cq_id: 16;
+} bcm_abort_wqe_t;
+
+typedef struct bcm_xmit_bls_rsp_wqe_s {
+	uint32_t	payload_word0;
+	uint32_t	rx_id: 16,
+			ox_id: 16;
+	uint32_t	high_seq_cnt: 16,
+			low_seq_cnt: 16;
+	uint32_t	rsvd3;
+	uint32_t	local_n_port_id: 24,
+			: 8;
+	uint32_t	remote_id: 24,
+			: 6,
+			ar: 1,
+			xo: 1;
+	uint32_t	xri_tag: 16,
+			context_tag: 16;
+	uint32_t	: 2,
+			ct: 2,
+			: 4,
+			command: 8,
+			class: 3,
+				: 1,
+				  pu: 2,
+				  : 2,
+				    timer: 8;
+	uint32_t	abort_tag;
+	uint32_t	request_tag: 16,
+			: 16;
+	uint32_t	ebde_cnt: 4,
+			: 3,
+			len_loc: 2,
+			qosd: 1,
+			: 1,
+			xbl: 1,
+			hlm: 1,
+			iod: 1,
+			dbde: 1,
+			wqes: 1,
+			pri: 3,
+			pv: 1,
+			eat: 1,
+			xc: 1,
+			: 1,
+			ccpe: 1,
+			ccp: 8;
+	uint32_t	cmd_type: 4,
+			: 3,
+			wqec: 1,
+			: 8,
+			cq_id: 16;
+	uint32_t	temporary_rpi: 16,
+			: 16;
+	uint32_t	rsvd13;
+	uint32_t	rsvd14;
+	uint32_t	rsvd15;
+} bcm_xmit_bls_rsp_wqe_t;
 
 #endif
