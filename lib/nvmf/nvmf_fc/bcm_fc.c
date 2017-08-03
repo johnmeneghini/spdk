@@ -337,6 +337,20 @@ spdk_nvmf_fc_fini(void)
 	return 0;
 }
 
+static int
+spdk_nvmf_fc_listen_addr_add(struct spdk_nvmf_listen_addr *listen_addr)
+{
+	/* do nothing - FC doens't have listener addrress */
+	return 0;
+}
+
+static int
+spdk_nvmf_fc_listen_addr_remove(struct spdk_nvmf_listen_addr *listen_addr)
+{
+	/* do nothing - FC doens't have listener addrress */
+	return 0;
+}
+
 static void
 spdk_nvmf_fc_discover(struct spdk_nvmf_listen_addr *listen_addr,
 		      struct spdk_nvmf_discovery_log_page_entry *entry)
@@ -438,6 +452,13 @@ spdk_nvmf_fc_close_conn(struct spdk_nvmf_conn *conn)
 	/* do nothing - handled in LS processor */
 }
 
+static int
+spdk_nvmf_fc_conn_poll(struct spdk_nvmf_conn *conn)
+{
+	/* do nothing - handled by HWQP pollers */
+	return 0;
+}
+
 static bool
 spdk_nvmf_fc_conn_is_idle(struct spdk_nvmf_conn *conn)
 {
@@ -455,8 +476,8 @@ const struct spdk_nvmf_transport spdk_nvmf_transport_bcm_fc = {
 	.transport_init = spdk_nvmf_fc_init,
 	.transport_fini = spdk_nvmf_fc_fini,
 	.acceptor_poll = NULL,
-	.listen_addr_add = NULL,
-	.listen_addr_remove = NULL,
+	.listen_addr_add = spdk_nvmf_fc_listen_addr_add,
+	.listen_addr_remove = spdk_nvmf_fc_listen_addr_remove,
 	.listen_addr_discover = spdk_nvmf_fc_discover,
 	.session_init = spdk_nvmf_fc_session_init,
 	.session_fini = spdk_nvmf_fc_session_fini,
@@ -464,9 +485,8 @@ const struct spdk_nvmf_transport spdk_nvmf_transport_bcm_fc = {
 	.session_remove_conn = spdk_nvmf_fc_session_remove_conn,
 	.req_complete = spdk_nvmf_fc_request_complete,
 	.conn_fini = spdk_nvmf_fc_close_conn,
-	.conn_poll = NULL,
+	.conn_poll = spdk_nvmf_fc_conn_poll,
 	.conn_is_idle = spdk_nvmf_fc_conn_is_idle,
-
 };
 
 
