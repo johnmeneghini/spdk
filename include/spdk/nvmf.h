@@ -44,10 +44,12 @@
 #include "spdk/nvmf_spec.h"
 #include "spdk/queue.h"
 
+#define SPDK_UUID_LEN 16
 #define MAX_VIRTUAL_NAMESPACE 16
 #define MAX_SN_LEN 20
 
-int spdk_nvmf_tgt_init(uint16_t max_queue_depth, uint16_t max_conn_per_sess,
+int spdk_nvmf_tgt_init(uint16_t max_associations, uint16_t max_aq_depth,
+		       uint16_t max_queue_depth, uint16_t max_conn_per_sess,
 		       uint32_t in_capsule_data_size, uint32_t max_io_size);
 
 int spdk_nvmf_tgt_fini(void);
@@ -72,6 +74,10 @@ enum spdk_nvmf_subsystem_mode {
 	NVMF_SUBSYSTEM_MODE_VIRTUAL	= 1,
 };
 
+typedef struct spdk_uuid {
+	uint8_t bytes[SPDK_UUID_LEN];
+} spdk_uuid_t;
+
 struct spdk_nvmf_listen_addr {
 	char					*traddr;
 	char					*trsvcid;
@@ -85,8 +91,48 @@ struct spdk_nvmf_host {
 	TAILQ_ENTRY(spdk_nvmf_host)	link;
 };
 
+struct spdk_nvmf_ctrlr_ops {
+	/**
+	 * Initialize the controller.
+	 */
+	int (*attach)(struct spdk_nvmf_subsystem *subsystem);
+
+	/**
+	 * Get NVMe identify controller data.
+	 */
+	void (*ctrlr_get_data)(struct spdk_nvmf_session *session);
+
+	/**
+	 * Process admin command.
+	 */
+	int (*process_admin_cmd)(struct spdk_nvmf_request *req);
+
+	/**
+	 * Process IO command.
+	 */
+	int (*process_io_cmd)(struct spdk_nvmf_request *req);
+
+	/**
+	 * Process IO command.
+	 */
+	void (*io_cleanup)(struct spdk_nvmf_request *req);
+
+	/**
+	 * Poll for completions.
+	 */
+	void (*poll_for_completions)(struct spdk_nvmf_subsystem *subsystem);
+
+	/**
+	 * Detach the controller.
+	 */
+	void (*detach)(struct spdk_nvmf_subsystem *subsystem);
+};
+
 struct spdk_nvmf_subsystem_allowed_listener {
-	struct spdk_nvmf_listen_addr				*listen_addr;
+	union {
+		struct spdk_nvmf_listen_addr *listen_addr;
+		struct spdk_nvmf_fc_nport *fc_nport;
+	};
 	TAILQ_ENTRY(spdk_nvmf_subsystem_allowed_listener)	link;
 };
 
@@ -97,7 +143,9 @@ struct spdk_nvmf_subsystem_allowed_listener {
  */
 struct spdk_nvmf_subsystem {
 	uint32_t id;
-	char subnqn[SPDK_NVMF_NQN_MAX_LEN + 1];
+	uint32_t lcore;
+	spdk_uuid_t container_uuid; /* UUID of the container of the subsystem */
+	char subnqn[SPDK_NVMF_NQN_MAX_LEN];
 	enum spdk_nvmf_subsystem_mode mode;
 	enum spdk_nvmf_subtype subtype;
 	bool is_removed;

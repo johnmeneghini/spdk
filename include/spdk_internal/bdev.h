@@ -143,6 +143,12 @@ struct spdk_bdev_fn_table {
 	/** Get an I/O channel for the specific bdev for the calling thread. */
 	struct spdk_io_channel *(*get_io_channel)(void *ctx);
 
+	/** API to acquire vector of I/O Buffers */
+	int (*get_iovs)(uint32_t length, struct iovec *iov, uint32_t *iovcnt);
+
+	/** API to release vector of I/O Buffers */
+	int (*put_iovs)(struct iovec *iov, uint32_t iovcnt, void *ctx);
+
 	/**
 	 * Output driver-specific configuration to a JSON stream. Optional - may be NULL.
 	 *
@@ -242,6 +248,7 @@ struct spdk_bdev {
 };
 
 typedef void (*spdk_bdev_io_get_buf_cb)(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_io);
+typedef void (*spdk_bdev_io_get_rbuf_cb)(struct spdk_bdev_io *bdev_io);
 
 struct spdk_bdev_io {
 	/** The block device that this I/O belongs to. */
@@ -281,6 +288,9 @@ struct spdk_bdev_io {
 
 			/** Starting offset (in bytes) of the bdev for this I/O. */
 			uint64_t offset;
+
+			/** Indicate whether the blockdev layer to put rbuf or not. */
+			bool put_rbuf;
 		} read;
 		struct {
 			/** For basic write case, use our own iovec element */
@@ -354,6 +364,9 @@ struct spdk_bdev_io {
 
 	/** Context that will be passed to the completion callback */
 	void *caller_ctx;
+
+	/** Callback for when rbuf is allocated */
+	spdk_bdev_io_get_rbuf_cb get_rbuf_cb;
 
 	/**
 	 * Set to true while the bdev module submit_request function is in progress.

@@ -48,6 +48,7 @@
 #include "spdk/util.h"
 
 #include "spdk_internal/log.h"
+#include "spdk_internal/bdev.h"
 
 #define MODEL_NUMBER "SPDK Virtual Controller"
 #define FW_VERSION "FFFFFFFF"
@@ -129,7 +130,7 @@ nvmf_virtual_ctrlr_complete_cmd(struct spdk_bdev_io *bdev_io, bool success,
 {
 	struct spdk_nvmf_request 	*req = cb_arg;
 	struct spdk_nvme_cpl 		*response = &req->rsp->nvme_cpl;
-	struct spdk_nvme_cmd 		*cmd = &req->cmd->nvme_cmd;
+	struct spdk_nvme_cmd            *cmd = &req->cmd->nvme_cmd;
 	int				sc, sct;
 
 	if (cmd->opc == SPDK_NVME_OPC_DATASET_MANAGEMENT) {
@@ -140,8 +141,20 @@ nvmf_virtual_ctrlr_complete_cmd(struct spdk_bdev_io *bdev_io, bool success,
 	response->status.sc = sc;
 	response->status.sct = sct;
 
-	spdk_nvmf_request_complete(req);
-	spdk_bdev_free_io(bdev_io);
+
+	/* For reads, BDEV IO can not be freed yet because
+	 * IO free will also call buffer free but buffers are still
+	 * in use by low level hardware. So clean up read bdev io
+	 * as part of request cleanup function call.
+	 */
+	if (bdev_io->type == SPDK_BDEV_IO_TYPE_READ) {
+		req->bdev_io = bdev_io;
+		req->iovcnt = bdev_io->u.read.iovcnt;
+		spdk_nvmf_request_complete(req);
+	} else {
+		spdk_nvmf_request_complete(req);
+		spdk_bdev_free_io(bdev_io);
+	}
 }
 
 static int
@@ -443,6 +456,7 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 	uint64_t offset;
 	uint64_t llen;
 	uint32_t block_size = spdk_bdev_get_block_size(bdev);
+	int error;
 	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
 	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
 	struct nvme_read_cdw12 *cdw12 = (struct nvme_read_cdw12 *)&cmd->cdw12;
@@ -468,17 +482,55 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 
 	if (cmd->opc == SPDK_NVME_OPC_READ) {
 		spdk_trace_record(TRACE_NVMF_LIB_READ_START, 0, 0, (uint64_t)req, 0);
-		if (spdk_bdev_read(desc, ch, req->data, offset, req->length, nvmf_virtual_ctrlr_complete_cmd,
-				   req)) {
-			response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
-			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+
+		/* modified to for SGL iovs */
+		if (req->data) {
+			req->iovcnt = 1;
+			req->iov[0].iov_base = req->data;
+			req->iov[0].iov_len  = req->length;
+
+			if (spdk_bdev_read(desc, ch, req->data, offset, req->length,
+					   nvmf_virtual_ctrlr_complete_cmd, req)) {
+				response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
+				return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+			}
+		} else {
+			req->iovcnt = req->length / 4096;
+			if (req->length % 4096) {
+				req->iovcnt++;
+			}
+			req->iov[0].iov_base = NULL; /* Populated by WAFL */
+			req->iov[0].iov_len  = 4096;
+			if (spdk_bdev_readv(desc, ch, req->iov, req->iovcnt, offset, req->length,
+					    nvmf_virtual_ctrlr_complete_cmd, req)) {
+				response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
+				return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+			}
 		}
-	} else {
-		spdk_trace_record(TRACE_NVMF_LIB_WRITE_START, 0, 0, (uint64_t)req, 0);
-		if (spdk_bdev_write(desc, ch, req->data, offset, req->length, nvmf_virtual_ctrlr_complete_cmd,
-				    req)) {
-			response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
-			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+	} else { /* SPDK_NVME_OPC_WRITE */
+		if (req->data) {
+			spdk_trace_record(TRACE_NVMF_LIB_WRITE_START, 0, 0, (uint64_t)req, 0);
+			if (spdk_bdev_write(desc, ch, req->data, offset, req->length,
+					    nvmf_virtual_ctrlr_complete_cmd, req)) {
+				response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
+				return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+			}
+		} else if (req->iovcnt) {
+			if (spdk_bdev_writev(desc, ch, req->iov, req->iovcnt, offset, req->length,
+					     nvmf_virtual_ctrlr_complete_cmd, req)) {
+				response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
+				return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+			}
+		} else {
+			/* Acquire IOV buffers from backend */
+			error = spdk_bdev_get_iov_write(ch, req->length, req->iov, &req->iovcnt);
+			if (error < 0) {
+				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING;
+			} else if (error == 0) {
+				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_READY;
+			} else {
+				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_ERROR;
+			}
 		}
 	}
 	return SPDK_NVMF_REQUEST_EXEC_STATUS_ASYNCHRONOUS;
@@ -604,6 +656,48 @@ nvmf_virtual_ctrlr_process_io_cmd(struct spdk_nvmf_request *req)
 	}
 }
 
+static void
+nvmf_virtual_ctrlr_process_io_cleanup(struct spdk_nvmf_request *req)
+{
+	uint32_t nsid;
+	struct spdk_bdev *bdev;
+	struct spdk_nvmf_subsystem *subsystem = req->conn->sess->subsys;
+	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
+	struct spdk_io_channel *ch;
+
+	nsid = cmd->nsid;
+	if (nsid > subsystem->dev.virt.max_nsid || nsid == 0) {
+		return;
+	}
+
+	bdev = subsystem->dev.virt.ns_list[nsid - 1];
+	if (!bdev) {
+		return;
+	}
+	ch = subsystem->dev.virt.ch[nsid - 1];
+
+	switch (cmd->opc) {
+	case SPDK_NVME_OPC_READ:
+		if (req->bdev_io) {
+			if (req->bdev_io->caller_ctx) {
+				spdk_bdev_put_io_buff(req->bdev_io, req->iov, req->iovcnt);
+			}
+			spdk_bdev_free_io(req->bdev_io);
+		}
+		/*
+		 * Netapp need to call spdk_bdev_put_io_buff for
+		 * read aswell, which will release the WAFL buffer
+		 */
+		break;
+	case SPDK_NVME_OPC_WRITE:
+		spdk_bdev_put_iov_write(ch, req->iov, req->iovcnt);
+		req->iovcnt = 0;
+	default:
+		break; // Do nothing.
+	}
+	return;
+}
+
 static int
 nvmf_virtual_ctrlr_attach(struct spdk_nvmf_subsystem *subsystem)
 {
@@ -649,6 +743,7 @@ const struct spdk_nvmf_ctrlr_ops spdk_nvmf_virtual_ctrlr_ops = {
 	.ctrlr_get_data			= nvmf_virtual_ctrlr_get_data,
 	.process_admin_cmd		= nvmf_virtual_ctrlr_process_admin_cmd,
 	.process_io_cmd			= nvmf_virtual_ctrlr_process_io_cmd,
+	.io_cleanup			= nvmf_virtual_ctrlr_process_io_cleanup,
 	.poll_for_completions		= nvmf_virtual_ctrlr_poll_for_completions,
 	.detach				= nvmf_virtual_ctrlr_detach,
 };

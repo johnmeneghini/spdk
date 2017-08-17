@@ -79,6 +79,15 @@ void spdk_env_init(const struct spdk_env_opts *opts);
  */
 void *spdk_dma_malloc(size_t size, size_t align, uint64_t *phys_addr);
 
+
+/**
+ * \brief Convert the virt buf address to physical segments and copy those segment
+ * addresses in the iov array passed. iovcnt is the size of iov array passed.
+ * Return: Number physical segments copied.
+ */
+int spdk_dma_virt_to_iovec(void *buf, uint32_t len, struct iovec *iov, int iovcnt);
+
+
 /**
  * Allocate a pinned, physically contiguous memory buffer with the
  *   given size, alignment and socket id.
@@ -177,6 +186,14 @@ size_t spdk_mempool_count(const struct spdk_mempool *pool);
  * 	  this env abstraction
  */
 uint32_t spdk_env_get_core_count(void);
+
+/**
+ * Get the id of the master lcore
+ *
+ * \return
+ *   the id of the master lcore
+ */
+unsigned spdk_env_get_master_lcore(void);
 
 /**
  * \brief Return the CPU core index of the current thread. This

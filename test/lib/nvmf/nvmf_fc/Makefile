@@ -31,16 +31,10 @@
 #  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
-SPDK_ROOT_DIR := $(abspath $(CURDIR)/..)
+SPDK_ROOT_DIR := $(abspath $(CURDIR)/../../../..)
 include $(SPDK_ROOT_DIR)/mk/spdk.common.mk
 
-DIRS-y += trace
-#DIRS-y += nvmf_tgt
-DIRS-y += iscsi_top
-ifeq ($(OS),Linux)
-DIRS-y += iscsi_tgt
-DIRS-$(CONFIG_VHOST) += vhost
-endif
+DIRS-y = ls
 
 .PHONY: all clean $(DIRS-y)
 

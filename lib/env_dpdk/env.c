@@ -90,6 +90,19 @@ spdk_dma_free(void *buf)
 	rte_free(buf);
 }
 
+int
+spdk_dma_virt_to_iovec(void *buf, uint32_t len, struct iovec *iov, int iovcnt)
+{
+	/* Check if enough iovcnt is passed */
+	if (!iovcnt || !iov) {
+		return 0;
+	}
+
+	iov[0].iov_base = (void *) spdk_vtophys(buf);
+	iov[0].iov_len = len;
+	return 1;
+}
+
 void *
 spdk_memzone_reserve(const char *name, size_t len, int socket_id, unsigned flags)
 {

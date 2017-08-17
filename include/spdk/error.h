@@ -1,7 +1,7 @@
 /*-
  *   BSD LICENSE
  *
- *   Copyright (c) Intel Corporation.
+ *   Copyright (c) 1992-2017 NetApp, Inc.
  *   All rights reserved.
  *
  *   Redistribution and use in source and binary forms, with or without
@@ -30,58 +30,19 @@
  *   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-
-#ifndef NVMF_REQUEST_H
-#define NVMF_REQUEST_H
-
-#include "spdk/nvmf_spec.h"
-#include "spdk/queue.h"
-
-typedef enum _spdk_nvmf_request_exec_status {
-	SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_ERROR = -1,
-	SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE,
-	SPDK_NVMF_REQUEST_EXEC_STATUS_ASYNCHRONOUS,
-	SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_READY,
-	SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING
-} spdk_nvmf_request_exec_status;
-
-union nvmf_h2c_msg {
-	struct spdk_nvmf_capsule_cmd			nvmf_cmd;
-	struct spdk_nvme_cmd				nvme_cmd;
-	struct spdk_nvmf_fabric_prop_set_cmd		prop_set_cmd;
-	struct spdk_nvmf_fabric_prop_get_cmd		prop_get_cmd;
-	struct spdk_nvmf_fabric_connect_cmd		connect_cmd;
-};
-SPDK_STATIC_ASSERT(sizeof(union nvmf_h2c_msg) == 64, "Incorrect size");
-
-union nvmf_c2h_msg {
-	struct spdk_nvme_cpl				nvme_cpl;
-	struct spdk_nvmf_fabric_prop_get_rsp		prop_get_rsp;
-	struct spdk_nvmf_fabric_connect_rsp		connect_rsp;
-};
-SPDK_STATIC_ASSERT(sizeof(union nvmf_c2h_msg) == 16, "Incorrect size");
-
-#define MAX_NUM_OF_IOVECTORS 17
-struct spdk_nvmf_request {
-	struct spdk_nvmf_conn		*conn;
-	uint32_t			length;
-	enum spdk_nvme_data_transfer	xfer;
-	struct iovec 			iov[MAX_NUM_OF_IOVECTORS];
-	int 				iovcnt;
-	void				*data;
-	union nvmf_h2c_msg		*cmd;
-	union nvmf_c2h_msg		*rsp;
-	struct spdk_scsi_unmap_bdesc	*unmap_bdesc;
-	struct spdk_bdev_io 		*bdev_io;
-};
-
-int
-spdk_nvmf_request_exec(struct spdk_nvmf_request *req);
-
-int spdk_nvmf_request_complete(struct spdk_nvmf_request *req);
-
-int spdk_nvmf_request_abort(struct spdk_nvmf_request *req);
-
-void spdk_nvmf_request_cleanup(struct spdk_nvmf_request *req);
+#ifndef SPDK_ERROR_H
+#define SPDK_ERROR_H
+/**
+ * \enum	spdk_err_t
+ *
+ * \brief	SPDK Error codes.
+ */
+typedef enum {
+	SPDK_SUCCESS = 0,
+	SPDK_ERR_INVALID_ARGS = 1,
+	SPDK_ERR_INTERNAL = 2,
+	SPDK_ERR_NOMEM = 3,
+	SPDK_ERR_MAX = SPDK_ERR_NOMEM + 1,
+} spdk_err_t;
 
 #endif

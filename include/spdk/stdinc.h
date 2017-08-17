@@ -40,6 +40,10 @@
 #ifndef SPDK_STDINC_H
 #define SPDK_STDINC_H
 
+#ifdef NETAPP
+#error Header must not be included in Ontap builds
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

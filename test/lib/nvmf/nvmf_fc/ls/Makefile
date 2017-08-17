@@ -31,20 +31,15 @@
 #  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
-SPDK_ROOT_DIR := $(abspath $(CURDIR)/..)
+SPDK_ROOT_DIR := $(abspath $(CURDIR)/../../../../../)
+SPDK_LIB_NVMF_FC_DIR = $(SPDK_ROOT_DIR)/lib/nvmf/nvmf_fc
+
 include $(SPDK_ROOT_DIR)/mk/spdk.common.mk
 
-DIRS-y += trace
-#DIRS-y += nvmf_tgt
-DIRS-y += iscsi_top
-ifeq ($(OS),Linux)
-DIRS-y += iscsi_tgt
-DIRS-$(CONFIG_VHOST) += vhost
-endif
+CFLAGS += -I$(SPDK_LIB_NVMF_FC_DIR)
 
-.PHONY: all clean $(DIRS-y)
+TEST_FILE = nvmf_fc_ls_ut.c
+OTHER_FILES = $(SPDK_LIB_NVMF_FC_DIR)/nvmf_fc_ls.c \
+	$(SPDK_LIB_NVMF_FC_DIR)/nvmf_fc_poller_api.c \
 
-all: $(DIRS-y)
-clean: $(DIRS-y)
-
-include $(SPDK_ROOT_DIR)/mk/spdk.subdirs.mk
+include $(SPDK_ROOT_DIR)/mk/nvmf.unittest.mk

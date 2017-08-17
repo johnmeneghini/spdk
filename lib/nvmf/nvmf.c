@@ -49,11 +49,14 @@ SPDK_LOG_REGISTER_TRACE_FLAG("nvmf", SPDK_TRACE_NVMF)
 struct spdk_nvmf_tgt g_nvmf_tgt;
 
 int
-spdk_nvmf_tgt_init(uint16_t max_queue_depth, uint16_t max_queues_per_sess,
+spdk_nvmf_tgt_init(uint16_t max_associations, uint16_t max_aq_depth,
+		   uint16_t max_queue_depth, uint16_t max_queues_per_sess,
 		   uint32_t in_capsule_data_size, uint32_t max_io_size)
 {
 	int rc;
 
+	g_nvmf_tgt.max_associations = max_associations;
+	g_nvmf_tgt.max_aq_depth = max_aq_depth;
 	g_nvmf_tgt.max_queues_per_session = max_queues_per_sess;
 	g_nvmf_tgt.max_queue_depth = max_queue_depth;
 	g_nvmf_tgt.in_capsule_data_size = in_capsule_data_size;
@@ -65,6 +68,7 @@ spdk_nvmf_tgt_init(uint16_t max_queue_depth, uint16_t max_queues_per_sess,
 	TAILQ_INIT(&g_nvmf_tgt.subsystems);
 	TAILQ_INIT(&g_nvmf_tgt.listen_addrs);
 
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max Associations: %d\n", max_associations);
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max Queues Per Session: %d\n", max_queues_per_sess);
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max Queue Depth: %d\n", max_queue_depth);
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max In Capsule Data: %d bytes\n", in_capsule_data_size);

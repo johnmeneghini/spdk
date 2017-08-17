@@ -193,6 +193,20 @@ spdk_bdev_nvme_io_passthru(struct spdk_bdev_desc *desc,
 	return 0;
 }
 
+int spdk_bdev_writev(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+		     struct iovec *iov, int iovcnt,
+		     uint64_t offset, uint64_t nbytes, spdk_bdev_io_completion_cb cb, void *cb_arg)
+{
+	return 0;
+}
+
+int spdk_bdev_readv(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+		    struct iovec *iov, int iovcnt,
+		    uint64_t offset, uint64_t nbytes, spdk_bdev_io_completion_cb cb, void *cb_arg)
+{
+	return 0;
+}
+
 int spdk_bdev_free_io(struct spdk_bdev_io *bdev_io)
 {
 	return -1;
@@ -216,6 +230,32 @@ spdk_nvmf_subsystem_get_sn(const struct spdk_nvmf_subsystem *subsystem)
 
 void spdk_bdev_io_get_nvme_status(const struct spdk_bdev_io *bdev_io, int *sct, int *sc)
 {
+}
+
+int
+spdk_bdev_get_io_buff(struct spdk_bdev_io *bdev_io, uint32_t length, struct iovec *iov,
+		      uint32_t *iovcnt)
+{
+	return 0;
+}
+
+int
+spdk_bdev_put_io_buff(struct spdk_bdev_io *bdev_io, struct iovec *iov, uint32_t iovcnt)
+{
+	return 0;
+}
+
+int
+spdk_bdev_get_iov_write(struct spdk_io_channel *ch, uint32_t length, struct iovec *iov,
+			uint32_t *iovcnt)
+{
+	return 0;
+}
+
+int
+spdk_bdev_put_iov_write(struct spdk_io_channel *ch, struct iovec *iov, uint32_t iovcnt)
+{
+	return 0;
 }
 
 static void

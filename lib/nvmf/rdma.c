@@ -471,6 +471,14 @@ request_transfer_out(struct spdk_nvmf_request *req)
 #endif
 	SPDK_TRACELOG(SPDK_TRACE_RDMA, "RDMA RECV POSTED. Recv: %p Connection: %p\n", rdma_req->recv,
 		      rdma_conn);
+
+	/* ONTAP-HACK: to get RDMA working with backend supplied buffers. */
+	if (req->conn->type == CONN_TYPE_IOQ) {
+		if (req->iovcnt) {
+			bcopy(req->iov[0].iov_base, req->data, req->length);
+		}
+	}
+
 	rc = ibv_post_recv(rdma_conn->cm_id->qp, &rdma_req->recv->wr, &bad_recv_wr);
 	if (rc) {
 		SPDK_ERRLOG("Unable to re-post rx descriptor\n");
@@ -514,6 +522,7 @@ spdk_nvmf_rdma_request_transfer_data(struct spdk_nvmf_request *req)
 	struct spdk_nvmf_rdma_request *rdma_req = get_rdma_req(req);
 	struct spdk_nvmf_conn *conn = req->conn;
 	struct spdk_nvmf_rdma_conn *rdma_conn = get_rdma_conn(conn);
+	int rc = 0;
 
 	if (req->xfer == SPDK_NVME_DATA_NONE) {
 		/* If no data transfer, this can bypass the queue */
@@ -522,7 +531,10 @@ spdk_nvmf_rdma_request_transfer_data(struct spdk_nvmf_request *req)
 
 	if (rdma_conn->cur_rdma_rw_depth < rdma_conn->max_rw_depth) {
 		if (req->xfer == SPDK_NVME_DATA_CONTROLLER_TO_HOST) {
-			return request_transfer_out(req);
+			rc = request_transfer_out(req);
+			spdk_nvmf_request_cleanup(req);
+			return rc;
+
 		} else if (req->xfer == SPDK_NVME_DATA_HOST_TO_CONTROLLER) {
 			return request_transfer_in(req);
 		}
@@ -1375,6 +1387,11 @@ process_incoming_queue(struct spdk_nvmf_rdma_conn *rdma_conn)
 			SPDK_TRACELOG(SPDK_TRACE_RDMA, "Request %p is ready for execution\n", req);
 			/* Data is immediately available */
 			rc = spdk_nvmf_request_exec(req);
+			if (rc == SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING) {
+				SPDK_TRACELOG(SPDK_TRACE_RDMA, "Request %p needs data buffer\n", req);
+				TAILQ_INSERT_TAIL(&rdma_conn->pending_data_buf_queue, rdma_req, link);
+				break;
+			}
 			if (rc < 0) {
 				error = true;
 				continue;
@@ -1528,7 +1545,7 @@ spdk_nvmf_rdma_poll(struct spdk_nvmf_conn *conn)
 				      req, conn);
 			spdk_trace_record(TRACE_RDMA_READ_COMPLETE, 0, 0, (uint64_t)req, 0);
 			rc = spdk_nvmf_request_exec(req);
-			if (rc) {
+			if (rc < 0) {
 				error = true;
 				continue;
 			}

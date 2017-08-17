@@ -46,7 +46,11 @@ static const struct spdk_nvmf_transport *const g_transports[] = {
 #ifdef SPDK_CONFIG_RDMA
 	&spdk_nvmf_transport_rdma,
 #endif
+#ifdef SPDK_CONFIG_BCM_FC
+	&spdk_nvmf_transport_bcm_fc,
+#endif
 };
+
 
 #define NUM_TRANSPORTS (SPDK_COUNTOF(g_transports))
 
@@ -91,7 +95,9 @@ spdk_nvmf_acceptor_poll(void)
 	size_t i;
 
 	for (i = 0; i != NUM_TRANSPORTS; i++) {
-		g_transports[i]->acceptor_poll();
+		if (g_transports[i]->acceptor_poll) {
+			g_transports[i]->acceptor_poll();
+		}
 	}
 }
 

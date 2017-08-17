@@ -72,6 +72,15 @@ spdk_env_get_socket_id(uint32_t core)
 	return rte_lcore_to_socket_id(core);
 }
 
+/**
+ * Get the id of the master lcore
+ */
+unsigned
+spdk_env_get_master_lcore(void)
+{
+	return rte_get_master_lcore();
+}
+
 int
 spdk_env_thread_launch_pinned(uint32_t core, thread_start_fn fn, void *arg)
 {
