@@ -1,7 +1,7 @@
 /*-
  *   BSD LICENSE
  *
- *   Copyright (c) Intel Corporation.
+ *   Copyright (c) 1992-2017 NetApp, Inc.
  *   All rights reserved.
  *
  *   Redistribution and use in source and binary forms, with or without
@@ -30,86 +30,19 @@
  *   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#ifndef SPDK_ERROR_H
+#define SPDK_ERROR_H
+/**
+ * \enum	spdk_err_t
+ *
+ * \brief	SPDK Error codes.
+ */
+typedef enum {
+	SPDK_SUCCESS = 0,
+	SPDK_ERR_INVALID_ARGS = 1,
+	SPDK_ERR_INTERNAL = 2,
+	SPDK_ERR_NOMEM = 3,
+	SPDK_ERR_MAX = SPDK_ERR_NOMEM + 1,
+} spdk_err_t;
 
-#include "transport.h"
-
-#include "spdk/env.h"
-#include "spdk/log.h"
-#include "spdk/nvmf.h"
-#include "spdk/queue.h"
-#include "spdk/util.h"
-
-#include "nvmf_internal.h"
-
-static const struct spdk_nvmf_transport *const g_transports[] = {
-#ifdef SPDK_CONFIG_RDMA
-	&spdk_nvmf_transport_rdma,
 #endif
-#ifdef SPDK_CONFIG_BCM_FC
-	&spdk_nvmf_transport_bcm_fc,
-#endif
-};
-
-
-#define NUM_TRANSPORTS (SPDK_COUNTOF(g_transports))
-
-int
-spdk_nvmf_transport_init(void)
-{
-	size_t i;
-	int count = 0;
-
-	for (i = 0; i != NUM_TRANSPORTS; i++) {
-		if (g_transports[i]->transport_init(g_nvmf_tgt.max_queue_depth, g_nvmf_tgt.max_io_size,
-						    g_nvmf_tgt.in_capsule_data_size) < 0) {
-			SPDK_NOTICELOG("%s transport init failed\n", g_transports[i]->name);
-		} else {
-			count++;
-		}
-	}
-
-	return count;
-}
-
-int
-spdk_nvmf_transport_fini(void)
-{
-	size_t i;
-	int count = 0;
-
-	for (i = 0; i != NUM_TRANSPORTS; i++) {
-		if (g_transports[i]->transport_fini() < 0) {
-			SPDK_NOTICELOG("%s transport fini failed\n", g_transports[i]->name);
-		} else {
-			count++;
-		}
-	}
-
-	return count;
-}
-
-void
-spdk_nvmf_acceptor_poll(void)
-{
-	size_t i;
-
-	for (i = 0; i != NUM_TRANSPORTS; i++) {
-		if (g_transports[i]->acceptor_poll) {
-			g_transports[i]->acceptor_poll();
-		}
-	}
-}
-
-const struct spdk_nvmf_transport *
-spdk_nvmf_transport_get(const char *name)
-{
-	size_t i;
-
-	for (i = 0; i != NUM_TRANSPORTS; i++) {
-		if (strcasecmp(name, g_transports[i]->name) == 0) {
-			return g_transports[i];
-		}
-	}
-
-	return NULL;
-}

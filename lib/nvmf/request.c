@@ -266,6 +266,24 @@ nvmf_trace_command(union nvmf_h2c_msg *h2c_msg, enum conn_type conn_type)
 	}
 }
 
+void
+spdk_nvmf_request_cleanup(struct spdk_nvmf_request *req)
+{
+	struct spdk_nvmf_session *session = req->conn->sess;
+	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
+
+	if (session && (cmd->opc != SPDK_NVME_OPC_FABRIC)) {
+		struct spdk_nvmf_subsystem *subsystem;
+
+		subsystem = session->subsys;
+
+		if ((req->conn->type != CONN_TYPE_AQ) && req->iovcnt &&
+		    subsystem->ops->io_cleanup) {
+			subsystem->ops->io_cleanup(req);
+		}
+	}
+}
+
 int
 spdk_nvmf_request_exec(struct spdk_nvmf_request *req)
 {
@@ -299,15 +317,9 @@ spdk_nvmf_request_exec(struct spdk_nvmf_request *req)
 		}
 	}
 
-	switch (status) {
-	case SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE:
-		return spdk_nvmf_request_complete(req);
-	case SPDK_NVMF_REQUEST_EXEC_STATUS_ASYNCHRONOUS:
-		return 0;
-	default:
-		SPDK_ERRLOG("Unknown request exec status: 0x%x\n", status);
-		return -1;
+	if (status == SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE) {
+		spdk_nvmf_request_complete(req);
 	}
 
-	return 0;
+	return status;
 }

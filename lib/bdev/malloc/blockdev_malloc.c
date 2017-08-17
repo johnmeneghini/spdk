@@ -276,12 +276,13 @@ static int _blockdev_malloc_submit_request(struct spdk_bdev_io *bdev_io)
 	switch (bdev_io->type) {
 	case SPDK_BDEV_IO_TYPE_READ:
 		if (bdev_io->u.read.iovs[0].iov_base == NULL) {
-			assert(bdev_io->u.read.iovcnt == 1);
+			//assert(bdev_io->u.read.iovcnt == 1);
 			bdev_io->u.read.iovs[0].iov_base =
 				((struct malloc_disk *)bdev_io->ctx)->malloc_buf +
 				bdev_io->u.read.offset;
 			bdev_io->u.read.iovs[0].iov_len = bdev_io->u.read.len;
 			bdev_io->u.read.put_rbuf = false;
+			bdev_io->u.read.iovcnt = 1;
 			spdk_bdev_io_complete(spdk_bdev_io_from_ctx(bdev_io->driver_ctx),
 					      SPDK_BDEV_IO_STATUS_SUCCESS);
 			return 0;
@@ -452,6 +453,7 @@ static int blockdev_malloc_initialize(void)
 			}
 		}
 	}
+
 	return 0;
 }
 

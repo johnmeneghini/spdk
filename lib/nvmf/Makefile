@@ -34,7 +34,7 @@
 SPDK_ROOT_DIR := $(abspath $(CURDIR)/../..)
 include $(SPDK_ROOT_DIR)/mk/spdk.common.mk
 
-CFLAGS += $(ENV_CFLAGS)
+CFLAGS += $(ENV_CFLAGS) -I$(SPDK_ROOT_DIR)/lib -I$(SPDK_ROOT_DIR)/app
 LIBNAME = nvmf
 
 C_SRCS = discovery.c subsystem.c nvmf.c \
@@ -42,5 +42,11 @@ C_SRCS = discovery.c subsystem.c nvmf.c \
 	 direct.c virtual.c
 
 C_SRCS-$(CONFIG_RDMA) += rdma.c
+
+C_SRCS-$(CONFIG_BCM_FC) += \
+    ./nvmf_fc/bcm_fc.c  \
+    ./nvmf_fc/bcm_sli_fc.c  \
+    ./nvmf_fc/nvmf_fc_ls.c  \
+    ./nvmf_fc/nvmf_fc_poller_api.c 
 
 include $(SPDK_ROOT_DIR)/mk/spdk.lib.mk

@@ -68,9 +68,12 @@ FIO_SOURCE_DIR?=/usr/src/fio
 # Requires ibverbs development libraries.
 CONFIG_RDMA?=n
 
+# Enable Broadcom FC support for the NVMf target.
+CONFIG_BCM_FC?=y
+
 # Build Ceph RBD support in bdev modules
 # Requires librbd development libraries
 CONFIG_RBD?=n
 
 # Build vhost library.
-CONFIG_VHOST?=y
+CONFIG_VHOST?=n

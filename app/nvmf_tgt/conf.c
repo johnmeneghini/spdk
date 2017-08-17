@@ -55,6 +55,10 @@ struct spdk_nvmf_probe_ctx {
 	struct spdk_nvme_transport_id	trid;
 };
 
+#define SPDK_NVMF_CONFIG_ASSOC_DEFAULT 8
+#define SPDK_NVMF_CONFIG_ASSOC_MIN 2
+#define SPDK_NVMF_CONFIG_ASSOC_MAX 65535
+
 #define SPDK_NVMF_CONFIG_QUEUES_PER_SESSION_DEFAULT 4
 #define SPDK_NVMF_CONFIG_QUEUES_PER_SESSION_MIN 2
 #define SPDK_NVMF_CONFIG_QUEUES_PER_SESSION_MAX 1024
@@ -96,6 +100,7 @@ static int
 spdk_nvmf_parse_nvmf_tgt(void)
 {
 	struct spdk_conf_section *sp;
+	int max_assoc;
 	int max_queue_depth;
 	int max_queues_per_sess;
 	int in_capsule_data_size;
@@ -116,6 +121,13 @@ spdk_nvmf_parse_nvmf_tgt(void)
 	}
 	max_queue_depth = spdk_max(max_queue_depth, SPDK_NVMF_CONFIG_QUEUE_DEPTH_MIN);
 	max_queue_depth = spdk_min(max_queue_depth, SPDK_NVMF_CONFIG_QUEUE_DEPTH_MAX);
+
+	max_assoc = spdk_conf_section_get_intval(sp, "MaxAssociations");
+	if (max_assoc < 0) {
+		max_assoc = SPDK_NVMF_CONFIG_ASSOC_DEFAULT;
+	}
+	max_assoc = spdk_max(max_assoc, SPDK_NVMF_CONFIG_ASSOC_MIN);
+	max_assoc = spdk_min(max_assoc, SPDK_NVMF_CONFIG_ASSOC_MAX);
 
 	max_queues_per_sess = spdk_conf_section_get_intval(sp, "MaxQueuesPerSession");
 	if (max_queues_per_sess < 0) {
@@ -156,7 +168,8 @@ spdk_nvmf_parse_nvmf_tgt(void)
 	}
 	g_spdk_nvmf_tgt_conf.acceptor_poll_rate = acceptor_poll_rate;
 
-	rc = spdk_nvmf_tgt_init(max_queue_depth, max_queues_per_sess, in_capsule_data_size, max_io_size);
+	rc = spdk_nvmf_tgt_init(max_assoc, max_queue_depth, max_queues_per_sess,
+				in_capsule_data_size, max_io_size);
 	if (rc != 0) {
 		SPDK_ERRLOG("spdk_nvmf_tgt_init() failed\n");
 		return rc;

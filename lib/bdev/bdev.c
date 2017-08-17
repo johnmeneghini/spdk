@@ -34,6 +34,7 @@
 
 #include "spdk/bdev.h"
 #include "spdk/env.h"
+#include "spdk/util.h"
 #include "spdk/queue.h"
 #include "spdk/nvme_spec.h"
 
@@ -109,6 +110,7 @@ spdk_bdev_io_set_rbuf(struct spdk_bdev_io *bdev_io, void *buf)
 	bdev_io->u.read.buf_unaligned = buf;
 	bdev_io->u.read.iovs[0].iov_base = (void *)((unsigned long)((char *)buf + 512) & ~511UL);
 	bdev_io->u.read.iovs[0].iov_len = bdev_io->u.read.len;
+	bdev_io->u.read.iovcnt = 1;
 	bdev_io->u.read.put_rbuf = true;
 	bdev_io->get_rbuf_cb(bdev_io);
 }
@@ -430,7 +432,7 @@ spdk_bdev_io_init(struct spdk_bdev_io *bdev_io,
 		  spdk_bdev_io_completion_cb cb)
 {
 	bdev_io->bdev = bdev;
-	bdev_io->ctx = bdev->ctxt;
+	bdev_io->ctx = NULL;
 	bdev_io->caller_ctx = cb_arg;
 	bdev_io->cb = cb;
 	bdev_io->gencnt = bdev->gencnt;
@@ -998,6 +1000,165 @@ spdk_bdev_io_get_rbuf(struct spdk_bdev_io *bdev_io, spdk_bdev_io_get_rbuf_cb cb)
 	} else {
 		cb(bdev_io);
 	}
+}
+
+int
+spdk_bdev_get_iov_write(uint32_t length, struct iovec *iov, uint32_t *iovcnt)
+{
+	struct spdk_mempool *pool;
+	void *buf = NULL;
+	uint32_t i = 0, max_buff_len;
+
+	if (!iov) {
+		goto error;
+	}
+	*iovcnt = 0;
+
+	while (length) {
+		if (length <= SPDK_BDEV_SMALL_RBUF_MAX_SIZE) {
+			pool = g_rbuf_small_pool;
+			max_buff_len = SPDK_BDEV_SMALL_RBUF_MAX_SIZE;
+		} else {
+			pool = g_rbuf_large_pool;
+			max_buff_len = SPDK_BDEV_LARGE_RBUF_MAX_SIZE;
+		}
+
+		buf = spdk_mempool_get(pool);
+		if (buf) {
+			iov[i].iov_base = buf; //This is unaligned. How do we return alligned ?
+			iov[i].iov_len  = spdk_min(length, max_buff_len);
+			++ *iovcnt;
+		} else {
+			spdk_bdev_put_iov_write(iov, *iovcnt);
+			goto error;
+		}
+
+		length -= iov[i].iov_len;
+		i ++;
+	}
+	return 0;
+error:
+	return -1;
+}
+
+int
+spdk_bdev_put_iov_write(struct iovec *iov, uint32_t iovcnt)
+{
+	struct spdk_mempool *pool;
+	need_rbuf_tailq_t *tailq;
+	struct spdk_bdev_io *tmp;
+	uint32_t i;
+
+	if (!iov) {
+		goto done;
+	}
+
+	for (i = 0; i < iovcnt; i++) {
+		if (iov[i].iov_len <= SPDK_BDEV_SMALL_RBUF_MAX_SIZE) {
+			pool = g_rbuf_small_pool;
+			tailq = &g_need_rbuf_small[spdk_env_get_current_core()];
+		} else {
+			pool = g_rbuf_large_pool;
+			tailq = &g_need_rbuf_large[spdk_env_get_current_core()];
+		}
+
+		if (TAILQ_EMPTY(tailq)) {
+			spdk_mempool_put(pool, iov[i].iov_base);
+		} else {
+			// give the buffer to others on pending list.
+			tmp = TAILQ_FIRST(tailq);
+			TAILQ_REMOVE(tailq, tmp, rbuf_link);
+			spdk_bdev_io_set_rbuf(tmp, iov[i].iov_base);
+		}
+		iov[i].iov_base = NULL;
+		iov[i].iov_len = 0;
+	}
+done:
+	return 0;
+}
+
+int
+spdk_bdev_get_io_buff(struct spdk_bdev_io *bdev_io, uint32_t length, struct iovec *iov,
+		      uint32_t *iovcnt)
+{
+	if (bdev_io->bdev->fn_table->get_iovs) {
+		return bdev_io->bdev->fn_table->get_iovs(length, iov, iovcnt);
+	} else {
+		struct spdk_mempool *pool;
+		void *buf = NULL;
+		uint32_t i = 0, max_buff_len;
+
+		if (!iov) {
+			goto error;
+		}
+		*iovcnt = 0;
+
+		while (length) {
+			if (length <= SPDK_BDEV_SMALL_RBUF_MAX_SIZE) {
+				pool = g_rbuf_small_pool;
+				max_buff_len = SPDK_BDEV_SMALL_RBUF_MAX_SIZE;
+			} else {
+				pool = g_rbuf_large_pool;
+				max_buff_len = SPDK_BDEV_LARGE_RBUF_MAX_SIZE;
+			}
+
+			buf = spdk_mempool_get(pool);
+			if (buf) {
+				iov[i].iov_base = buf; //This is unaligned. How do we return alligned ?
+				iov[i].iov_len  = spdk_min(length, max_buff_len);
+				++ *iovcnt;
+			} else {
+				spdk_bdev_put_io_buff(bdev_io, iov, *iovcnt);
+				goto error;
+			}
+
+			length -= iov[i].iov_len;
+			i ++;
+		}
+	}
+	return 0;
+error:
+	return -1;
+}
+
+int
+spdk_bdev_put_io_buff(struct spdk_bdev_io *bdev_io, struct iovec *iov, uint32_t iovcnt)
+{
+	if (bdev_io->bdev->fn_table->put_iovs) {
+		return bdev_io->bdev->fn_table->put_iovs(iov, iovcnt, bdev_io->ctx);
+	} else {
+		struct spdk_mempool *pool;
+		need_rbuf_tailq_t *tailq;
+		struct spdk_bdev_io *tmp;
+		uint32_t i;
+
+		if (!iov) {
+			goto done;
+		}
+
+		for (i = 0; i < iovcnt; i++) {
+			if (iov[i].iov_len <= SPDK_BDEV_SMALL_RBUF_MAX_SIZE) {
+				pool = g_rbuf_small_pool;
+				tailq = &g_need_rbuf_small[spdk_env_get_current_core()];
+			} else {
+				pool = g_rbuf_large_pool;
+				tailq = &g_need_rbuf_large[spdk_env_get_current_core()];
+			}
+
+			if (TAILQ_EMPTY(tailq)) {
+				spdk_mempool_put(pool, iov[i].iov_base);
+			} else {
+				// give the buffer to others on pending list.
+				tmp = TAILQ_FIRST(tailq);
+				TAILQ_REMOVE(tailq, tmp, rbuf_link);
+				spdk_bdev_io_set_rbuf(tmp, iov[i].iov_base);
+			}
+			iov[i].iov_base = NULL;
+			iov[i].iov_len = 0;
+		}
+	}
+done:
+	return 0;
 }
 
 void spdk_bdev_module_list_add(struct spdk_bdev_module_if *bdev_module)

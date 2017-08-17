@@ -38,8 +38,11 @@
 #include "spdk/queue.h"
 
 typedef enum _spdk_nvmf_request_exec_status {
+	SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_ERROR = -1,
 	SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE,
 	SPDK_NVMF_REQUEST_EXEC_STATUS_ASYNCHRONOUS,
+	SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_READY,
+	SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING
 } spdk_nvmf_request_exec_status;
 
 union nvmf_h2c_msg {
@@ -58,19 +61,25 @@ union nvmf_c2h_msg {
 };
 SPDK_STATIC_ASSERT(sizeof(union nvmf_c2h_msg) == 16, "Incorrect size");
 
+#define MAX_NUM_OF_IOVECTORS 17
 struct spdk_nvmf_request {
 	struct spdk_nvmf_conn		*conn;
 	uint32_t			length;
 	enum spdk_nvme_data_transfer	xfer;
+	struct iovec 			iov[MAX_NUM_OF_IOVECTORS];
+	int 				iovcnt;
 	void				*data;
 	union nvmf_h2c_msg		*cmd;
 	union nvmf_c2h_msg		*rsp;
 	struct spdk_scsi_unmap_bdesc	*unmap_bdesc;
+	struct spdk_bdev_io 		*bdev_io;
 };
 
 int
 spdk_nvmf_request_exec(struct spdk_nvmf_request *req);
 
 int spdk_nvmf_request_complete(struct spdk_nvmf_request *req);
+
+void spdk_nvmf_request_cleanup(struct spdk_nvmf_request *req);
 
 #endif

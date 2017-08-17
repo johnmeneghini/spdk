@@ -38,6 +38,11 @@
 #include "spdk/event.h"
 #include "spdk/log.h"
 #include "spdk/nvme.h"
+//#include <nvmf/bcm_fc.h>
+//#include "../../lib/nvmf/nvmf_fc/bcm_fc.h"
+
+extern void spdk_nvmf_fc_subsys_connect_cb(void *cb_ctx, struct spdk_nvmf_request *req);
+extern void spdk_nvmf_fc_subsys_disconnect_cb(void *cb_ctx, struct spdk_nvmf_conn *conn);
 
 static struct spdk_poller *g_acceptor_poller = NULL;
 
@@ -121,6 +126,7 @@ subsystem_poll(void *arg)
 	spdk_nvmf_subsystem_poll(app_subsys->subsystem);
 }
 
+#ifndef SPDK_CONFIG_BCM_FC
 static void
 connect_event(void *arg1, void *arg2)
 {
@@ -158,6 +164,7 @@ disconnect_cb(void *cb_ctx, struct spdk_nvmf_conn *conn)
 	event = spdk_event_allocate(app_subsys->lcore, disconnect_event, conn, NULL);
 	spdk_event_call(event);
 }
+#endif
 
 static void
 _nvmf_tgt_start_subsystem(void *arg1, void *arg2)
@@ -199,8 +206,13 @@ nvmf_tgt_create_subsystem(const char *name, enum spdk_nvmf_subtype subtype,
 		return NULL;
 	}
 
-	subsystem = spdk_nvmf_create_subsystem(name, subtype, mode, app_subsys, connect_cb,
-					       disconnect_cb);
+	subsystem = spdk_nvmf_create_subsystem(name, subtype, mode, app_subsys,
+#ifdef SPDK_CONFIG_BCM_FC
+					       spdk_nvmf_fc_subsys_connect_cb,
+					       spdk_nvmf_fc_subsys_disconnect_cb);
+#else
+					       connect_cb, disconnect_cb);
+#endif
 	if (subsystem == NULL) {
 		SPDK_ERRLOG("Subsystem creation failed\n");
 		spdk_free(app_subsys);

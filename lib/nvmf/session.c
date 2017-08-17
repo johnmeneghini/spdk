@@ -109,7 +109,7 @@ nvmf_init_nvme_session_properties(struct spdk_nvmf_session *session)
 	session->vcdata.nvmf_specific.msdbd = 1; /* target supports single SGL in capsule */
 
 	/* TODO: this should be set by the transport */
-	session->vcdata.nvmf_specific.ioccsz += g_nvmf_tgt.in_capsule_data_size / 16;
+	// session->vcdata.nvmf_specific.ioccsz += g_nvmf_tgt.in_capsule_data_size / 16;
 
 	strncpy((char *)session->vcdata.subnqn, session->subsys->subnqn, sizeof(session->vcdata.subnqn));
 
@@ -632,7 +632,7 @@ spdk_nvmf_session_poll(struct spdk_nvmf_session *session)
 	}
 
 	TAILQ_FOREACH_SAFE(conn, &session->connections, link, tmp) {
-		if (conn->transport->conn_poll(conn) < 0) {
+		if (conn->transport->conn_poll && conn->transport->conn_poll(conn) < 0) {
 			SPDK_ERRLOG("Transport poll failed for conn %p; closing connection\n", conn);
 			spdk_nvmf_session_disconnect(conn);
 		}

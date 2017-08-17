@@ -130,6 +130,15 @@ void *spdk_calloc(size_t nmemb, size_t size);
  */
 void spdk_free(void *ptr);
 
+
+/**
+ * \brief Convert the virt buf address to physical segments and copy those segment
+ * addresses in the iov array passed. iovcnt is the size of iov array passed.
+ * Return: Number physical segments copied.
+ */
+int spdk_dma_virt_to_iovec(void *buf, uint32_t len, struct iovec *iov, int iovcnt);
+
+
 /**
  * \brief Returns a pointer to a new string which is a duplicate of the string s.
  * Memory for the new string is obtained with spdk_malloc, and can be freed
