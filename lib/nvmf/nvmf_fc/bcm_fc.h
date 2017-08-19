@@ -41,7 +41,7 @@
 #include <nvmf/request.h>
 #include <nvmf/session.h>
 #include <spdk/nvmf.h>
-
+#include "spdk/assert.h"
 #include "spdk/nvme_spec.h"
 #include "spdk/event.h"
 #include "bcm_sli_fc.h"
@@ -525,7 +525,12 @@ typedef struct __attribute__((__packed__)) nvmf_fc_rq_buf_nvme_cmd {
 					   + (sizeof(struct bcm_sge) * (BCM_MAX_IOVECS + 2)))];
 } nvmf_fc_rq_buf_nvme_cmd_t;
 
-//SPDK_STATIC_ASSERT(sizeof(nvmf_fc_rq_buf_nvme_cmd_t) > BCM_RQ_BUFFER_SIZE, "RQ Buffer overflow");
+SPDK_STATIC_ASSERT((sizeof(struct nvme_cmnd_iu)
+		    + sizeof(struct nvme_xfer_rdy_iu)
+		    + sizeof(struct spdk_nvmf_fc_request *)
+		    + (sizeof(struct bcm_sge) * (BCM_MAX_IOVECS + 2))) <  BCM_RQ_BUFFER_SIZE, "RQ Buffer overflow");
+
+SPDK_STATIC_ASSERT(sizeof(nvmf_fc_rq_buf_nvme_cmd_t) == BCM_RQ_BUFFER_SIZE, "RQ Buffer overflow");
 
 /* RQ Buffer LS Overlay Structure */
 typedef struct __attribute__((__packed__)) nvmf_fc_rq_buf_ls_request {
@@ -536,7 +541,10 @@ typedef struct __attribute__((__packed__)) nvmf_fc_rq_buf_ls_request {
 					   BCM_MAX_RESP_BUFFER_SIZE + BCM_MAX_LS_REQ_CMD_SIZE)];
 } nvmf_fc_rq_buf_ls_request_t;
 
-//SPDK_STATIC_ASSERT(sizeof(nvmf_fc_rq_buf_ls_request_t) > BCM_RQ_BUFFER_SIZE, "RQ Buffer overflow");
+
+SPDK_STATIC_ASSERT(((sizeof(struct nvmf_fc_ls_rqst) + BCM_MAX_RESP_BUFFER_SIZE +
+		     BCM_MAX_LS_REQ_CMD_SIZE)) < BCM_RQ_BUFFER_SIZE, "RQ Buffer overflow");
+SPDK_STATIC_ASSERT(sizeof(nvmf_fc_rq_buf_ls_request_t) == BCM_RQ_BUFFER_SIZE, "RQ Buffer overflow");
 
 /* external LS handling functions */
 void spdk_nvmf_fc_ls_init(void);

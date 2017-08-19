@@ -432,7 +432,7 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 			if (req->length % 4096) {
 				req->iovcnt++;
 			}
-			req->iov[0].iov_base = NULL; /* Populated by WAFL */
+			req->iov[0].iov_base = NULL; /* Populated by BDAL layer */
 			req->iov[0].iov_len  = 4096;
 			if (spdk_bdev_readv(bdev, ch, req->iov, req->iovcnt, offset, req->length,
 					    nvmf_virtual_ctrlr_complete_cmd, req) == NULL) {
@@ -599,7 +599,7 @@ nvmf_virtual_ctrlr_process_io_cleanup(struct spdk_nvmf_request *req)
 		}
 		/*
 		 * Netapp need to call spdk_bdev_put_io_buff for
-		 * read aswell, which will release the WAFL buffer
+		 * read aswell, which will release the buffer from BDAL
 		 */
 		break;
 	case SPDK_NVME_OPC_WRITE:

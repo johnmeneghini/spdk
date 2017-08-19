@@ -1608,6 +1608,7 @@ bcm_nvmf_fc_issue_abort(struct fc_hwqp *hwqp, fc_xri_t *xri, bool send_abts,
 	fc_caller_ctx_t *ctx = NULL;
 	int rc = -1;
 
+	/* XXX this is a problem. We need to remove the dependency on malloc in the Abort path. XXX */
 	ctx = spdk_malloc(sizeof(fc_caller_ctx_t));
 	if (!ctx) {
 		goto done;

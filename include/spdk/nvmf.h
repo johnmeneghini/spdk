@@ -127,7 +127,9 @@ struct spdk_nvmf_ctrlr_ops {
 struct spdk_nvmf_subsystem_allowed_listener {
 	union {
 		struct spdk_nvmf_listen_addr *listen_addr;
+#ifdef SPDK_CONFIG_BCM_FC
 		struct spdk_nvmf_fc_nport *fc_nport;
+#endif
 	};
 	TAILQ_ENTRY(spdk_nvmf_subsystem_allowed_listener)	link;
 };

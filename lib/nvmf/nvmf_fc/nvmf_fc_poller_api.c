@@ -171,11 +171,14 @@ nvmf_fc_poller_api_del_connection(void *arg1, void *arg2)
 					continue;
 				}
 
+				/* XXX Prior to issuing the ABTS-LS BDAL needs
+				       to be called to abort Reads and Writes sent
+				       to the Storage Layer XXX */
+
 				fc_req->is_aborted = TRUE;
 				if (!fc_req->xri_activated) {
 					continue;
 				}
-
 				bcm_nvmf_fc_issue_abort(hwqp, fc_req->xri, TRUE,
 							NULL, NULL);
 			}

@@ -49,4 +49,6 @@ C_SRCS-$(CONFIG_BCM_FC) += \
     ./nvmf_fc/nvmf_fc_ls.c  \
     ./nvmf_fc/nvmf_fc_poller_api.c 
 
+DIRS-y += nvmf_fc
+
 include $(SPDK_ROOT_DIR)/mk/spdk.lib.mk

@@ -272,7 +272,6 @@ spdk_dma_malloc(size_t size, size_t align, uint64_t *phys_addr)
 	return p;
 }
 
-
 void spdk_dma_free(void *buf)
 {
 	free(buf);
@@ -445,8 +444,8 @@ run_create_conn_test(struct spdk_nvmf_fc_nport *tgtport,
 			(2 * sizeof(uint32_t)));
 	cc_rqst.assoc_id.association_id = assoc_id; /* alreday be64 */
 
-	ls_rqst.rqstbuf->virt = &cc_rqst;
-	ls_rqst.rspbuf->virt = respbuf;
+	ls_rqst.rqstbuf.virt = &cc_rqst;
+	ls_rqst.rspbuf.virt = respbuf;
 	ls_rqst.rqst_len = sizeof(struct nvmf_fc_ls_cr_conn_rqst);
 	ls_rqst.rsp_len = 0;
 	ls_rqst.rpi = 5000;
@@ -498,13 +497,13 @@ static int
 handle_ca_rsp(struct nvmf_fc_ls_rqst *ls_rqst)
 {
 	struct nvmf_fc_ls_acc_hdr *acc_hdr =
-		(struct nvmf_fc_ls_acc_hdr *) ls_rqst->rspbuf->virt;
+		(struct nvmf_fc_ls_acc_hdr *) ls_rqst->rspbuf.virt;
 
 
 	if (acc_hdr->rqst.w0.ls_cmd == FCNVME_LS_CREATE_ASSOCIATION) {
 		if (acc_hdr->w0.ls_cmd == FCNVME_LS_ACC) {
 			struct nvmf_fc_ls_cr_assoc_acc *acc =
-				(struct nvmf_fc_ls_cr_assoc_acc *)ls_rqst->rspbuf->virt;
+				(struct nvmf_fc_ls_cr_assoc_acc *)ls_rqst->rspbuf.virt;
 
 			CU_ASSERT(from_be32(&acc_hdr->desc_list_len) ==
 				  sizeof(struct nvmf_fc_ls_cr_assoc_acc) - 8);
@@ -543,7 +542,7 @@ handle_cc_rsp(struct nvmf_fc_ls_rqst *ls_rqst)
 	if (acc_hdr->rqst.w0.ls_cmd == FCNVME_LS_CREATE_CONNECTION) {
 		if (acc_hdr->w0.ls_cmd == FCNVME_LS_ACC) {
 			struct nvmf_fc_ls_cr_conn_acc *acc =
-				(struct nvmf_fc_ls_cr_conn_acc *)ls_rqst->rspbuf->virt;
+				(struct nvmf_fc_ls_cr_conn_acc *)ls_rqst->rspbuf.virt;
 
 			CU_ASSERT(from_be32(&acc_hdr->desc_list_len) ==
 				  sizeof(struct nvmf_fc_ls_cr_conn_acc) - 8);
@@ -656,6 +655,7 @@ test_process_ls_cmds(void)
 		fcport.io_queues[i].num_conns = 0;
 		fcport.io_queues[i].cid_cnt = 0;
 		TAILQ_INIT(&fcport.io_queues[i].connection_list);
+		TAILQ_INIT(&fcport.io_queues[i].in_use_reqs);
 	}
 
 	tgtport.fc_port = &fcport;
@@ -699,6 +699,8 @@ test_process_ls_cmds(void)
 			run_disconn_test(&tgtport, assoc_id[i]);
 		}
 	}
+
+	spdk_nvmf_fc_ls_fini();
 }
 
 int

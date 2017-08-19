@@ -31,9 +31,6 @@
  *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/* uncomment for trace
-#define DEBUG_FC_LS_TRACE 1 */
-
 #include "nvmf/nvmf_internal.h"
 #include "nvmf/request.h"
 #include "nvmf/session.h"
