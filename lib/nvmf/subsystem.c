@@ -426,7 +426,7 @@ spdk_nvmf_subsystem_add_ns(struct spdk_nvmf_subsystem *subsystem, struct spdk_bd
 	if (rc != 0) {
 		SPDK_ERRLOG("Subsystem %s: bdev %s cannot be opened, error=%d\n",
 			    subsystem->subnqn, spdk_bdev_get_name(bdev), rc);
-		return 0;
+		return rc;
 	}
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Subsystem %s: bdev %s assigned nsid %" PRIu32 "\n",
@@ -447,6 +447,23 @@ spdk_nvmf_subsystem_get_sn(const struct spdk_nvmf_subsystem *subsystem)
 	}
 
 	return subsystem->dev.virt.sn;
+}
+
+int
+spdk_nvmf_subsystem_set_pci_id(struct spdk_nvmf_subsystem *subsystem,
+			       struct spdk_pci_id *sub_pci_id)
+{
+	if (sub_pci_id == NULL) {
+		return -1;
+	}
+
+	if (subsystem->mode != NVMF_SUBSYSTEM_MODE_VIRTUAL) {
+		return -1;
+	}
+
+	memcpy(&subsystem->dev.virt.sub_pci_id, sub_pci_id, sizeof(struct spdk_pci_id));
+
+	return 0;
 }
 
 int

@@ -50,10 +50,12 @@
 /* defines from SDPK */
 
 struct spdk_nvmf_tgt g_nvmf_tgt = {
-	.max_associations = 4,
-	.max_aq_depth = 32,
-	.max_queue_depth = 1024,
-	.max_queues_per_session = 4,
+	.config = {
+		.max_associations = 4,
+		.max_aq_depth = 32,
+		.max_queue_depth = 1024,
+		.max_queues_per_session = 4,
+	}
 };
 
 struct nvmf_fc_ls_rqst_w0 {
@@ -584,7 +586,7 @@ handle_cc_rsp(struct nvmf_fc_ls_rqst *ls_rqst)
 		if (acc_hdr->w0.ls_cmd == FCNVME_LS_RJT) {
 			struct nvmf_fc_ls_rjt *rjt =
 				(struct nvmf_fc_ls_rjt *)ls_rqst->rspbuf.virt;
-			if (g_create_conn_test_cnt == g_nvmf_tgt.max_queues_per_session) {
+			if (g_create_conn_test_cnt == g_nvmf_tgt.config.max_queues_per_session) {
 				CU_ASSERT(rjt->rjt.reason_code ==
 					  FCNVME_RJT_RC_INV_PARAM);
 				CU_ASSERT(rjt->rjt.reason_explanation ==
@@ -699,14 +701,14 @@ test_process_ls_cmds(void)
 		run_create_conn_test(&tgtport, g_curr_assoc_id);
 	}
 
-	for (i = 0; i < g_nvmf_tgt.max_associations; i++) {
+	for (i = 0; i < g_nvmf_tgt.config.max_associations; i++) {
 		g_test_run_type = TEST_RUN_TYPE_CREATE_ASSOC;
 		run_create_assoc_test(&tgtport);
 		if (g_last_rslt == 0) {
 			int j;
 			assoc_id[i] = g_curr_assoc_id;
 			g_test_run_type = TEST_RUN_TYPE_CREATE_CONN;
-			for (j = 1; j < g_nvmf_tgt.max_queues_per_session; j++) {
+			for (j = 1; j < g_nvmf_tgt.config.max_queues_per_session; j++) {
 				if (g_last_rslt == 0) {
 					run_create_conn_test(&tgtport, g_curr_assoc_id);
 				}
@@ -717,7 +719,7 @@ test_process_ls_cmds(void)
 	}
 
 	g_test_run_type = TEST_RUN_TYPE_DISCONNECT;
-	for (i = 0; i < g_nvmf_tgt.max_associations; i++) {
+	for (i = 0; i < g_nvmf_tgt.config.max_associations; i++) {
 		if (g_last_rslt == 0) {
 			run_disconn_test(&tgtport, assoc_id[i]);
 		}

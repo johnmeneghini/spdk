@@ -48,14 +48,6 @@
 #define MAX_VIRTUAL_NAMESPACE 16
 #define MAX_SN_LEN 20
 
-int spdk_nvmf_tgt_init(uint16_t max_associations, uint16_t max_aq_depth,
-		       uint16_t max_queue_depth, uint16_t max_conn_per_sess,
-		       uint32_t in_capsule_data_size, uint32_t max_io_size);
-
-int spdk_nvmf_tgt_fini(void);
-
-int spdk_nvmf_check_pools(void);
-
 struct spdk_nvmf_subsystem;
 struct spdk_nvmf_session;
 struct spdk_nvmf_conn;
@@ -65,6 +57,13 @@ struct spdk_nvme_ctrlr;
 struct spdk_nvmf_request;
 struct spdk_nvmf_conn;
 struct spdk_nvmf_ctrlr_ops;
+struct spdk_nvmf_tgt_config;
+
+int spdk_nvmf_tgt_init(struct spdk_nvmf_tgt_config *config);
+
+int spdk_nvmf_tgt_fini(void);
+
+int spdk_nvmf_check_pools(void);
 
 typedef void (*spdk_nvmf_subsystem_connect_fn)(void *cb_ctx, struct spdk_nvmf_request *req);
 typedef void (*spdk_nvmf_subsystem_disconnect_fn)(void *cb_ctx, struct spdk_nvmf_conn *conn);
@@ -166,6 +165,7 @@ struct spdk_nvmf_subsystem {
 			struct spdk_bdev_desc *desc[MAX_VIRTUAL_NAMESPACE];
 			struct spdk_io_channel *ch[MAX_VIRTUAL_NAMESPACE];
 			uint32_t max_nsid;
+			struct spdk_pci_id sub_pci_id;
 		} virt;
 	} dev;
 
@@ -182,6 +182,28 @@ struct spdk_nvmf_subsystem {
 	TAILQ_HEAD(, spdk_nvmf_subsystem_allowed_listener)	allowed_listeners;
 
 	TAILQ_ENTRY(spdk_nvmf_subsystem)	entries;
+};
+
+struct spdk_nvmf_tgt_config {
+	uint16_t                                max_associations;
+	uint16_t				max_queue_depth;
+	uint16_t                                max_aq_depth;
+	uint16_t				max_queues_per_session;
+	uint32_t				in_capsule_data_size;
+	uint32_t				max_io_size;
+	uint8_t                                 rab;
+	uint8_t                                 ieee[3];
+	uint8_t                                 cmic;
+	uint32_t                                oaes;
+	uint8_t                                 acl;
+	uint8_t                                 aerl;
+	uint8_t                                 elpe;
+	uint8_t                                 npss;
+	uint16_t                                kas;
+	uint8_t                                 vwc;
+	uint16_t                                awun;
+	uint16_t                                awupf;
+	uint32_t                                sgls;
 };
 
 struct spdk_nvmf_subsystem *spdk_nvmf_create_subsystem(const char *nqn,
@@ -234,8 +256,10 @@ void spdk_nvmf_subsystem_poll(struct spdk_nvmf_subsystem *subsystem);
 uint32_t spdk_nvmf_subsystem_add_ns(struct spdk_nvmf_subsystem *subsystem, struct spdk_bdev *bdev,
 				    uint32_t nsid);
 
-const char *spdk_nvmf_subsystem_get_sn(const struct spdk_nvmf_subsystem *subsystem);
 
+int spdk_nvmf_subsystem_set_pci_id(struct spdk_nvmf_subsystem *subsystem,
+				   struct spdk_pci_id *sub_pci_id);
+const char *spdk_nvmf_subsystem_get_sn(const struct spdk_nvmf_subsystem *subsystem);
 int spdk_nvmf_subsystem_set_sn(struct spdk_nvmf_subsystem *subsystem, const char *sn);
 
 const char *spdk_nvmf_subsystem_get_nqn(struct spdk_nvmf_subsystem *subsystem);

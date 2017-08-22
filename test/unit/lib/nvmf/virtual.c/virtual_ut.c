@@ -40,6 +40,8 @@
 
 SPDK_LOG_REGISTER_TRACE_FLAG("nvmf", SPDK_TRACE_NVMF)
 
+struct spdk_nvmf_tgt g_nvmf_tgt;
+
 struct spdk_nvmf_conn *
 spdk_nvmf_session_get_conn(struct spdk_nvmf_session *session, uint16_t qid)
 {
@@ -257,6 +259,8 @@ spdk_bdev_put_iov_write(struct spdk_io_channel *ch, struct iovec *iov, uint32_t 
 {
 	return 0;
 }
+
+
 
 static void
 nvmf_test_nvmf_virtual_ctrlr_get_log_page(void)

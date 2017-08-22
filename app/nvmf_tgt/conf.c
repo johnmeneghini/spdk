@@ -82,6 +82,13 @@ struct spdk_nvmf_probe_ctx {
 #define SPDK_NVMF_CONFIG_MAX_IO_SIZE_MIN 4096
 #define SPDK_NVMF_CONFIG_MAX_IO_SIZE_MAX 131072
 
+#define SPDK_NVMF_CONFIG_ARBITRATION_BURST_DEFAULT 6
+#define SPDK_NVMF_CONFIG_ERR_LOG_PAGE_ENTRIES_DEFAULT 127
+#define SPDK_NVMF_CONFIG_KEEP_ALIVE_INTERVAL_DEFAULT 10
+#define SPDK_NVMF_CONFIG_VOLATILE_WRITE_CACHE_DEFAULT 1
+#define SPDK_NVMF_CONFIG_SGL_SUPPORT_DEFAULT 5
+
+
 struct spdk_nvmf_tgt_conf g_spdk_nvmf_tgt_conf;
 static int32_t g_last_core = -1;
 
@@ -156,14 +163,8 @@ static int
 spdk_nvmf_parse_nvmf_tgt(void)
 {
 	struct spdk_conf_section *sp;
-	int max_assoc;
-	int max_aq_depth;
-	int max_queue_depth;
-	int max_queues_per_sess;
-	int in_capsule_data_size;
-	int max_io_size;
-	int acceptor_lcore;
-	int acceptor_poll_rate;
+	struct spdk_nvmf_tgt_config config;
+	int intval;
 	int rc;
 
 	sp = spdk_conf_find_section(NULL, "Nvmf");
@@ -172,70 +173,158 @@ spdk_nvmf_parse_nvmf_tgt(void)
 		return -1;
 	}
 
-	max_queue_depth = spdk_conf_section_get_intval(sp, "MaxQueueDepth");
-	if (max_queue_depth < 0) {
-		max_queue_depth = SPDK_NVMF_CONFIG_QUEUE_DEPTH_DEFAULT;
+	intval = spdk_conf_section_get_intval(sp, "MaxQueueDepth");
+	if (intval < 0) {
+		intval = SPDK_NVMF_CONFIG_QUEUE_DEPTH_DEFAULT;
 	}
-	max_queue_depth = spdk_max(max_queue_depth, SPDK_NVMF_CONFIG_QUEUE_DEPTH_MIN);
-	max_queue_depth = spdk_min(max_queue_depth, SPDK_NVMF_CONFIG_QUEUE_DEPTH_MAX);
+	config.max_queue_depth = spdk_max(intval, SPDK_NVMF_CONFIG_QUEUE_DEPTH_MIN);
+	config.max_queue_depth = spdk_min(intval, SPDK_NVMF_CONFIG_QUEUE_DEPTH_MAX);
 
-	max_assoc = spdk_conf_section_get_intval(sp, "MaxAssociations");
-	if (max_assoc < 0) {
-		max_assoc = SPDK_NVMF_CONFIG_ASSOC_DEFAULT;
+	intval = spdk_conf_section_get_intval(sp, "MaxAssociations");
+	if (intval < 0) {
+		intval = SPDK_NVMF_CONFIG_ASSOC_DEFAULT;
 	}
-	max_assoc = spdk_max(max_assoc, SPDK_NVMF_CONFIG_ASSOC_MIN);
-	max_assoc = spdk_min(max_assoc, SPDK_NVMF_CONFIG_ASSOC_MAX);
+	config.max_associations = spdk_max(intval, SPDK_NVMF_CONFIG_ASSOC_MIN);
+	config.max_associations = spdk_min(intval, SPDK_NVMF_CONFIG_ASSOC_MAX);
 
-	max_aq_depth = spdk_conf_section_get_intval(sp, "MaxAqDepth");
-	if (max_aq_depth < 0) {
-		max_aq_depth = SPDK_NVMF_CONFIG_AQ_DEPTH_DEFAULT;
+	intval = spdk_conf_section_get_intval(sp, "MaxAqDepth");
+	if (intval < 0) {
+		intval = SPDK_NVMF_CONFIG_AQ_DEPTH_DEFAULT;
 	}
-	max_aq_depth = spdk_max(max_aq_depth, SPDK_NVMF_CONFIG_AQ_DEPTH_MIN);
-	max_aq_depth = spdk_min(max_aq_depth, SPDK_NVMF_CONFIG_AQ_DEPTH_MAX);
+	config.max_aq_depth = spdk_max(intval, SPDK_NVMF_CONFIG_AQ_DEPTH_MIN);
+	config.max_aq_depth = spdk_min(intval, SPDK_NVMF_CONFIG_AQ_DEPTH_MAX);
 
-	max_queues_per_sess = spdk_conf_section_get_intval(sp, "MaxQueuesPerSession");
-
-	max_queues_per_sess = spdk_conf_section_get_intval(sp, "MaxQueuesPerSession");
-	if (max_queues_per_sess < 0) {
-		max_queues_per_sess = SPDK_NVMF_CONFIG_QUEUES_PER_SESSION_DEFAULT;
+	intval = spdk_conf_section_get_intval(sp, "MaxQueuesPerSession");
+	if (intval < 0) {
+		intval = SPDK_NVMF_CONFIG_QUEUES_PER_SESSION_DEFAULT;
 	}
-	max_queues_per_sess = spdk_max(max_queues_per_sess, SPDK_NVMF_CONFIG_QUEUES_PER_SESSION_MIN);
-	max_queues_per_sess = spdk_min(max_queues_per_sess, SPDK_NVMF_CONFIG_QUEUES_PER_SESSION_MAX);
+	config.max_queues_per_session = spdk_max(intval, SPDK_NVMF_CONFIG_QUEUES_PER_SESSION_MIN);
+	config.max_queues_per_session = spdk_min(intval, SPDK_NVMF_CONFIG_QUEUES_PER_SESSION_MAX);
 
-	in_capsule_data_size = spdk_conf_section_get_intval(sp, "InCapsuleDataSize");
-	if (in_capsule_data_size < 0) {
-		in_capsule_data_size = SPDK_NVMF_CONFIG_IN_CAPSULE_DATA_SIZE_DEFAULT;
-	} else if ((in_capsule_data_size % 16) != 0) {
+	intval = spdk_conf_section_get_intval(sp, "InCapsuleDataSize");
+	if (intval < 0) {
+		intval = SPDK_NVMF_CONFIG_IN_CAPSULE_DATA_SIZE_DEFAULT;
+	} else if ((intval % 16) != 0) {
 		SPDK_ERRLOG("InCapsuleDataSize must be a multiple of 16\n");
 		return -1;
 	}
-	in_capsule_data_size = spdk_max(in_capsule_data_size, SPDK_NVMF_CONFIG_IN_CAPSULE_DATA_SIZE_MIN);
-	in_capsule_data_size = spdk_min(in_capsule_data_size, SPDK_NVMF_CONFIG_IN_CAPSULE_DATA_SIZE_MAX);
+	config.in_capsule_data_size = spdk_max(intval, SPDK_NVMF_CONFIG_IN_CAPSULE_DATA_SIZE_MIN);
+	config.in_capsule_data_size = spdk_min(intval, SPDK_NVMF_CONFIG_IN_CAPSULE_DATA_SIZE_MAX);
 
-	max_io_size = spdk_conf_section_get_intval(sp, "MaxIOSize");
-	if (max_io_size < 0) {
-		max_io_size = SPDK_NVMF_CONFIG_MAX_IO_SIZE_DEFAULT;
-	} else if ((max_io_size % 4096) != 0) {
+	intval = spdk_conf_section_get_intval(sp, "MaxIOSize");
+	if (intval < 0) {
+		intval = SPDK_NVMF_CONFIG_MAX_IO_SIZE_DEFAULT;
+	} else if ((intval % 4096) != 0) {
 		SPDK_ERRLOG("MaxIOSize must be a multiple of 4096\n");
 		return -1;
 	}
-	max_io_size = spdk_max(max_io_size, SPDK_NVMF_CONFIG_MAX_IO_SIZE_MIN);
-	max_io_size = spdk_min(max_io_size, SPDK_NVMF_CONFIG_MAX_IO_SIZE_MAX);
+	config.max_io_size = spdk_max(intval, SPDK_NVMF_CONFIG_MAX_IO_SIZE_MIN);
+	config.max_io_size = spdk_min(intval, SPDK_NVMF_CONFIG_MAX_IO_SIZE_MAX);
 
-	acceptor_lcore = spdk_conf_section_get_intval(sp, "AcceptorCore");
-	if (acceptor_lcore < 0) {
-		acceptor_lcore = spdk_env_get_current_core();
+	intval = spdk_conf_section_get_intval(sp, "ArbitrationBurst");
+	if (intval < 0) {
+		intval = SPDK_NVMF_CONFIG_ARBITRATION_BURST_DEFAULT;
 	}
-	g_spdk_nvmf_tgt_conf.acceptor_lcore = acceptor_lcore;
+	config.rab = intval;
 
-	acceptor_poll_rate = spdk_conf_section_get_intval(sp, "AcceptorPollRate");
-	if (acceptor_poll_rate < 0) {
-		acceptor_poll_rate = ACCEPT_TIMEOUT_US;
+	intval = spdk_conf_section_get_intval(sp, "IEEEOUI0");
+	if (intval < 0) {
+		intval = 0;
 	}
-	g_spdk_nvmf_tgt_conf.acceptor_poll_rate = acceptor_poll_rate;
+	config.ieee[0] = intval;
 
-	rc = spdk_nvmf_tgt_init(max_assoc, max_aq_depth, max_queue_depth,
-				max_queues_per_sess, in_capsule_data_size, max_io_size);
+	intval = spdk_conf_section_get_intval(sp, "IEEEOUI1");
+	if (intval < 0) {
+		intval = 0;
+	}
+	config.ieee[1] = intval;
+
+	intval = spdk_conf_section_get_intval(sp, "IEEEOUI2");
+	if (intval < 0) {
+		intval = 0;
+	}
+	config.ieee[2] = intval;
+
+
+	intval = spdk_conf_section_get_intval(sp, "CMIC");
+	if (intval < 0) {
+		intval = 0;
+	}
+	config.cmic = intval;
+
+	intval = spdk_conf_section_get_intval(sp, "OptAerSupport");
+	if (intval < 0) {
+		intval = 0;
+	}
+	config.oaes = intval;
+
+	intval = spdk_conf_section_get_intval(sp, "AbortLimit");
+	if (intval < 0) {
+		intval = 0;
+	}
+	config.acl = intval;
+
+	intval = spdk_conf_section_get_intval(sp, "AerLimit");
+	if (intval < 0) {
+		intval = 0;
+	}
+	config.aerl = intval;
+
+	intval = spdk_conf_section_get_intval(sp, "ErrLogEntries");
+	if (intval < 0) {
+		intval = SPDK_NVMF_CONFIG_ERR_LOG_PAGE_ENTRIES_DEFAULT;
+	}
+	config.elpe = intval;
+
+	intval = spdk_conf_section_get_intval(sp, "NumPowerStates");
+	if (intval < 0) {
+		intval = 0;
+	}
+	config.npss = intval;
+
+	intval = spdk_conf_section_get_intval(sp, "KeepAliveInt");
+	if (intval < 0) {
+		intval = SPDK_NVMF_CONFIG_KEEP_ALIVE_INTERVAL_DEFAULT;
+	}
+	config.kas = intval;
+
+	intval = spdk_conf_section_get_intval(sp, "VolatileWriteCache");
+	if (intval < 0) {
+		intval = SPDK_NVMF_CONFIG_VOLATILE_WRITE_CACHE_DEFAULT;
+	}
+	config.vwc = intval;
+
+	intval = spdk_conf_section_get_intval(sp, "AtomicWriteNormal");
+	if (intval < 0) {
+		intval = 0;
+	}
+	config.awun = intval;
+
+	intval = spdk_conf_section_get_intval(sp, "AtomicWritePowerFail");
+	if (intval < 0) {
+		intval = 0;
+	}
+	config.awupf = intval;
+
+	intval = spdk_conf_section_get_intval(sp, "SGLSupport");
+	if (intval < 0) {
+		intval = SPDK_NVMF_CONFIG_SGL_SUPPORT_DEFAULT;
+	}
+	config.sgls = intval;
+
+	intval = spdk_conf_section_get_intval(sp, "AcceptorCore");
+	if (intval < 0) {
+		intval = spdk_env_get_current_core();
+	}
+	g_spdk_nvmf_tgt_conf.acceptor_lcore = intval;
+
+	intval = spdk_conf_section_get_intval(sp, "AcceptorPollRate");
+	if (intval < 0) {
+		intval = ACCEPT_TIMEOUT_US;
+	}
+	g_spdk_nvmf_tgt_conf.acceptor_poll_rate = intval;
+
+	rc = spdk_nvmf_tgt_init(&config);
 	if (rc != 0) {
 		SPDK_ERRLOG("spdk_nvmf_tgt_init() failed\n");
 		return rc;

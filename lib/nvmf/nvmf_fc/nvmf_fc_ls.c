@@ -1007,7 +1007,7 @@ nvmf_fc_ls_create_association(struct spdk_nvmf_fc_nport *tgtport,
 		ec = FCNVME_RJT_EXP_INV_HOSTNQN;
 	} else if (rqst->assoc_cmd.sqsize == 0 ||
 		   from_be16(&rqst->assoc_cmd.sqsize) >
-		   g_nvmf_tgt.max_aq_depth) {
+		   g_nvmf_tgt.config.max_aq_depth) {
 		errmsg_ind = VERR_SQSIZE;
 		rc = FCNVME_RJT_RC_INV_PARAM;
 		ec = FCNVME_RJT_EXP_SQ_SIZE;
@@ -1123,7 +1123,7 @@ nvmf_fc_ls_create_connection(struct spdk_nvmf_fc_nport *tgtport,
 		ec = FCNVME_RJT_EXP_INV_ESRP;
 	} else if (rqst->connect_cmd.sqsize == 0 ||
 		   from_be16(&rqst->connect_cmd.sqsize) >
-		   g_nvmf_tgt.max_queue_depth) {
+		   g_nvmf_tgt.config.max_queue_depth) {
 		errmsg_ind = VERR_SQSIZE;
 		rc = FCNVME_RJT_RC_INV_PARAM;
 		ec = FCNVME_RJT_EXP_SQ_SIZE;
@@ -1276,24 +1276,24 @@ nvmf_fc_ls_disconnect(struct spdk_nvmf_fc_nport *tgtport,
 void
 spdk_nvmf_fc_ls_init(void)
 {
-	g_max_conns_per_assoc = g_nvmf_tgt.max_queues_per_session;
+	g_max_conns_per_assoc = g_nvmf_tgt.config.max_queues_per_session;
 
 	SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING,
 		      "max_assocations = %d, max conns = %d\n",
-		      g_nvmf_tgt.max_associations, g_max_conns_per_assoc);
+		      g_nvmf_tgt.config.max_associations, g_max_conns_per_assoc);
 
 	if (!g_fc_ls_init_done) {
 		g_fc_ls_init_done = true;
 		/* allocate associations */
 		g_fc_ls_assoc_pool =
 			spdk_mempool_create("NVMF_FC_ASSOC_POOL",
-					    (size_t)(g_nvmf_tgt.max_associations),
+					    (size_t)(g_nvmf_tgt.config.max_associations),
 					    sizeof(struct spdk_nvmf_fc_association),
 					    0, SPDK_ENV_SOCKET_ID_ANY);
 		if (g_fc_ls_assoc_pool) {
 			uint32_t i = 0;
 			struct spdk_nvmf_fc_association *assoc;
-			for (; i < g_nvmf_tgt.max_associations; i++) {
+			for (; i < g_nvmf_tgt.config.max_associations; i++) {
 				assoc = (struct spdk_nvmf_fc_association *)
 					spdk_mempool_get(g_fc_ls_assoc_pool);
 				if (assoc) {
@@ -1304,7 +1304,7 @@ spdk_nvmf_fc_ls_init(void)
 			/* allocate connections */
 			g_fc_ls_conn_pool =
 				spdk_mempool_create("NVMF_FC_CONN_POOL",
-						    (size_t)(g_nvmf_tgt.max_associations *
+						    (size_t)(g_nvmf_tgt.config.max_associations *
 							     g_max_conns_per_assoc),
 						    sizeof(struct spdk_nvmf_fc_conn),
 						    0, SPDK_ENV_SOCKET_ID_ANY);
