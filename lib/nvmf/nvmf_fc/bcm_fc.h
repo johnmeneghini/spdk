@@ -107,11 +107,9 @@ typedef enum spdk_fc_nport_state_e {
  */
 typedef enum spdk_fc_object_state {
 
-	SPDK_FC_OBJECT_TO_BE_CREATED = 0,
-	SPDK_FC_OBJECT_CREATED_OFFLINE = 1,
-	SPDK_FC_OBJECT_CREATED_ONLINE = 2,
-	SPDK_FC_OBJECT_TO_BE_DELETED = 2,
-
+	SPDK_FC_OBJECT_CREATED = 0,
+	SPDK_FC_OBJECT_TO_BE_DELETED = 1,
+	SPDK_FC_OBJECT_ZOMBIE = 2,      /* Partial Create or Delete  */
 } spdk_fc_object_state_t;
 
 /*
@@ -257,6 +255,7 @@ struct spdk_nvmf_fc_nport {
 	spdk_uuid_t container_uuid; /* Container systems UUID */
 	uint32_t d_id;
 	bool nport_status;
+	spdk_fc_object_state_t nport_state;
 	struct spdk_fc_wwn fc_nodename;
 	struct spdk_fc_wwn fc_portname;
 
@@ -459,6 +458,7 @@ struct spdk_nvmf_fc_association {
 	struct spdk_nvmf_fc_nport *tgtport;
 	struct spdk_nvmf_subsystem *subsystem;
 	struct spdk_nvmf_fc_session *fc_session;
+	spdk_fc_object_state_t assoc_state;
 
 	char host_id[SPDK_NVMF_FC_HOST_ID_LEN];
 	char host_nqn[SPDK_NVMF_FC_NQN_MAX_LEN];
