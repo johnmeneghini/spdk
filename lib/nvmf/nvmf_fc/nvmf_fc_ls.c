@@ -616,9 +616,9 @@ nvmf_fc_ls_new_connection(struct spdk_nvmf_fc_association *assoc,
 		SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING, "\tQueue id:0x%x\n", fc_conn->qid);
 		SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING, "\tQueue size requested:0x%x\n", max_q_size);
 		SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING, "\tMax admin queue size supported:0x%x\n",
-			      g_nvmf_tgt.max_aq_depth);
+			      g_nvmf_tgt.config.max_aq_depth);
 		SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING, "\tMax IO queue size supported:0x%x\n",
-			      g_nvmf_tgt.max_queue_depth);
+			      g_nvmf_tgt.config.max_queue_depth);
 	} else {
 		SPDK_ERRLOG("out of connections\n");
 	}

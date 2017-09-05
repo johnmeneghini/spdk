@@ -659,4 +659,6 @@ uint32_t spdk_nvmf_bcm_fc_calc_max_q_depth(uint32_t nRQ, uint32_t RQsz,
 spdk_err_t spdk_nvmf_fc_rport_set_state(
 	struct spdk_nvmf_fc_rem_port_info *rport, spdk_fc_object_state_t state);
 
+struct spdk_nvmf_fc_request *get_fc_req(struct spdk_nvmf_request *req);
+
 #endif

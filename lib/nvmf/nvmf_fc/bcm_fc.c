@@ -65,7 +65,6 @@ extern int bcm_nvmf_fc_xmt_bls_rsp(struct fc_hwqp *hwqp, uint16_t ox_id, uint16_
 static void bcm_fc_queue_poller(void *arg);
 static inline struct spdk_nvmf_fc_session *get_fc_session(struct spdk_nvmf_session *session);
 static inline struct spdk_nvmf_fc_conn *get_fc_conn(struct spdk_nvmf_conn *conn);
-static inline struct spdk_nvmf_fc_request *get_fc_req(struct spdk_nvmf_request *req);
 static int spdk_nvmf_fc_fini(void);
 static struct spdk_nvmf_session *spdk_nvmf_fc_session_init(void);
 static void spdk_nvmf_fc_session_fini(struct spdk_nvmf_session *session);
@@ -463,7 +462,7 @@ get_fc_conn(struct spdk_nvmf_conn *conn)
 	       ((uintptr_t)conn - offsetof(struct spdk_nvmf_fc_conn, conn));
 }
 
-static inline struct spdk_nvmf_fc_request *
+inline struct spdk_nvmf_fc_request *
 get_fc_req(struct spdk_nvmf_request *req)
 {
 	return (struct spdk_nvmf_fc_request *)
