@@ -34,7 +34,7 @@
 SPDK_ROOT_DIR := $(abspath $(CURDIR)/../..)
 include $(SPDK_ROOT_DIR)/mk/spdk.common.mk
 
-CFLAGS += $(ENV_CFLAGS) -I.
+CFLAGS += $(ENV_CFLAGS) -I$(SPDK_ROOT_DIR)/lib -I.
 C_SRCS = bdev.c
 LIBNAME = bdev
 

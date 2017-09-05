@@ -365,11 +365,12 @@ struct spdk_io_channel *spdk_bdev_get_io_channel(struct spdk_bdev *bdev, uint32_
 void spdk_bdev_io_set_scsi_error(struct spdk_bdev_io *bdev_io, enum spdk_scsi_status sc,
 				 enum spdk_scsi_sense sk, uint8_t asc, uint8_t ascq);
 
-int spdk_bdev_get_io_buff(struct spdk_bdev_io *bdev_io, uint32_t length, struct iovec *iov,
-			  uint32_t *iovcnt);
-int spdk_bdev_put_io_buff(struct spdk_bdev_io *bdev_io, struct iovec *iov, uint32_t iovcnt);
-int spdk_bdev_get_iov_write(uint32_t length, struct iovec *iov, uint32_t *iovcnt);
-int spdk_bdev_put_iov_write(struct iovec *iov, uint32_t iovcnt);
+int spdk_bdev_read_init(struct spdk_bdev *bdev, int32_t length, struct iovec *iov,
+			uint32_t *iovcnt);
+int spdk_bdev_read_fini(struct spdk_bdev_io *bdev_io, struct iovec *iov, int32_t iovcnt);
+int spdk_bdev_write_init(struct spdk_bdev *bdev, int32_t length, struct iovec *iov, int32_t *iovcnt,
+			 void **iovctx);
+int spdk_bdev_write_fini(struct spdk_bdev_io *bdev_io, struct iovec *iov, int32_t iovcnt);
 
 /**
  * Get the status of bdev_io as an NVMe status code.

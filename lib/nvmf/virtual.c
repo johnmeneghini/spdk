@@ -136,19 +136,17 @@ nvmf_virtual_ctrlr_complete_cmd(struct spdk_bdev_io *bdev_io, enum spdk_bdev_io_
 	response->status.sct = sct;
 
 
-	/* For reads, BDEV IO can not be freed yet because
-	 * IO free will also call buffer free but buffers are still
-	 * in use by low level hardware. So clean up read bdev io
-	 * as part of request cleanup function call.
+	/*
+	 * BDEV IO is freed as part of request cleanup function call.
 	 */
 	if (bdev_io->type == SPDK_BDEV_IO_TYPE_READ) {
 		req->bdev_io = bdev_io;
 		req->iovcnt = bdev_io->u.read.iovcnt;
-		spdk_nvmf_request_complete(req);
 	} else {
-		spdk_nvmf_request_complete(req);
-		spdk_bdev_free_io(bdev_io);
+		req->bdev_io = bdev_io;
+		req->iovcnt = bdev_io->u.write.iovcnt;
 	}
+	spdk_nvmf_request_complete(req);
 }
 
 static int
@@ -428,23 +426,27 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 			}
 		} else {
-			req->iovcnt = req->length / 4096;
-			if (req->length % 4096) {
-				req->iovcnt++;
-			}
-			req->iov[0].iov_base = NULL; /* Populated by BDAL layer */
-			req->iov[0].iov_len  = 4096;
-			if (spdk_bdev_readv(bdev, ch, req->iov, req->iovcnt, offset, req->length,
-					    nvmf_virtual_ctrlr_complete_cmd, req) == NULL) {
-				response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
-				return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+			/* acquire IOV buffers from backend */
+			error = spdk_bdev_read_init(bdev, req->length, req->iov, &req->iovcnt);
+			if (error < 0) {
+				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING;
+			} else if (error == 0) {
+				if (spdk_bdev_readv(bdev, ch, req->iov, req->iovcnt, offset, req->length,
+						    nvmf_virtual_ctrlr_complete_cmd, req) == NULL) {
+					response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
+					return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+				}
+			} else {
+				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_ERROR;
 			}
 		}
 	} else { /* SPDK_NVME_OPC_WRITE */
 		if (req->data) {
 			spdk_trace_record(TRACE_NVMF_LIB_WRITE_START, 0, 0, (uint64_t)req, 0);
-			if (spdk_bdev_write(bdev, ch, req->data, offset, req->length,
-					    nvmf_virtual_ctrlr_complete_cmd, req) == NULL) {
+			spdk_bdev_write_init(bdev, req->length, req->iov, &req->iovcnt, &req->iovctx);
+			bcopy(req->data, req->iov[0].iov_base, req->length); // TODO: bcopy each elements
+			if (spdk_bdev_writev(bdev, ch, req->iov, req->iovcnt, offset, req->length,
+					     nvmf_virtual_ctrlr_complete_cmd, req) == NULL) {
 				response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 			}
@@ -456,7 +458,7 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 			}
 		} else {
 			/* Acquire IOV buffers from backend */
-			error = spdk_bdev_get_iov_write(req->length, req->iov, &req->iovcnt);
+			error = spdk_bdev_write_init(bdev, req->length, req->iov, &req->iovcnt, &req->iovctx);
 			if (error < 0) {
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING;
 			} else if (error == 0) {
@@ -592,19 +594,15 @@ nvmf_virtual_ctrlr_process_io_cleanup(struct spdk_nvmf_request *req)
 	switch (cmd->opc) {
 	case SPDK_NVME_OPC_READ:
 		if (req->bdev_io) {
-			if (req->bdev_io->ctx) {
-				spdk_bdev_put_io_buff(req->bdev_io, req->iov, req->iovcnt);
-			}
+			spdk_bdev_read_fini(req->bdev_io, req->iov, req->iovcnt);
 			spdk_bdev_free_io(req->bdev_io);
 		}
-		/*
-		 * Netapp need to call spdk_bdev_put_io_buff for
-		 * read aswell, which will release the buffer from BDAL
-		 */
 		break;
 	case SPDK_NVME_OPC_WRITE:
-		spdk_bdev_put_iov_write(req->iov, req->iovcnt);
-		req->iovcnt = 0;
+		if (req->bdev_io) {
+			spdk_bdev_write_fini(req->bdev_io, req->iov, req->iovcnt);
+			spdk_bdev_free_io(req->bdev_io);
+		}
 	default:
 		break; // Do nothing.
 	}

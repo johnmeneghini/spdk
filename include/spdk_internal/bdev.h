@@ -133,11 +133,17 @@ struct spdk_bdev_fn_table {
 	/** Get an I/O channel for the specific bdev for the calling thread. */
 	struct spdk_io_channel *(*get_io_channel)(void *ctx, uint32_t priority);
 
-	/** API to acquire vector of I/O Buffers */
-	int (*get_iovs)(uint32_t length, struct iovec *iov, uint32_t *iovcnt);
+	/** API to acquire/init vector of I/O Buffers for read */
+	int (*init_read)(uint32_t length, struct iovec *iov, uint32_t *iovcnt);
 
-	/** API to release vector of I/O Buffers */
-	int (*put_iovs)(struct iovec *iov, uint32_t iovcnt, void *ctx);
+	/** API to release vector of I/O Buffers  acquired for read */
+	int (*fini_read)(struct iovec *iov, uint32_t iovcnt, void *ctx);
+
+	/** API to acquire vector of I/O Buffers for write */
+	int (*init_write)(uint32_t length, struct iovec *iov, uint32_t *iovcnt, void **iovctx);
+
+	/** API to release vector of I/O Buffers  acquired for write */
+	int (*fini_write)(struct iovec *iov, uint32_t iovcnt, void *ctx);
 
 	/**
 	 * Output driver-specific configuration to a JSON stream. Optional - may be NULL.
