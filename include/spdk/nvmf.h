@@ -147,7 +147,7 @@ struct spdk_nvmf_subsystem {
 	uint32_t id;
 	uint32_t lcore;
 	struct spdk_uuid container_uuid; /* UUID of the container of the subsystem */
-	char subnqn[SPDK_NVMF_NQN_MAX_LEN];
+	char subnqn[SPDK_NVMF_NQN_MAX_LEN + 1];
 	enum spdk_nvmf_subsystem_mode mode;
 	enum spdk_nvmf_subtype subtype;
 	bool is_removed;
