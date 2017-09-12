@@ -44,6 +44,7 @@
 #include "spdk/assert.h"
 #include "spdk/nvme_spec.h"
 #include "spdk/event.h"
+#include "spdk/error.h"
 #include "bcm_sli_fc.h"
 
 #define TRUE  1
@@ -82,6 +83,17 @@
 #define NVMF_BCM_FC_TRANSPORT_NAME "bcm_nvmf_fc"
 
 /*
+ * PRLI service parameters
+ */
+enum spdk_nvmf_fc_service_parameters {
+	SPDK_NVMF_FC_FIRST_BURST_SUPPORTED                      = 0x0001,
+	SPDK_NVMF_FC_DISCOVERY_SERVICE                          = 0x0008,
+	SPDK_NVMF_FC_TARGET_FUNCTION                            = 0x0010,
+	SPDK_NVMF_FC_INITIATOR_FUNCTION                         = 0x0020,
+	SPDK_NVMF_FC_CONFIRMED_COMPLETION_SUPPORTED             = 0x0080,
+};
+
+/*
  * FC HW port states.
  */
 typedef enum spdk_fc_port_state_e {
@@ -91,15 +103,12 @@ typedef enum spdk_fc_port_state_e {
 
 } spdk_fc_port_state_t;
 
-/*
- * FC NPORT status.
- */
-typedef enum spdk_fc_nport_state_e {
+typedef enum spdk_fc_hwqp_state_e {
 
-	SPDK_FC_NPORT_DOWN = 0,
-	SPDK_FC_NPORT_UP = 1,
+	SPDK_FC_HWQP_OFFLINE = 0,
+	SPDK_FC_HWQP_ONLINE = 1,
 
-} spdk_fc_nport_state_t;
+} spdk_fc_hwqp_state_t;
 
 /*
  * Add all the generic states of the object here.
@@ -250,9 +259,7 @@ struct spdk_nvmf_fc_rem_port_info {
 struct spdk_nvmf_fc_nport {
 
 	uint32_t nport_hdl;
-	spdk_uuid_t nport_uuid; /* UUID for the nport */
 	uint8_t port_hdl;
-	spdk_uuid_t container_uuid; /* Container systems UUID */
 	uint32_t d_id;
 	bool nport_status;
 	spdk_fc_object_state_t nport_state;
@@ -580,6 +587,35 @@ void spdk_nvmf_fc_subsys_connect_cb(void *cb_ctx, struct spdk_nvmf_request *req)
 void spdk_nvmf_fc_subsys_disconnect_cb(void *cb_ctx, struct spdk_nvmf_conn *conn);
 
 fc_xri_t *spdk_nvmf_fc_get_xri(struct fc_hwqp *hwqp);
+
 int spdk_nvmf_fc_put_xri(struct fc_hwqp *hwqp, fc_xri_t *xri);
+
+spdk_err_t spdk_nvmf_fc_port_set_online(struct spdk_nvmf_fc_port *fc_port);
+
+spdk_err_t spdk_nvmf_fc_port_set_offline(struct spdk_nvmf_fc_port *fc_port);
+
+spdk_err_t spdk_nvmf_fc_port_add_nport(struct spdk_nvmf_fc_port *fc_port,
+				       struct spdk_nvmf_fc_nport *nport);
+
+spdk_err_t spdk_nvmf_fc_port_remove_nport(struct spdk_nvmf_fc_port *fc_port,
+		struct spdk_nvmf_fc_nport *nport);
+
+spdk_err_t spdk_nvmf_hwqp_port_set_online(struct fc_hwqp *hwqp);
+
+spdk_err_t spdk_nvmf_hwqp_port_set_offline(struct fc_hwqp *hwqp);
+
+/* Returns true if the Nport is empty of all associations */
+bool spdk_nvmf_fc_nport_is_association_empty(struct spdk_nvmf_fc_nport *nport);
+
+spdk_err_t spdk_nvmf_fc_nport_set_state(struct spdk_nvmf_fc_nport *nport,
+					spdk_fc_object_state_t state);
+
+spdk_err_t spdk_nvmf_fc_assoc_set_state(struct spdk_nvmf_fc_association *assoc,
+					spdk_fc_object_state_t state);
+
+bool spdk_nvmf_fc_nport_add_rem_port(struct spdk_nvmf_fc_nport *nport,
+				     struct spdk_nvmf_fc_rem_port_info *rem_port);
+
+uint32_t spdk_nvmf_fc_get_prli_service_params(void);
 
 #endif

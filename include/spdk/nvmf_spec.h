@@ -461,19 +461,6 @@ enum spdk_nvmf_rdma_transport_errors {
 	SPDK_NVMF_RDMA_ERROR_INVALID_CNTLID			= 0x9,
 };
 
-
-/*
- * XXX: Not sure if this is the right place for this definition,
- *      but for the time being keeping it here.
- */
-enum spdk_nvmf_fc_service_parameters {
-	SPDK_NVMF_FC_FIRST_BURST_SUPPORTED                      = 0x0001,
-	SPDK_NVMF_FC_DISCOVERY_SERVICE                          = 0x0008,
-	SPDK_NVMF_FC_TARGET_FUNCTION                            = 0x0010,
-	SPDK_NVMF_FC_INITIATOR_FUNCTION                         = 0x0020,
-	SPDK_NVMF_FC_CONFIRMED_COMPLETION_SUPPORTED             = 0x0080,
-};
-
 #pragma pack(pop)
 
 #endif /* __NVMF_SPEC_H__ */

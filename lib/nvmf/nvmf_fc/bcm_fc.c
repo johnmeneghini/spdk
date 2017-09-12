@@ -65,13 +65,13 @@ extern int bcm_nvmf_fc_xmt_bls_rsp(struct fc_hwqp *hwqp, uint16_t ox_id, uint16_
 static void bcm_fc_queue_poller(void *arg);
 static inline struct spdk_nvmf_fc_session *get_fc_session(struct spdk_nvmf_session *session);
 static inline struct spdk_nvmf_fc_conn *get_fc_conn(struct spdk_nvmf_conn *conn);
-static inline struct spdk_nvmf_fc_request *get_fc_req(struct spdk_nvmf_request *req);
 static int spdk_nvmf_fc_fini(void);
 static struct spdk_nvmf_session *spdk_nvmf_fc_session_init(void);
 static void spdk_nvmf_fc_session_fini(struct spdk_nvmf_session *session);
 static int spdk_nvmf_fc_request_complete(struct spdk_nvmf_request *req);
 static void spdk_nvmf_fc_close_conn(struct spdk_nvmf_conn *conn);
 static bool spdk_nvmf_fc_conn_is_idle(struct spdk_nvmf_conn *conn);
+static inline struct spdk_nvmf_fc_request *get_fc_req(struct spdk_nvmf_request *req);
 
 /* externs */
 extern void bcm_process_queues(struct fc_hwqp *hwqp);
@@ -277,6 +277,129 @@ bcm_fc_queue_poller(void *arg)
 	}
 }
 
+/*** Accessor functions for the bcm-fc structures - BEGIN */
+spdk_err_t
+spdk_nvmf_fc_port_set_online(struct spdk_nvmf_fc_port *fc_port)
+{
+	if (fc_port && (fc_port->hw_port_status != SPDK_FC_PORT_ONLINE)) {
+		fc_port->hw_port_status = SPDK_FC_PORT_ONLINE;
+		return SPDK_SUCCESS;
+	} else {
+		return SPDK_ERR_INTERNAL;
+	}
+}
+
+spdk_err_t
+spdk_nvmf_fc_port_set_offline(struct spdk_nvmf_fc_port *fc_port)
+{
+	if (fc_port && (fc_port->hw_port_status != SPDK_FC_PORT_OFFLINE)) {
+		fc_port->hw_port_status = SPDK_FC_PORT_OFFLINE;
+		return SPDK_SUCCESS;
+	} else {
+		return SPDK_ERR_INTERNAL;
+	}
+}
+
+spdk_err_t
+spdk_nvmf_fc_port_add_nport(struct spdk_nvmf_fc_port *fc_port, struct spdk_nvmf_fc_nport *nport)
+{
+	if (fc_port) {
+		TAILQ_INSERT_TAIL(&fc_port->nport_list, nport, link);
+		fc_port->num_nports++;
+		return SPDK_SUCCESS;
+	} else {
+		return SPDK_ERR_INTERNAL;
+	}
+}
+
+spdk_err_t
+spdk_nvmf_fc_port_remove_nport(struct spdk_nvmf_fc_port *fc_port, struct spdk_nvmf_fc_nport *nport)
+{
+	if (fc_port && nport) {
+		TAILQ_REMOVE(&fc_port->nport_list, nport, link);
+		fc_port->num_nports--;
+		return SPDK_SUCCESS;
+	} else {
+		return SPDK_ERR_INTERNAL;
+	}
+}
+
+spdk_err_t
+spdk_nvmf_hwqp_port_set_online(struct fc_hwqp *hwqp)
+{
+	if (hwqp && (hwqp->state != SPDK_FC_HWQP_ONLINE)) {
+		hwqp->state = SPDK_FC_HWQP_ONLINE;
+		return SPDK_SUCCESS;
+	} else {
+		return SPDK_ERR_INTERNAL;
+	}
+}
+
+spdk_err_t
+spdk_nvmf_hwqp_port_set_offline(struct fc_hwqp *hwqp)
+{
+	if (hwqp && (hwqp->state != SPDK_FC_HWQP_OFFLINE)) {
+		hwqp->state = SPDK_FC_HWQP_OFFLINE;
+		return SPDK_SUCCESS;
+	} else {
+		return SPDK_ERR_INTERNAL;
+	}
+}
+
+/* Returns true if the Nport is empty of all associations */
+bool
+spdk_nvmf_fc_nport_is_association_empty(struct spdk_nvmf_fc_nport *nport)
+{
+	if (nport && (TAILQ_EMPTY(&nport->fc_associations) || (0 == nport->assoc_count))) {
+		return true;
+	} else {
+		return false;
+	}
+}
+
+spdk_err_t
+spdk_nvmf_fc_nport_set_state(struct spdk_nvmf_fc_nport *nport, spdk_fc_object_state_t state)
+{
+	if (nport) {
+		nport->nport_state = state;
+		return SPDK_SUCCESS;
+	} else {
+		return SPDK_ERR_INTERNAL;
+	}
+}
+
+spdk_err_t
+spdk_nvmf_fc_assoc_set_state(struct spdk_nvmf_fc_association *assoc, spdk_fc_object_state_t state)
+{
+	if (assoc) {
+		assoc->assoc_state = state;
+		return SPDK_SUCCESS;
+	} else {
+		return SPDK_ERR_INTERNAL;
+	}
+}
+
+bool
+spdk_nvmf_fc_nport_add_rem_port(struct spdk_nvmf_fc_nport *nport,
+				struct spdk_nvmf_fc_rem_port_info *rport)
+{
+	if (nport && rport) {
+		TAILQ_INSERT_TAIL(&nport->rem_port_list, rport, link);
+		return SPDK_SUCCESS;
+	} else {
+		return SPDK_ERR_INTERNAL;
+	}
+}
+
+uint32_t
+spdk_nvmf_fc_get_prli_service_params(void)
+{
+	return (SPDK_NVMF_FC_DISCOVERY_SERVICE | SPDK_NVMF_FC_TARGET_FUNCTION);
+}
+
+/*** Accessor functions for the bcm-fc structures - END */
+
+
 static inline struct spdk_nvmf_fc_session *
 get_fc_session(struct spdk_nvmf_session *session)
 {
@@ -433,15 +556,24 @@ spdk_nvmf_fc_request_complete(struct spdk_nvmf_request *req)
 	struct spdk_event *event = NULL;
 
 	/* Check if we need to switch to correct lcore of HWQP. */
-	if (spdk_env_get_current_core() != fc_req->poller_lcore) {
-		/* Switch to correct HWQP lcore. */
-		event = spdk_event_allocate(fc_req->poller_lcore,
-					    spdk_nvmf_fc_request_complete_process,
-					    (void *)req, NULL);
-		spdk_event_call(event);
+	/* Right now spdk_env_get_current_core returns an incorrect
+	 * value (0) when called from non-EAL threads. This results in
+	 * an issue where the WAFL threads could potentially write or
+	 * clobber the h/w queues (or some other data structures.
+	 * TODO: Uncomment the below line when we solve the
+	 * spdk_env_get_current_core issue.
+	 */
+	/* if (spdk_env_get_current_core() != fc_req->poller_lcore) { */
+	/* Switch to correct HWQP lcore. */
+	event = spdk_event_allocate(fc_req->poller_lcore,
+				    spdk_nvmf_fc_request_complete_process,
+				    (void *)req, NULL);
+	spdk_event_call(event);
+	/*
 	} else {
-		spdk_nvmf_fc_request_complete_process(req, NULL);
+	spdk_nvmf_fc_request_complete_process(req, NULL);
 	}
+	*/
 
 	return 0;
 }
