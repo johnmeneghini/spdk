@@ -572,8 +572,7 @@ spdk_nvmf_fc_request_complete(struct spdk_nvmf_request *req)
 	/*
 	} else {
 	spdk_nvmf_fc_request_complete_process(req, NULL);
-	}
-	*/
+	} */
 
 	return 0;
 }
