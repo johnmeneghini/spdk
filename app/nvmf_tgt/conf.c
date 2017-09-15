@@ -265,8 +265,8 @@ spdk_nvmf_parse_nvmf_tgt(void)
 	config.acl = intval;
 
 	intval = spdk_conf_section_get_intval(sp, "AerLimit");
-	if (intval < 0) {
-		intval = 0;
+	if (intval < 1) {
+		intval = 1;
 	}
 	config.aerl = intval;
 
@@ -447,6 +447,7 @@ spdk_nvmf_parse_subsystem(struct spdk_conf_section *sp)
 	/* Parse Listen sections */
 	num_listen_addrs = 0;
 	for (i = 0; i < MAX_LISTEN_ADDRESSES; i++) {
+		listen_addrs[num_listen_addrs].adrfam = NULL;
 		listen_addrs[num_listen_addrs].transport =
 			spdk_conf_section_get_nmval(sp, "Listen", i, 0);
 		if (!listen_addrs[num_listen_addrs].transport) {
