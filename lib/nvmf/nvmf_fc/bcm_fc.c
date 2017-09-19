@@ -65,13 +65,13 @@ extern int bcm_nvmf_fc_xmt_bls_rsp(struct fc_hwqp *hwqp, uint16_t ox_id, uint16_
 static void bcm_fc_queue_poller(void *arg);
 static inline struct spdk_nvmf_fc_session *get_fc_session(struct spdk_nvmf_session *session);
 static inline struct spdk_nvmf_fc_conn *get_fc_conn(struct spdk_nvmf_conn *conn);
+static inline struct spdk_nvmf_fc_request *get_fc_req(struct spdk_nvmf_request *req);
 static int spdk_nvmf_fc_fini(void);
 static struct spdk_nvmf_session *spdk_nvmf_fc_session_init(void);
 static void spdk_nvmf_fc_session_fini(struct spdk_nvmf_session *session);
 static int spdk_nvmf_fc_request_complete(struct spdk_nvmf_request *req);
 static void spdk_nvmf_fc_close_conn(struct spdk_nvmf_conn *conn);
 static bool spdk_nvmf_fc_conn_is_idle(struct spdk_nvmf_conn *conn);
-static inline struct spdk_nvmf_fc_request *get_fc_req(struct spdk_nvmf_request *req);
 
 /* externs */
 extern void bcm_process_queues(struct fc_hwqp *hwqp);
@@ -130,7 +130,7 @@ spdk_nvmf_fc_add_poller(struct fc_hwqp *hwqp)
  * Return a fc nport with a matching handle.
  */
 struct spdk_nvmf_fc_nport *
-spdk_nvmf_fc_nport_get(uint8_t port_hdl, uint32_t nport_hdl)
+spdk_nvmf_fc_nport_get(uint8_t port_hdl, uint16_t nport_hdl)
 {
 	struct spdk_nvmf_fc_port *fc_port = NULL;
 	struct spdk_nvmf_fc_nport *fc_nport = NULL;
@@ -272,7 +272,7 @@ bcm_fc_queue_poller(void *arg)
 {
 	struct fc_hwqp *hwqp = arg;
 
-	if (hwqp->state == SPDK_FC_PORT_ONLINE) {
+	if (hwqp->state == SPDK_FC_HWQP_ONLINE) {
 		bcm_process_queues(hwqp);
 	}
 }
@@ -440,6 +440,22 @@ spdk_nvmf_fc_port_list_get(uint8_t port_hdl)
 	return NULL;
 }
 
+/*
+ * Function to calculate maximum queue depth (reported in mqes)
+ */
+uint32_t
+spdk_nvmf_bcm_fc_calc_max_q_depth(uint32_t nRQ, uint32_t RQsz,
+				  uint32_t mA, uint32_t mAC,
+				  uint32_t AQsz)
+{
+	/* adjusted max. AQ's is rounded up to neareset mult. of nRQ */
+	uint32_t adj_mA = mA % nRQ == 0 ? mA : ((mA / nRQ) * nRQ) + nRQ;
+	uint32_t mAQpRQ = adj_mA / nRQ; /* maximum AQ's per RQ */
+	uint32_t mIOQ = (mAC - 1) * mA; /* maximum IOQ's */
+	return ((RQsz - (mAQpRQ * AQsz)) / ((mIOQ / nRQ) +
+					    (mIOQ % nRQ == 0 ? 0 : 1)));
+}
+
 /* Public API callbacks begin here */
 
 static int
@@ -556,6 +572,7 @@ spdk_nvmf_fc_request_complete(struct spdk_nvmf_request *req)
 	struct spdk_event *event = NULL;
 
 	/* Check if we need to switch to correct lcore of HWQP. */
+#ifndef NETAPP
 	/* Right now spdk_env_get_current_core returns an incorrect
 	 * value (0) when called from non-EAL threads. This results in
 	 * an issue where the WAFL threads could potentially write or
@@ -563,17 +580,18 @@ spdk_nvmf_fc_request_complete(struct spdk_nvmf_request *req)
 	 * TODO: Uncomment the below line when we solve the
 	 * spdk_env_get_current_core issue.
 	 */
-	/* if (spdk_env_get_current_core() != fc_req->poller_lcore) { */
-	/* Switch to correct HWQP lcore. */
-	event = spdk_event_allocate(fc_req->poller_lcore,
-				    spdk_nvmf_fc_request_complete_process,
-				    (void *)req, NULL);
-	spdk_event_call(event);
-	/*
+	if (spdk_env_get_current_core() != fc_req->poller_lcore) {
+#endif
+		/* Switch to correct HWQP lcore. */
+		event = spdk_event_allocate(fc_req->poller_lcore,
+					    spdk_nvmf_fc_request_complete_process,
+					    (void *)req, NULL);
+		spdk_event_call(event);
+#ifndef NETAPP
 	} else {
-	spdk_nvmf_fc_request_complete_process(req, NULL);
-	} */
-
+		spdk_nvmf_fc_request_complete_process(req, NULL);
+	}
+#endif
 	return 0;
 }
 

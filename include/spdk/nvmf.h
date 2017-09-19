@@ -71,9 +71,9 @@ enum spdk_nvmf_subsystem_mode {
 	NVMF_SUBSYSTEM_MODE_VIRTUAL	= 1,
 };
 
-typedef struct spdk_uuid {
+struct spdk_uuid {
 	uint8_t bytes[SPDK_UUID_LEN];
-} spdk_uuid_t;
+};
 
 struct spdk_nvmf_listen_addr {
 	char					*traddr;
@@ -142,7 +142,7 @@ struct spdk_nvmf_subsystem_allowed_listener {
 struct spdk_nvmf_subsystem {
 	uint32_t id;
 	uint32_t lcore;
-	spdk_uuid_t container_uuid; /* UUID of the container of the subsystem */
+	struct spdk_uuid container_uuid; /* UUID of the container of the subsystem */
 	char subnqn[SPDK_NVMF_NQN_MAX_LEN];
 	enum spdk_nvmf_subsystem_mode mode;
 	enum spdk_nvmf_subtype subtype;

@@ -48,7 +48,6 @@
 #include "spdk_internal/log.h"
 
 #include "bcm_fc.h"
-#include "bcm_sli_fc.h"
 
 static uint32_t g_max_conns_per_assoc = 0;
 
@@ -237,6 +236,15 @@ enum fcnvme_ls_rjt_reason {
 	FCNVME_RJT_RC_INV_CONN = 0x41,
 	/* Invalid Connection ID */
 
+	FCNVME_RJT_RC_INV_PARAM = 0x42,
+	/* Invalid parameters */
+
+	FCNVME_RJT_RC_INSUFF_RES = 0x43,
+	/* Insufficient resources */
+
+	FCNVME_RJT_RC_INV_HOST = 0x44,
+	/* Invalid or rejected host */
+
 	FCNVME_RJT_RC_VENDOR = 0xff,
 	/* vendor specific error */
 };
@@ -255,8 +263,29 @@ enum fcnvme_ls_rjt_explan {
 	FCNVME_RJT_EXP_UNAB_DATA = 0x2a,
 	/* unable to supply requested data */
 
-	FCNVME_RJT_EXP_INV_LEN	 = 0x2d,
+	FCNVME_RJT_EXP_INV_LEN = 0x2d,
 	/* Invalid payload length */
+
+	FCNVME_RJT_EXP_INV_ESRP = 0x40,
+	/* Invalid ESRP ratio */
+
+	FCNVME_RJT_EXP_INV_CTL_ID = 0x41,
+	/* Invalid controller ID */
+
+	FCNVME_RJT_EXP_INV_Q_ID = 0x42,
+	/* Invalid queue ID */
+
+	FCNVME_RJT_EXP_SQ_SIZE = 0x43,
+	/* Invalid submission q size */
+
+	FCNVME_RJT_EXP_INV_HOST_ID = 0x44,
+	/* Invalid or rejected host ID */
+
+	FCNVME_RJT_EXP_INV_HOSTNQN = 0x45,
+	/* Invalid or rejected host NQN */
+
+	FCNVME_RJT_EXP_INV_SUBNQN = 0x46,
+	/* Invalid or rejected subystem nqn */
 };
 
 /* FCNVME_LSDESC_RJT */
@@ -289,7 +318,7 @@ enum {
 	VERR_CR_ASSOC_CMD_LEN = 4,
 	VERR_ERSP_RATIO = 5,
 	VERR_ASSOC_ALLOC_FAIL = 6,
-	VERR_QUEUE_ALLOC_FAIL = 7,
+	VERR_CONN_ALLOC_FAIL = 7,
 	VERR_CR_CONN_LEN = 8,
 	VERR_CR_CONN_RQST_LEN = 9,
 	VERR_ASSOC_ID = 10,
@@ -311,7 +340,10 @@ enum {
 	VERR_RS_CMD_LEN = 26,
 	VERR_RS_RCTL = 27,
 	VERR_RS_RO = 28,
-	VERR_CONN_TOO_MANY = 29
+	VERR_CONN_TOO_MANY = 29,
+	VERR_SUBNQN = 30,
+	VERR_HOSTNQN = 31,
+	VERR_SQSIZE = 32
 };
 
 static char *validation_errors[] = {
@@ -345,6 +377,9 @@ static char *validation_errors[] = {
 	"Bad RS R_CTL",
 	"Bad RS Relative Offset",
 	"Too many connections for association",
+	"Invalid subnqn or subsystem not found",
+	"Invalid hostnqn or subsystem doesn't allow host",
+	"SQ size = 0 or too big"
 };
 
 /* Poller API structures (arguments and callback data */
@@ -380,6 +415,7 @@ union nvmf_fc_ls_op_ctx {
 	struct nvmf_fc_ls_del_conn_api_data del_conn;
 	struct nvmf_fc_ls_del_all_conns_api_data del_all_conns;
 	struct nvmf_fc_ls_disconn_assoc_api_data del_assoc;
+	union nvmf_fc_ls_op_ctx *next_op_ctx;
 };
 
 /* global LS variables */
@@ -390,6 +426,7 @@ struct spdk_mempool *g_fc_ls_conn_pool = NULL;
 /* ****************************************************** */
 
 #define be32_to_cpu(i) from_be32((i))
+#define be16_to_cpu(i) from_be16((i))
 
 static inline __be32 cpu_to_be32(uint32_t in)
 {
@@ -405,7 +442,24 @@ static inline __be32 nvmf_fc_lsdesc_len(size_t sz)
 	return (__be32)t;
 }
 
-static void
+static struct spdk_nvmf_subsystem *
+nvmf_fc_ls_valid_subnqn(uint8_t *subnqn)
+{
+	if (!memchr(subnqn, '\0', FCNVME_ASSOC_SUBNQN_LEN))
+		return NULL;
+	return nvmf_find_subsystem((const char *)subnqn);
+}
+
+static bool
+nvmf_fc_ls_valid_hostnqn(struct spdk_nvmf_subsystem *subsystem,
+			 uint8_t *hostnqn)
+{
+	if (!memchr(hostnqn, '\0', FCNVME_ASSOC_HOSTNQN_LEN))
+		return false;
+	return spdk_nvmf_subsystem_host_allowed(subsystem, (const char *)hostnqn);
+}
+
+static inline void
 nvmf_fc_xmt_ls_rsp(struct spdk_nvmf_fc_nport *tgtport,
 		   struct nvmf_fc_ls_rqst *ls_rqst)
 {
@@ -461,8 +515,10 @@ nvmf_fc_ls_new_association(struct spdk_nvmf_fc_nport *tgtport,
 
 	if (assoc) {
 		memset((void *)assoc, 0, sizeof(*assoc));
+		assoc->assoc_state = SPDK_FC_OBJECT_CREATED;
 		assoc->tgtport = tgtport;
 		assoc->subsystem = subsys;
+		assoc->ls_del_op_ctx = NULL;
 		memcpy(assoc->host_id, a_cmd->hostid, FCNVME_ASSOC_HOSTID_LEN);
 		memcpy(assoc->host_nqn, a_cmd->hostnqn, FCNVME_ASSOC_HOSTNQN_LEN);
 		memcpy(assoc->sub_nqn, a_cmd->subnqn, FCNVME_ASSOC_HOSTNQN_LEN);
@@ -481,7 +537,19 @@ static inline void
 nvmf_fc_ls_free_association(struct spdk_nvmf_fc_association *assoc)
 {
 	SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING, "\n");
+	assoc->assoc_state = SPDK_FC_OBJECT_ZOMBIE;
 	spdk_mempool_put(g_fc_ls_assoc_pool, (void *)assoc);
+}
+
+static inline void
+nvmf_fc_ls_append_del_cb_ctx(struct spdk_nvmf_fc_association *assoc,
+			     union nvmf_fc_ls_op_ctx *opd)
+{
+	/* append to delete assoc callback list */
+	union nvmf_fc_ls_op_ctx *nxt =
+			(union nvmf_fc_ls_op_ctx *) &assoc->ls_del_op_ctx;
+	while (nxt->next_op_ctx) nxt = nxt->next_op_ctx;
+	nxt->next_op_ctx = opd;
 }
 
 static struct spdk_nvmf_fc_conn *
@@ -535,7 +603,14 @@ nvmf_fc_ls_free_connection(struct spdk_nvmf_fc_conn *fc_conn)
 static inline union nvmf_fc_ls_op_ctx *
 	nvmf_fc_ls_new_op_ctx(void)
 {
-	return spdk_malloc(sizeof(union nvmf_fc_ls_op_ctx));
+	union nvmf_fc_ls_op_ctx *op_ctx = (union nvmf_fc_ls_op_ctx *)
+						  spdk_malloc(sizeof(union nvmf_fc_ls_op_ctx));
+
+	if (op_ctx) {
+		op_ctx->next_op_ctx = NULL;
+	}
+
+	return op_ctx;
 }
 
 static inline void
@@ -690,101 +765,36 @@ nvmf_fc_ls_add_conn_to_poller(
 	SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING, "\n");
 }
 
-#ifdef SINGLE_DISCONN_SUPPORT
-/* for later when FC-NVMe spec allows single disconnect on association */
+/* Delete association functions */
 
 static void
-nvmf_fc_ls_del_conn_cb(void *cb_data, nvmf_fc_poller_api_ret_t ret)
+nvmf_fc_do_del_assoc_cbs(struct spdk_nvmf_fc_association *assoc,
+			 int ret)
 {
 	union nvmf_fc_ls_op_ctx *opd =
-			(union nvmf_fc_ls_op_ctx *)cb_data;
-	struct nvmf_fc_ls_del_conn_api_data *dp = &opd->del_conn;
-	struct spdk_nvmf_fc_association *assoc = dp->assoc;
-	struct spdk_nvmf_fc_nport *tgtport = assoc->tgtport;
-	struct nvmf_fc_ls_rqst *ls_rqst = dp->ls_rqst;
+			(union nvmf_fc_ls_op_ctx *) assoc->ls_del_op_ctx;
 
 	SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING,
-		      "conn_id = %ld\n", dp->args.fc_conn->conn_id);
+		      "peforming delete assoc. callbacks\n");
+	while (opd) {
+		union nvmf_fc_ls_op_ctx *nxt = opd->next_op_ctx;
+		struct nvmf_fc_ls_del_all_conns_api_data *dp =
+				&opd->del_all_conns;
 
-	if (ret == 0) {
-		/* remove connection from association connection list */
-		TAILQ_REMOVE(&assoc->fc_conns, dp->args.fc_conn, assoc_link);
-		assoc->conn_count--;
-		nvmf_fc_ls_free_connection(dp->args.fc_conn);
-		dp->args.hwqp->num_conns--;
+		dp->del_assoc_cb(dp->del_assoc_cb_data, ret);
+		nvmf_fc_ls_free_op_ctx(opd);
+
+		opd = nxt;
 	}
 
-	else {
-		/* send failure response */
-		struct nvmf_fc_ls_cr_assoc_rqst *rqst =
-			(struct nvmf_fc_ls_cr_assoc_rqst *)ls_rqst->rqstbuf.virt;
-		struct nvmf_fc_ls_cr_assoc_acc *acc =
-			(struct nvmf_fc_ls_cr_assoc_acc *)ls_rqst->rspbuf.virt;
-		SPDK_ERRLOG(
-			"ERR %d returned by poller delete_connection (conn_id %lx)\n",
-			ret, dp->args.fc_conn->conn_id);
-		ls_rqst->rsp_len = nvmf_fc_ls_format_rjt(acc,
-				   NVME_FC_MAX_LS_BUFFER_SIZE, rqst->w0.ls_cmd,
-				   FCNVME_RJT_RC_UNAB,
-				   FCNVME_RJT_EXP_NONE, 0);
-	}
-
-	/* send LS response */
-	nvmf_fc_xmt_ls_rsp(tgtport, ls_rqst);
-
-	nvmf_fc_ls_free_op_ctx(opd);
 }
-
-static void
-nvmf_fc_ls_del_conn(struct spdk_nvmf_fc_association *assoc,
-		    struct nvmf_fc_ls_rqst *ls_rqst,
-		    struct spdk_nvmf_fc_conn *fc_conn)
-{
-	union nvmf_fc_ls_op_ctx *opd = nvmf_fc_ls_get_op_data();
-
-	if (opd) {
-		struct nvmf_fc_ls_del_conn_api_data *api_data =
-				&opd->del_conn;
-		api_data->assoc = assoc;
-		api_data->ls_rqst = ls_rqst;
-		api_data->args.fc_conn = fc_conn;
-		api_data->args.hwqp = nvmf_fc_ls_get_hwqp(assoc->tgtport,
-				      fc_conn->conn_id);
-		api_data->args.cb_info.cb_func = nvmf_fc_ls_del_conn_cb;
-		api_data->args.cb_info.cb_data = opd;
-
-		SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING,
-			      "conn_id = %ld\n", conn_id);
-		nvmf_fc_poller_api(api_data->args.hwqp->lcore_id,
-				   NVMF_FC_POLLER_API_DEL_CONNECTION, &api_data->args);
-	}
-
-	else {
-		/* send failure response */
-		struct nvmf_fc_ls_cr_assoc_rqst *rqst =
-			(struct nvmf_fc_ls_cr_assoc_rqst *)ls_rqst->rqstbuf.virt;
-		struct nvmf_fc_ls_cr_assoc_acc *acc =
-			(struct nvmf_fc_ls_cr_assoc_acc *)ls_rqst->rspbuf.virt;
-		SPDK_ERRLOG("Allocate data for del conn op failed\n");
-		ls_rqst->rsp_len = nvmf_fc_ls_format_rjt(acc,
-				   NVME_FC_MAX_LS_BUFFER_SIZE, rqst->w0.ls_cmd,
-				   FCNVME_RJT_RC_UNAB,
-				   FCNVME_RJT_EXP_INSUF_RES, 0);
-		nvmf_fc_xmt_ls_rsp(assoc->tgtport, ls_rqst);
-	}
-}
-#endif /* SINGLE_DISCONN_SUPPORT */
-
-/* Delete association functions */
 
 static void
 nvmf_fc_del_next_conn(union nvmf_fc_ls_op_ctx *opd)
 {
 	struct nvmf_fc_ls_del_all_conns_api_data *api_data =
 			&opd->del_all_conns;
-	struct nvmf_fc_ls_del_all_conns_api_data *dp =
-			&opd->del_all_conns;
-	struct spdk_nvmf_fc_association *assoc = dp->assoc;
+	struct spdk_nvmf_fc_association *assoc = api_data->assoc;
 
 	/* get the next connection in association's list */
 	api_data->args.fc_conn =
@@ -809,9 +819,11 @@ nvmf_fc_del_next_conn(union nvmf_fc_ls_op_ctx *opd)
 			      assoc->assoc_id, assoc->conn_count);
 		TAILQ_REMOVE(&tgtport->fc_associations, assoc, link);
 		tgtport->assoc_count--;
+
+		/* perform callbacks to all callers to delete association */
+		nvmf_fc_do_del_assoc_cbs(assoc, 0);
+
 		nvmf_fc_ls_free_association(assoc);
-		dp->del_assoc_cb(dp->del_assoc_cb_data, 0);
-		nvmf_fc_ls_free_op_ctx(opd);
 	}
 }
 
@@ -836,10 +848,9 @@ nvmf_fc_del_all_conns_cb(void *cb_data, nvmf_fc_poller_api_ret_t ret)
 	}
 
 	else {
-		/* error - stop now and return error */
+		/* error - stop now and perform callbacks with errors */
 		SPDK_ERRLOG("delete connection failed\n");
-		dp->del_assoc_cb(dp->del_assoc_cb_data, ret);
-		nvmf_fc_ls_free_op_ctx(opd);
+		nvmf_fc_do_del_assoc_cbs(assoc, ret);
 	}
 	SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING, "\n");
 }
@@ -863,9 +874,11 @@ nvmf_fc_ls_disconnect_assoc_cb(void *cb_data, uint32_t err)
 		struct nvmf_fc_ls_cr_assoc_acc *acc =
 			(struct nvmf_fc_ls_cr_assoc_acc *)ls_rqst->rspbuf.virt;
 		ls_rqst->rsp_len = nvmf_fc_ls_format_rjt(acc,
-				   NVME_FC_MAX_LS_BUFFER_SIZE, rqst->w0.ls_cmd,
+				   NVME_FC_MAX_LS_BUFFER_SIZE,
+				   rqst->w0.ls_cmd,
 				   FCNVME_RJT_RC_UNAB,
-				   FCNVME_RJT_EXP_NONE, 0);
+				   FCNVME_RJT_EXP_NONE,
+				   0);
 	}
 
 	nvmf_fc_xmt_ls_rsp(tgtport, ls_rqst);
@@ -888,7 +901,8 @@ nvmf_fc_ls_disconnect_assoc(struct spdk_nvmf_fc_nport *tgtport,
 		api_data->tgtport = tgtport;
 		api_data->ls_rqst = ls_rqst;
 		ret = spdk_nvmf_fc_delete_association(tgtport, assoc_id,
-						      nvmf_fc_ls_disconnect_assoc_cb, api_data);
+						      nvmf_fc_ls_disconnect_assoc_cb,
+						      api_data);
 
 		if (ret != 0) {
 			/* delete association failed */
@@ -941,70 +955,92 @@ nvmf_fc_ls_create_association(struct spdk_nvmf_fc_nport *tgtport,
 	struct spdk_nvmf_fc_association *assoc;
 	struct spdk_nvmf_fc_conn *fc_conn;
 	struct spdk_nvmf_subsystem *subsys = NULL;
-	int ret = 0;
-
+	int errmsg_ind = 0;
+	uint8_t rc = FCNVME_RJT_RC_NONE;
+	uint8_t ec = FCNVME_RJT_EXP_NONE;
 
 	SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING,
-		      "ls_rst_len=%d, desc_list_len=%d, cmd_len=%d\n",
+		      "LS_CA: ls_rqst_len=%d, desc_list_len=%d, cmd_len=%d, sq_size=%d\n",
 		      ls_rqst->rqst_len, be32_to_cpu(&rqst->desc_list_len),
-		      be32_to_cpu(&rqst->assoc_cmd.desc_len));
-
+		      be32_to_cpu(&rqst->assoc_cmd.desc_len),
+		      be16_to_cpu(&rqst->assoc_cmd.sqsize));
 	if (ls_rqst->rqst_len < LS_CREATE_ASSOC_MIN_LEN) {
 		SPDK_ERRLOG("assoc_cmd req len = %d, should be at leastt %d\n",
 			    ls_rqst->rqst_len, LS_CREATE_ASSOC_MIN_LEN);
-		ret = VERR_CR_ASSOC_LEN;
+		errmsg_ind = VERR_CR_ASSOC_LEN;
+		rc = FCNVME_RJT_RC_INV_PARAM;
+		ec = FCNVME_RJT_EXP_INV_LEN;
 	} else if (be32_to_cpu(&rqst->desc_list_len) <
 		   LS_CREATE_ASSOC_DESC_LIST_MIN_LEN) {
 		SPDK_ERRLOG("assoc_cmd desc list len = %d, should be at least %d\n",
 			    be32_to_cpu(&rqst->desc_list_len),
 			    LS_CREATE_ASSOC_DESC_LIST_MIN_LEN);
-		ret = VERR_CR_ASSOC_RQST_LEN;
+		errmsg_ind = VERR_CR_ASSOC_RQST_LEN;
+		rc = FCNVME_RJT_RC_INV_PARAM;
+		ec = FCNVME_RJT_EXP_INV_LEN;
 	} else if (rqst->assoc_cmd.desc_tag !=
 		   cpu_to_be32(FCNVME_LSDESC_CREATE_ASSOC_CMD)) {
-		ret = VERR_CR_ASSOC_CMD;
+		errmsg_ind = VERR_CR_ASSOC_CMD;
+		rc = FCNVME_RJT_RC_INV_PARAM;
 	} else if (be32_to_cpu(&rqst->assoc_cmd.desc_len) <
 		   LS_CREATE_ASSOC_CMD_DESC_MIN_LEN) {
 		SPDK_ERRLOG("assoc_cmd desc len = %d, should be at least %d\n",
 			    be32_to_cpu(&rqst->assoc_cmd.desc_len),
 			    LS_CREATE_ASSOC_CMD_DESC_MIN_LEN);
-		ret = VERR_CR_ASSOC_CMD_LEN;
+		errmsg_ind = VERR_CR_ASSOC_CMD_LEN;
+		rc = FCNVME_RJT_RC_INV_PARAM;
+		ec = FCNVME_RJT_EXP_INV_LEN;
 	} else if (!rqst->assoc_cmd.ersp_ratio ||
 		   (from_be16(&rqst->assoc_cmd.ersp_ratio) >=
-		    from_be16(&rqst->assoc_cmd.sqsize)))
-		ret = VERR_ERSP_RATIO;
-	else {
+		    from_be16(&rqst->assoc_cmd.sqsize))) {
+		errmsg_ind = VERR_ERSP_RATIO;
+		rc = FCNVME_RJT_RC_INV_PARAM;
+		ec = FCNVME_RJT_EXP_INV_ESRP;
+	} else if ((subsys = nvmf_fc_ls_valid_subnqn(rqst->assoc_cmd.subnqn))
+		   == NULL) {
+		errmsg_ind = VERR_SUBNQN;
+		rc = FCNVME_RJT_RC_INV_PARAM;
+		ec = FCNVME_RJT_EXP_INV_SUBNQN;
+	} else if (!nvmf_fc_ls_valid_hostnqn(subsys, rqst->assoc_cmd.hostnqn)) {
+		errmsg_ind = VERR_HOSTNQN;
+		rc = FCNVME_RJT_RC_INV_HOST;
+		ec = FCNVME_RJT_EXP_INV_HOSTNQN;
+	} else if (rqst->assoc_cmd.sqsize == 0 ||
+		   from_be16(&rqst->assoc_cmd.sqsize) >
+		   g_nvmf_tgt.max_aq_depth) {
+		errmsg_ind = VERR_SQSIZE;
+		rc = FCNVME_RJT_RC_INV_PARAM;
+		ec = FCNVME_RJT_EXP_SQ_SIZE;
+	} else {
 		/* new association w/ admin queue */
-		/* TODO: Add check if host nqn allowed to create assoc on this subnqn */
-		/* TODO: Get subsystem from subnqn */
-		/* subsys = nvmf_find_subsystem(rqst->assoc_cmd.subnqn);  */
 		assoc = nvmf_fc_ls_new_association(tgtport,
 						   &rqst->assoc_cmd,
 						   subsys);
 		if (!assoc) {
-			ret = VERR_ASSOC_ALLOC_FAIL;
+			errmsg_ind = VERR_ASSOC_ALLOC_FAIL;
+			rc = FCNVME_RJT_RC_INSUFF_RES;
+			ec = FCNVME_RJT_EXP_INSUF_RES;
 		} else { // alloc admin q (i.e. connection)
 			fc_conn = nvmf_fc_ls_new_connection(assoc,
-							    CONN_TYPE_AQ, 0, rqst->assoc_cmd.sqsize,
-							    rqst->assoc_cmd.ersp_ratio, ls_rqst->rpi);
+							    CONN_TYPE_AQ, 0,
+							    rqst->assoc_cmd.sqsize,
+							    rqst->assoc_cmd.ersp_ratio,
+							    ls_rqst->rpi);
 			if (!fc_conn) {
-				ret = VERR_QUEUE_ALLOC_FAIL;
+				errmsg_ind = VERR_CONN_ALLOC_FAIL;
+				rc = FCNVME_RJT_RC_INSUFF_RES;
+				ec = FCNVME_RJT_EXP_INSUF_RES;
 			}
 		}
 	}
 
-	if (ret) {
+	if (rc != FCNVME_RJT_RC_NONE) {
 		SPDK_ERRLOG("Create Association LS failed: %s\n",
-			    validation_errors[ret]);
+			    validation_errors[errmsg_ind]);
 		ls_rqst->rsp_len = nvmf_fc_ls_format_rjt(acc,
-				   NVME_FC_MAX_LS_BUFFER_SIZE, rqst->w0.ls_cmd,
-				   ret == VERR_ASSOC_ALLOC_FAIL ||
-				   ret == VERR_QUEUE_ALLOC_FAIL ?
-				   FCNVME_RJT_RC_UNAB :
-				   FCNVME_RJT_RC_LOGIC,
-				   ret == VERR_ASSOC_ALLOC_FAIL ||
-				   ret == VERR_QUEUE_ALLOC_FAIL ?
-				   FCNVME_RJT_EXP_INSUF_RES :
-				   FCNVME_RJT_EXP_NONE, 0);
+				   NVME_FC_MAX_LS_BUFFER_SIZE,
+				   rqst->w0.ls_cmd, rc,
+				   ec, 0);
 		nvmf_fc_xmt_ls_rsp(tgtport, ls_rqst);
 	}
 
@@ -1020,12 +1056,10 @@ nvmf_fc_ls_create_association(struct spdk_nvmf_fc_nport *tgtport,
 					  FCNVME_LS_CREATE_ASSOCIATION);
 		to_be32(&acc->assoc_id.desc_tag, FCNVME_LSDESC_ASSOC_ID);
 		acc->assoc_id.desc_len =
-			nvmf_fc_lsdesc_len(
-				sizeof(struct nvmf_fc_lsdesc_assoc_id));
+			nvmf_fc_lsdesc_len(sizeof(struct nvmf_fc_lsdesc_assoc_id));
 		to_be32(&acc->conn_id.desc_tag, FCNVME_LSDESC_CONN_ID);
 		acc->conn_id.desc_len =
-			nvmf_fc_lsdesc_len(
-				sizeof(struct nvmf_fc_lsdesc_conn_id));
+			nvmf_fc_lsdesc_len(sizeof(struct nvmf_fc_lsdesc_conn_id));
 
 		/* assign connection to HWQP poller - also sends response */
 		nvmf_fc_ls_add_conn_to_poller(assoc, ls_rqst,
@@ -1043,42 +1077,64 @@ nvmf_fc_ls_create_connection(struct spdk_nvmf_fc_nport *tgtport,
 		(struct nvmf_fc_ls_cr_conn_acc *)ls_rqst->rspbuf.virt;
 	struct spdk_nvmf_fc_association *assoc;
 	struct spdk_nvmf_fc_conn *fc_conn = NULL;
-	int ret = 0;
+	int errmsg_ind = 0;
+	uint8_t rc = FCNVME_RJT_RC_NONE;
+	uint8_t ec = FCNVME_RJT_EXP_NONE;
 
-	SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING, "\n");
+	SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING,
+		      "LS_CC: ls_rqst_len=%d, desc_list_len=%d, cmd_len=%d, sq_size=%d\n",
+		      ls_rqst->rqst_len, be32_to_cpu(&rqst->desc_list_len),
+		      be32_to_cpu(&rqst->connect_cmd.desc_len),
+		      be16_to_cpu(&rqst->connect_cmd.sqsize));
 
-	if (ls_rqst->rqst_len < sizeof(struct nvmf_fc_ls_cr_conn_rqst))
-		ret = VERR_CR_CONN_LEN;
-	else if (rqst->desc_list_len !=
-		 nvmf_fc_lsdesc_len(
-			 sizeof(struct nvmf_fc_ls_cr_conn_rqst)))
-		ret = VERR_CR_CONN_RQST_LEN;
-	else if (rqst->assoc_id.desc_tag !=
-		 cpu_to_be32(FCNVME_LSDESC_ASSOC_ID))
-		ret = VERR_ASSOC_ID;
-	else if (rqst->assoc_id.desc_len !=
-		 nvmf_fc_lsdesc_len(
-			 sizeof(struct nvmf_fc_lsdesc_assoc_id)))
-		ret = VERR_ASSOC_ID_LEN;
-	else if (rqst->connect_cmd.desc_tag !=
-		 cpu_to_be32(FCNVME_LSDESC_CREATE_CONN_CMD))
-		ret = VERR_CR_CONN_CMD;
-	else if (rqst->connect_cmd.desc_len !=
-		 nvmf_fc_lsdesc_len(
-			 sizeof(struct nvmf_fc_lsdesc_cr_conn_cmd)))
-		ret = VERR_CR_CONN_CMD_LEN;
-	else if (!rqst->connect_cmd.ersp_ratio ||
-		 (from_be16(&rqst->connect_cmd.ersp_ratio) >=
-		  from_be16(&rqst->connect_cmd.sqsize)))
-		ret = VERR_ERSP_RATIO;
-
-	else {
+	if (ls_rqst->rqst_len < sizeof(struct nvmf_fc_ls_cr_conn_rqst)) {
+		errmsg_ind = VERR_CR_CONN_LEN;
+		rc = FCNVME_RJT_RC_INV_PARAM;
+		ec = FCNVME_RJT_EXP_INV_LEN;
+	} else if (rqst->desc_list_len !=
+		   nvmf_fc_lsdesc_len(sizeof(struct nvmf_fc_ls_cr_conn_rqst))) {
+		errmsg_ind = VERR_CR_CONN_RQST_LEN;
+		rc = FCNVME_RJT_RC_INV_PARAM;
+		ec = FCNVME_RJT_EXP_INV_LEN;
+	} else if (rqst->assoc_id.desc_tag !=
+		   cpu_to_be32(FCNVME_LSDESC_ASSOC_ID)) {
+		errmsg_ind = VERR_ASSOC_ID;
+		rc = FCNVME_RJT_RC_INV_PARAM;
+	} else if (rqst->assoc_id.desc_len !=
+		   nvmf_fc_lsdesc_len(sizeof(struct nvmf_fc_lsdesc_assoc_id))) {
+		errmsg_ind = VERR_ASSOC_ID_LEN;
+		rc = FCNVME_RJT_RC_INV_PARAM;
+		ec = FCNVME_RJT_EXP_INV_LEN;
+	} else if (rqst->connect_cmd.desc_tag !=
+		   cpu_to_be32(FCNVME_LSDESC_CREATE_CONN_CMD)) {
+		errmsg_ind = VERR_CR_CONN_CMD;
+		rc = FCNVME_RJT_RC_INV_PARAM;
+	} else if (rqst->connect_cmd.desc_len !=
+		   nvmf_fc_lsdesc_len(
+			   sizeof(struct nvmf_fc_lsdesc_cr_conn_cmd))) {
+		errmsg_ind = VERR_CR_CONN_CMD_LEN;
+		rc = FCNVME_RJT_RC_INV_PARAM;
+		ec = FCNVME_RJT_EXP_INV_LEN;
+	} else if (!rqst->connect_cmd.ersp_ratio ||
+		   (from_be16(&rqst->connect_cmd.ersp_ratio) >=
+		    from_be16(&rqst->connect_cmd.sqsize))) {
+		errmsg_ind = VERR_ERSP_RATIO;
+		rc = FCNVME_RJT_RC_INV_PARAM;
+		ec = FCNVME_RJT_EXP_INV_ESRP;
+	} else if (rqst->connect_cmd.sqsize == 0 ||
+		   from_be16(&rqst->connect_cmd.sqsize) >
+		   g_nvmf_tgt.max_queue_depth) {
+		errmsg_ind = VERR_SQSIZE;
+		rc = FCNVME_RJT_RC_INV_PARAM;
+		ec = FCNVME_RJT_EXP_SQ_SIZE;
+	} else {
 		/* find association */
 		assoc = nvmf_fc_ls_find_assoc(tgtport,
 					      from_be64(&rqst->assoc_id.association_id));
-		if (!assoc)
-			ret = VERR_NO_ASSOC;
-		else { // alloc IO q (i.e. connection)
+		if (!assoc) {
+			errmsg_ind = VERR_NO_ASSOC;
+			rc = FCNVME_RJT_RC_INV_ASSOC;
+		} else { // alloc IO q (i.e. connection)
 			if (assoc->conn_count < g_max_conns_per_assoc) {
 				fc_conn = nvmf_fc_ls_new_connection(assoc,
 								    CONN_TYPE_IOQ,
@@ -1087,28 +1143,25 @@ nvmf_fc_ls_create_connection(struct spdk_nvmf_fc_nport *tgtport,
 								    rqst->connect_cmd.ersp_ratio,
 								    ls_rqst->rpi);
 				if (!fc_conn) {
-					ret = VERR_QUEUE_ALLOC_FAIL;
+					errmsg_ind = VERR_CONN_ALLOC_FAIL;
+					rc = FCNVME_RJT_RC_INSUFF_RES;
+					ec = FCNVME_RJT_EXP_INSUF_RES;
 				}
 			} else {
-				ret = VERR_CONN_TOO_MANY;
+				errmsg_ind = VERR_CONN_TOO_MANY;
+				rc = FCNVME_RJT_RC_INV_PARAM;
+				ec =  FCNVME_RJT_EXP_INV_Q_ID;
 			}
 		}
 	}
 
-	if (ret) {
+	if (rc != FCNVME_RJT_RC_NONE) {
 		SPDK_ERRLOG("Create Connection LS failed: %s\n",
-			    validation_errors[ret]);
+			    validation_errors[errmsg_ind]);
 		ls_rqst->rsp_len = nvmf_fc_ls_format_rjt(acc,
-				   NVME_FC_MAX_LS_BUFFER_SIZE, rqst->w0.ls_cmd,
-				   (ret == VERR_NO_ASSOC) ?
-				   FCNVME_RJT_RC_INV_ASSOC :
-				   ret == VERR_QUEUE_ALLOC_FAIL ?
-				   FCNVME_RJT_RC_UNAB :
-				   FCNVME_RJT_RC_LOGIC,
-				   (ret == VERR_QUEUE_ALLOC_FAIL ||
-				    ret == VERR_CONN_TOO_MANY) ?
-				   FCNVME_RJT_EXP_INSUF_RES :
-				   FCNVME_RJT_EXP_NONE, 0);
+				   NVME_FC_MAX_LS_BUFFER_SIZE,
+				   rqst->w0.ls_cmd,
+				   rc, ec, 0);
 		nvmf_fc_xmt_ls_rsp(tgtport, ls_rqst);
 	}
 
@@ -1140,64 +1193,67 @@ nvmf_fc_ls_disconnect(struct spdk_nvmf_fc_nport *tgtport,
 	struct nvmf_fc_ls_disconnect_acc *acc =
 		(struct nvmf_fc_ls_disconnect_acc *)ls_rqst->rspbuf.virt;
 	struct spdk_nvmf_fc_association *assoc;
-	struct spdk_nvmf_fc_conn *fc_conn = NULL;
-	int ret = 0;
+	int errmsg_ind = 0;
+	uint8_t rc = FCNVME_RJT_RC_NONE;
+	uint8_t ec = FCNVME_RJT_EXP_NONE;
 
 	SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING, "\n");
+	SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING,
+		      "LS_DC: ls_rqst_len=%d, desc_list_len=%d, cmd_len=%d\n",
+		      ls_rqst->rqst_len, be32_to_cpu(&rqst->desc_list_len),
+		      be32_to_cpu(&rqst->disconn_cmd.desc_len));
 
 	memset(acc, 0, sizeof(*acc));
 
-	if (ls_rqst->rqst_len < sizeof(struct nvmf_fc_ls_disconnect_rqst))
-		ret = VERR_DISCONN_LEN;
-	else if (rqst->desc_list_len !=
-		 nvmf_fc_lsdesc_len(
-			 sizeof(struct nvmf_fc_ls_disconnect_rqst)))
-		ret = VERR_DISCONN_RQST_LEN;
-	else if (rqst->assoc_id.desc_tag != cpu_to_be32(FCNVME_LSDESC_ASSOC_ID))
-		ret = VERR_ASSOC_ID;
-	else if (rqst->assoc_id.desc_len !=
-		 nvmf_fc_lsdesc_len(
-			 sizeof(struct nvmf_fc_lsdesc_assoc_id)))
-		ret = VERR_ASSOC_ID_LEN;
-	else if (rqst->disconn_cmd.desc_tag !=
-		 cpu_to_be32(FCNVME_LSDESC_DISCONN_CMD))
-		ret = VERR_DISCONN_CMD;
-	else if (rqst->disconn_cmd.desc_len !=
-		 nvmf_fc_lsdesc_len(
-			 sizeof(struct nvmf_fc_lsdesc_disconn_cmd)))
-		ret = VERR_DISCONN_CMD_LEN;
-	else if ((rqst->disconn_cmd.scope != FCNVME_DISCONN_ASSOCIATION) &&
-		 (rqst->disconn_cmd.scope != FCNVME_DISCONN_CONNECTION))
-		ret = VERR_DISCONN_SCOPE;
-	else {
+	if (ls_rqst->rqst_len < sizeof(struct nvmf_fc_ls_disconnect_rqst)) {
+		errmsg_ind = VERR_DISCONN_LEN;
+		rc = FCNVME_RJT_RC_INV_PARAM;
+		ec = FCNVME_RJT_EXP_INV_LEN;
+	} else if (rqst->desc_list_len !=
+		   nvmf_fc_lsdesc_len(sizeof(struct nvmf_fc_ls_disconnect_rqst))) {
+		errmsg_ind = VERR_DISCONN_RQST_LEN;
+		rc = FCNVME_RJT_RC_INV_PARAM;
+		ec = FCNVME_RJT_EXP_INV_LEN;
+	} else if (rqst->assoc_id.desc_tag !=
+		   cpu_to_be32(FCNVME_LSDESC_ASSOC_ID)) {
+		errmsg_ind = VERR_ASSOC_ID;
+		rc = FCNVME_RJT_RC_INV_PARAM;
+	} else if (rqst->assoc_id.desc_len !=
+		   nvmf_fc_lsdesc_len(sizeof(struct nvmf_fc_lsdesc_assoc_id))) {
+		errmsg_ind = VERR_ASSOC_ID_LEN;
+		rc = FCNVME_RJT_RC_INV_PARAM;
+		ec = FCNVME_RJT_EXP_INV_LEN;
+	} else if (rqst->disconn_cmd.desc_tag !=
+		   cpu_to_be32(FCNVME_LSDESC_DISCONN_CMD)) {
+		rc = FCNVME_RJT_RC_INV_PARAM;
+		errmsg_ind = VERR_DISCONN_CMD;
+	} else if (rqst->disconn_cmd.desc_len !=
+		   nvmf_fc_lsdesc_len(sizeof(struct nvmf_fc_lsdesc_disconn_cmd))) {
+		errmsg_ind = VERR_DISCONN_CMD_LEN;
+		rc = FCNVME_RJT_RC_INV_PARAM;
+		ec = FCNVME_RJT_EXP_INV_LEN;
+	} else {
 		/* match an active association */
 		assoc = nvmf_fc_ls_find_assoc(tgtport,
 					      from_be64(&rqst->assoc_id.association_id));
 		if (!assoc) {
-			ret = VERR_NO_ASSOC;
-		} else if (rqst->disconn_cmd.scope ==
-			   FCNVME_DISCONN_CONNECTION) {
-			/* verify connection exists */
-			TAILQ_FOREACH(fc_conn, &assoc->fc_conns, assoc_link) {
-				if (fc_conn->conn_id == rqst->disconn_cmd.id) {
-					break;
-				}
-			}
-			if (!fc_conn) {
-				ret = VERR_NO_CONN;
-			}
+			errmsg_ind = VERR_NO_ASSOC;
+			rc = FCNVME_RJT_RC_INV_ASSOC;
+		}
+
+		/* check if association already in process of being deleted */
+		else if (assoc->assoc_state == SPDK_FC_OBJECT_TO_BE_DELETED) {
+			errmsg_ind = VERR_NO_ASSOC;
 		}
 	}
 
-	if (ret) {
+	if (rc != FCNVME_RJT_RC_NONE) {
 		SPDK_ERRLOG("Disconnect LS failed: %s\n",
-			    validation_errors[ret]);
+			    validation_errors[errmsg_ind]);
 		ls_rqst->rsp_len = nvmf_fc_ls_format_rjt(acc,
-				   NVME_FC_MAX_LS_BUFFER_SIZE, rqst->w0.ls_cmd,
-				   (ret == VERR_NO_ASSOC) ? FCNVME_RJT_RC_INV_ASSOC :
-				   (ret == VERR_NO_CONN) ? FCNVME_RJT_RC_INV_CONN :
-				   FCNVME_RJT_RC_LOGIC,
-				   FCNVME_RJT_EXP_NONE, 0);
+				   NVME_FC_MAX_LS_BUFFER_SIZE,
+				   rqst->w0.ls_cmd,
+				   rc, ec, 0);
 		nvmf_fc_xmt_ls_rsp(tgtport, ls_rqst);
 	}
 
@@ -1210,9 +1266,6 @@ nvmf_fc_ls_disconnect(struct spdk_nvmf_fc_nport *tgtport,
 						  sizeof(struct nvmf_fc_ls_disconnect_acc)),
 					  FCNVME_LS_DISCONNECT);
 
-		/* NOTE: FC-NVMe spec will be changing so disconnect command will
-		 * destroy assosication - so no need to look at scope
-		 * A new command will be spec'd for single connection disconnect */
 		nvmf_fc_ls_disconnect_assoc(tgtport, ls_rqst, assoc->assoc_id);
 	}
 }
@@ -1238,7 +1291,17 @@ spdk_nvmf_fc_ls_init(void)
 					    sizeof(struct spdk_nvmf_fc_association),
 					    0, SPDK_ENV_SOCKET_ID_ANY);
 		if (g_fc_ls_assoc_pool) {
-			/* allocation connections */
+			uint32_t i = 0;
+			struct spdk_nvmf_fc_association *assoc;
+			for (; i < g_nvmf_tgt.max_associations; i++) {
+				assoc = (struct spdk_nvmf_fc_association *)
+					spdk_mempool_get(g_fc_ls_assoc_pool);
+				if (assoc) {
+					assoc->assoc_state = SPDK_FC_OBJECT_ZOMBIE;
+					spdk_mempool_put(g_fc_ls_assoc_pool, assoc);
+				}
+			}
+			/* allocate connections */
 			g_fc_ls_conn_pool =
 				spdk_mempool_create("NVMF_FC_CONN_POOL",
 						    (size_t)(g_nvmf_tgt.max_associations *
@@ -1301,7 +1364,8 @@ spdk_nvmf_fc_handle_ls_rqst(struct spdk_nvmf_fc_nport *tgtport,
 
 int
 spdk_nvmf_fc_delete_association(struct spdk_nvmf_fc_nport *tgtport,
-				uint64_t assoc_id, spdk_nvmf_fc_del_assoc_cb del_assoc_cb,
+				uint64_t assoc_id,
+				spdk_nvmf_fc_del_assoc_cb del_assoc_cb,
 				void *cb_data)
 {
 	int rc = 0;
@@ -1310,12 +1374,18 @@ spdk_nvmf_fc_delete_association(struct spdk_nvmf_fc_nport *tgtport,
 
 	if (assoc) {
 		/* delete all of the association's connections */
+		bool do_conn_del = assoc->assoc_state ==
+				   SPDK_FC_OBJECT_TO_BE_DELETED ? false : true;
 		union nvmf_fc_ls_op_ctx *opd =
 				nvmf_fc_ls_new_op_ctx();
 
 		if (opd) {
 			struct nvmf_fc_ls_del_all_conns_api_data
 				*api_data = &opd->del_all_conns;
+
+			/* mark assoc. to be deleted */
+			assoc->assoc_state = SPDK_FC_OBJECT_TO_BE_DELETED;
+
 			api_data->assoc = assoc;
 			api_data->del_assoc_cb = del_assoc_cb;
 			api_data->del_assoc_cb_data = cb_data;
@@ -1323,8 +1393,14 @@ spdk_nvmf_fc_delete_association(struct spdk_nvmf_fc_nport *tgtport,
 				nvmf_fc_del_all_conns_cb;
 			api_data->args.cb_info.cb_data = opd;
 
-			/* delete first conn */
-			nvmf_fc_del_next_conn(opd);
+			/* add cb to list off callbacks to
+			 * make when delete done */
+			nvmf_fc_ls_append_del_cb_ctx(assoc, opd);
+
+			if (do_conn_del) {
+				/* start deleting the connections */
+				nvmf_fc_del_next_conn(opd);
+			}
 
 		} else { /* hopefully this doesn't happen */
 			SPDK_ERRLOG(

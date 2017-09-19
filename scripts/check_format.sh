@@ -16,7 +16,7 @@ if hash astyle; then
 	#  as-is to enable ongoing work to synch with a generic upstream DPDK vhost library,
 	#  rather than making diffs more complicated by a lot of changes to follow SPDK
 	#  coding standards.
-	git ls-files '*.[ch]' '*.cpp' | grep -v rte_vhost | grep -v cpp_headers | \
+	git ls-files '*.[ch]' '*.cpp' | grep -v "lib\/fc" | grep -v rte_vhost | grep -v cpp_headers | \
 		xargs astyle --options=.astylerc >> astyle.log
 	if grep -q "^Formatted" astyle.log; then
 		echo " errors detected"
@@ -37,9 +37,9 @@ fi
 
 echo -n "Checking comment style..."
 
-git grep --line-number -e '/[*][^ *-]' -- '*.[ch]' > comment.log || true
-git grep --line-number -e '[^ ][*]/' -- '*.[ch]' >> comment.log || true
-git grep --line-number -e '^[*]' -- '*.[ch]' >> comment.log || true
+git grep --line-number -e '/[*][^ *-]' -- '*.[ch]' | grep -v "lib\/fc" > comment.log || true
+git grep --line-number -e '[^ ][*]/' -- '*.[ch]' | grep -v "lib\/fc" >> comment.log || true
+git grep --line-number -e '^[*]' -- '*.[ch]' | grep -v "lib\/fc" >> comment.log || true
 
 if [ -s comment.log ]; then
 	echo " Incorrect comment formatting detected"
@@ -52,7 +52,7 @@ rm -f comment.log
 
 echo -n "Checking blank lines at end of file..."
 
-if ! git grep -I -l -e . -z | \
+if ! git grep -I -l -e . -z | grep -v "lib\/fc" | \
 	xargs -0 -P8 -n1 scripts/eofnl > eofnl.log; then
 	echo " Incorrect end-of-file formatting detected"
 	cat eofnl.log

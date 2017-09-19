@@ -44,6 +44,10 @@ TARGET_LIBS += vhost
 endif
 endif
 
+ifeq ($(CONFIG_BCM_FC),y)
+TARGET_LIBS +=fc
+endif
+
 DIRS-y += $(TARGET_LIBS) 
 
 .PHONY: all clean $(DIRS-y)

@@ -475,7 +475,7 @@ request_transfer_out(struct spdk_nvmf_request *req)
 	SPDK_TRACELOG(SPDK_TRACE_RDMA, "RDMA RECV POSTED. Recv: %p Connection: %p\n", rdma_req->recv,
 		      rdma_conn);
 
-#ifdef _ONTAP_
+#ifdef NETAPP
 	/* ONTAP-HACK: to get RDMA working with backend supplied buffers. */
 	if (req->conn->type == CONN_TYPE_IOQ) {
 		if (req->iovcnt) {

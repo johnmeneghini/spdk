@@ -102,7 +102,7 @@ spdk_dma_virt_to_iovec(void *buf, uint32_t len, struct iovec *iov, int iovcnt)
 		return 0;
 	}
 
-	iov[0].iov_base = (void *) spdk_vtophys(buf);
+	iov[0].iov_base = buf;
 	iov[0].iov_len = len;
 	return 1;
 }

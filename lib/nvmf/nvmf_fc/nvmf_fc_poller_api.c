@@ -32,12 +32,7 @@
  *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "nvmf/nvmf_internal.h"
-#include "nvmf/request.h"
-#include "nvmf/session.h"
-#include "nvmf/subsystem.h"
-#include "nvmf/transport.h"
-
+#include "spdk/env.h"
 #include "spdk/assert.h"
 #include "spdk/nvmf.h"
 #include "spdk/nvmf_spec.h"
@@ -57,7 +52,7 @@ extern int bcm_nvmf_fc_issue_abort(struct fc_hwqp *hwqp, fc_xri_t *xri, bool sen
 static void
 nvmf_fc_poller_api_cb_event(void *arg1, void *arg2)
 {
-	SPDK_TRACELOG(SPDK_TRACE_POLLER_API, "nvmf_fc_poller_api_cb_event");
+	SPDK_TRACELOG(SPDK_TRACE_POLLER_API, " ");
 	if (arg1) {
 		struct nvmf_poller_api_cb_info *cb_info =
 			(struct nvmf_poller_api_cb_info *) arg1;
@@ -71,7 +66,7 @@ static void
 nvmf_fc_poller_api_perform_cb(struct nvmf_poller_api_cb_info *cb_info,
 			      nvmf_fc_poller_api_ret_t ret)
 {
-	SPDK_TRACELOG(SPDK_TRACE_POLLER_API, "nvmf_fc_poller_api_perform_cb");
+	SPDK_TRACELOG(SPDK_TRACE_POLLER_API, " ");
 
 	if (cb_info->cb_func) {
 		struct spdk_event *event = NULL;
@@ -83,7 +78,7 @@ nvmf_fc_poller_api_perform_cb(struct nvmf_poller_api_cb_info *cb_info,
 					    nvmf_fc_poller_api_cb_event,
 					    (void *) cb_info, NULL);
 
-		SPDK_TRACELOG(SPDK_TRACE_POLLER_API, "nvmf_fc_poller_api_perform_cb");
+		SPDK_TRACELOG(SPDK_TRACE_POLLER_API, " ");
 
 		spdk_event_call(event);
 	}
@@ -98,7 +93,7 @@ nvmf_fc_poller_api_add_connection(void *arg1, void *arg2)
 	struct spdk_nvmf_fc_conn *fc_conn;
 	bool bfound = false;
 
-	SPDK_TRACELOG(SPDK_TRACE_POLLER_API, "nvmf_fc_poller_api_add_connection");
+	SPDK_TRACELOG(SPDK_TRACE_POLLER_API, " ");
 
 	/* make sure connection is not already in poller's list */
 	TAILQ_FOREACH(fc_conn, &conn_args->hwqp->connection_list, link) {
@@ -127,7 +122,8 @@ nvmf_fc_poller_api_quiesce_queue(void *arg1, void *arg2)
 	struct nvmf_fc_poller_api_quiesce_queue_args *q_args =
 		(struct nvmf_fc_poller_api_quiesce_queue_args *) arg1;
 
-	q_args->hwqp->state = false;
+	/* should be already, but make sure queue is quiesced */
+	q_args->hwqp->state = SPDK_FC_HWQP_OFFLINE;
 	/* perform callback */
 	nvmf_fc_poller_api_perform_cb(&q_args->cb_info, 0);
 }
@@ -138,7 +134,7 @@ nvmf_fc_poller_api_activate_queue(void *arg1, void *arg2)
 	struct nvmf_fc_poller_api_quiesce_queue_args *q_args =
 		(struct nvmf_fc_poller_api_quiesce_queue_args *) arg1;
 
-	q_args->hwqp->state = true;
+	q_args->hwqp->state = SPDK_FC_HWQP_ONLINE;
 	/* perform callback */
 	nvmf_fc_poller_api_perform_cb(&q_args->cb_info, 0);
 }
@@ -152,7 +148,7 @@ nvmf_fc_poller_api_del_connection(void *arg1, void *arg2)
 	struct spdk_nvmf_fc_conn *fc_conn;
 	bool bfound = false;
 
-	SPDK_TRACELOG(SPDK_TRACE_POLLER_API, "nvmf_fc_poller_api_del_connection");
+	SPDK_TRACELOG(SPDK_TRACE_POLLER_API, " ");
 
 	/* find the connection in poller's list */
 	TAILQ_FOREACH(fc_conn, &conn_args->hwqp->connection_list, link) {
@@ -179,6 +175,7 @@ nvmf_fc_poller_api_del_connection(void *arg1, void *arg2)
 				if (!fc_req->xri_activated) {
 					continue;
 				}
+
 				bcm_nvmf_fc_issue_abort(hwqp, fc_req->xri, TRUE,
 							NULL, NULL);
 			}
@@ -256,11 +253,17 @@ nvmf_fc_poller_api(uint32_t lcore, nvmf_fc_poller_api_t api, void *api_args)
 					    nvmf_fc_poller_api_del_connection,
 					    api_args, NULL);
 		break;
-	case NVMF_FC_POLLER_API_QUIESCE_QUEUE:
+	case NVMF_FC_POLLER_API_QUIESCE_QUEUE: {
+		/* quiesce q polling now, don't wait for poller to do it */
+		struct nvmf_fc_poller_api_quiesce_queue_args *q_args =
+			(struct nvmf_fc_poller_api_quiesce_queue_args *) api_args;
+		q_args->hwqp->state = SPDK_FC_HWQP_OFFLINE;
+
 		event = spdk_event_allocate(lcore,
 					    nvmf_fc_poller_api_quiesce_queue,
 					    api_args, NULL);
-		break;
+	}
+	break;
 	case NVMF_FC_POLLER_API_ACTIVATE_QUEUE:
 		event = spdk_event_allocate(lcore,
 					    nvmf_fc_poller_api_activate_queue,

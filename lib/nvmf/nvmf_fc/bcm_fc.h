@@ -68,6 +68,12 @@
 #define NVME_FC_R_CTL_LS_REQUEST    	0x32
 #define NVME_FC_R_CTL_LS_RESPONSE   	0x33
 
+#define NVME_FC_R_CTL_BA_ABTS		0x81
+
+#define NVME_FC_F_CTL_END_SEQ		0x080000
+#define NVME_FC_F_CTL_SEQ_INIT		0x010000
+
+#define NVME_FC_TYPE_BLS		0x0
 #define NVME_FC_TYPE_FC_EXCHANGE    	0x08
 #define NVME_FC_TYPE_NVMF_DATA	    	0x28
 
@@ -109,6 +115,16 @@ typedef enum spdk_fc_hwqp_state_e {
 	SPDK_FC_HWQP_ONLINE = 1,
 
 } spdk_fc_hwqp_state_t;
+
+/*
+ * FC NPORT status.
+ */
+typedef enum spdk_fc_nport_state_e {
+
+	SPDK_FC_NPORT_DOWN = 0,
+	SPDK_FC_NPORT_UP = 1,
+
+} spdk_fc_nport_state_t;
 
 /*
  * Add all the generic states of the object here.
@@ -207,7 +223,7 @@ struct fc_hwqp {
 	/* num_conns and cid_cnt used by master to generate (unique) connection IDs */
 	uint32_t num_conns;
 	uint16_t cid_cnt;
-	bool state;  /* Poller state SPDK_FC_PORT_OFFLINE, SPDK_FC_PORT_ONLINE */
+	spdk_fc_hwqp_state_t state;  /* Poller state SPDK_FC_HWQP_OFFLINE, SPDK_FC_HWQP_ONLINE  */
 
 	/* Internal */
 	struct spdk_mempool *fc_request_pool;
@@ -216,9 +232,9 @@ struct fc_hwqp {
 	TAILQ_HEAD(, fc_xri_s) pending_xri_list;
 
 	struct nvmf_fc_errors counters;
-
+	uint32_t send_frame_xri;
+	uint8_t send_frame_seqid;
 };
-
 
 /*
  * FC HW port.
@@ -258,7 +274,7 @@ struct spdk_nvmf_fc_rem_port_info {
  */
 struct spdk_nvmf_fc_nport {
 
-	uint32_t nport_hdl;
+	uint16_t nport_hdl;
 	uint8_t port_hdl;
 	uint32_t d_id;
 	bool nport_status;
@@ -475,6 +491,7 @@ struct spdk_nvmf_fc_association {
 	TAILQ_HEAD(fc_conns, spdk_nvmf_fc_conn) fc_conns;
 
 	TAILQ_ENTRY(spdk_nvmf_fc_association) link;
+	void *ls_del_op_ctx;
 };
 
 
@@ -570,7 +587,7 @@ void spdk_nvmf_fc_port_list_add(struct spdk_nvmf_fc_port *fc_port);
 /* Return a fc port with a matching handle from the global list. */
 
 /*  Return a fc nport with a matching handle. */
-struct spdk_nvmf_fc_nport *spdk_nvmf_fc_nport_get(uint8_t port_hdl, uint32_t nport_hdl);
+struct spdk_nvmf_fc_nport *spdk_nvmf_fc_nport_get(uint8_t port_hdl, uint16_t nport_hdl);
 
 /*  Return a fc port with a matching handle. */
 struct spdk_nvmf_fc_port *spdk_nvmf_fc_port_list_get(uint8_t port_hdl);
@@ -587,7 +604,6 @@ void spdk_nvmf_fc_subsys_connect_cb(void *cb_ctx, struct spdk_nvmf_request *req)
 void spdk_nvmf_fc_subsys_disconnect_cb(void *cb_ctx, struct spdk_nvmf_conn *conn);
 
 fc_xri_t *spdk_nvmf_fc_get_xri(struct fc_hwqp *hwqp);
-
 int spdk_nvmf_fc_put_xri(struct fc_hwqp *hwqp, fc_xri_t *xri);
 
 spdk_err_t spdk_nvmf_fc_port_set_online(struct spdk_nvmf_fc_port *fc_port);
@@ -617,5 +633,9 @@ bool spdk_nvmf_fc_nport_add_rem_port(struct spdk_nvmf_fc_nport *nport,
 				     struct spdk_nvmf_fc_rem_port_info *rem_port);
 
 uint32_t spdk_nvmf_fc_get_prli_service_params(void);
+
+uint32_t spdk_nvmf_bcm_fc_calc_max_q_depth(uint32_t nRQ, uint32_t RQsz,
+		uint32_t mA, uint32_t mAC,
+		uint32_t AQsz);
 
 #endif
