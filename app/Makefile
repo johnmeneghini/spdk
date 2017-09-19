@@ -41,7 +41,7 @@ ifeq ($(OS),Linux)
 DIRS-y += iscsi_tgt
 DIRS-$(CONFIG_VHOST) += vhost
 endif
-DIRS-$(CONFIG_BCM_FC) += nvmf_fc_tgt
+DIRS-$(CONFIG_BCM_FC_DRV) += nvmf_fc_tgt
 
 .PHONY: all clean $(DIRS-y)
 

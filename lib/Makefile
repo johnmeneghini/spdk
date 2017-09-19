@@ -44,7 +44,7 @@ TARGET_LIBS += vhost
 endif
 endif
 
-ifeq ($(CONFIG_BCM_FC),y)
+ifeq ($(CONFIG_BCM_FC_DRV),y)
 TARGET_LIBS +=fc
 endif
 
