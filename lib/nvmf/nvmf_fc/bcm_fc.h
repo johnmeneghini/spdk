@@ -613,6 +613,9 @@ void spdk_nvmf_fc_subsys_disconnect_cb(void *cb_ctx, struct spdk_nvmf_conn *conn
 fc_xri_t *spdk_nvmf_fc_get_xri(struct fc_hwqp *hwqp);
 int spdk_nvmf_fc_put_xri(struct fc_hwqp *hwqp, fc_xri_t *xri);
 
+/* Returns true if the port is in offline state */
+bool spdk_nvmf_fc_port_is_offline(struct spdk_nvmf_fc_port *fc_port);
+
 spdk_err_t spdk_nvmf_fc_port_set_online(struct spdk_nvmf_fc_port *fc_port);
 
 spdk_err_t spdk_nvmf_fc_port_set_offline(struct spdk_nvmf_fc_port *fc_port);
