@@ -88,7 +88,7 @@ $valgrind test/unit/lib/iscsi/iscsi.c/iscsi_ut
 $valgrind test/unit/lib/util/bit_array.c/bit_array_ut
 $valgrind test/unit/lib/util/io_channel.c/io_channel_ut
 $valgrind test/unit/lib/util/string.c/string_ut
-$valgrind test/lib/nvmf/nvmf_fc/ls/nvmf_fc_ls_ut
+$valgrind test/unit/lib/nvmf_fc/ls/nvmf_fc_ls_ut
 
 if [ $(uname -s) = Linux ]; then
 $valgrind test/unit/lib/vhost/vhost.c/vhost_ut

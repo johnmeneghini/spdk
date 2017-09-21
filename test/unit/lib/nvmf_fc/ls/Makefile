@@ -36,7 +36,7 @@ SPDK_LIB_NVMF_FC_DIR = $(SPDK_ROOT_DIR)/lib/nvmf/nvmf_fc
 
 include $(SPDK_ROOT_DIR)/mk/spdk.common.mk
 
-CFLAGS += -I$(SPDK_ROOT_DIR)/LIB -I$(SPDK_LIB_NVMF_FC_DIR)
+CFLAGS += -I$(SPDK_ROOT_DIR)/lib -I$(SPDK_LIB_NVMF_FC_DIR)
 
 TEST_FILE = nvmf_fc_ls_ut.c
 OTHER_FILES = $(SPDK_LIB_NVMF_FC_DIR)/nvmf_fc_ls.c \

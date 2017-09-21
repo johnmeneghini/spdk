@@ -40,7 +40,7 @@
 #include "spdk_internal/event.h"
 #include "spdk/endian.h"
 #include "spdk/env.h"
-#include "log/log_syslog.c"
+#include "log/log.c"
 
 #include "nvmf_fc/bcm_fc.h"
 #include "nvmf/transport.h"
@@ -63,16 +63,16 @@ struct nvmf_fc_ls_rqst_w0 {
 
 /* FCNVME_LSDESC_RQST */
 struct nvmf_fc_lsdesc_rqst {
-	__be32 desc_tag;		/* FCNVME_LSDESC_xxx */
-	__be32 desc_len;
+	uint32_t desc_tag;              /* FCNVME_LSDESC_xxx */
+	uint32_t desc_len;
 	struct nvmf_fc_ls_rqst_w0 w0;
-	__be32 rsvd12;
+	uint32_t rsvd12;
 };
 
 // LS accept header
 struct nvmf_fc_ls_acc_hdr {
 	struct nvmf_fc_ls_rqst_w0 w0;
-	__be32 desc_list_len;
+	uint32_t desc_list_len;
 	struct nvmf_fc_lsdesc_rqst rqst;
 	/* Followed by cmd-specific ACC descriptors, see next definitions */
 };
@@ -109,16 +109,16 @@ enum {
 };
 
 struct nvmf_fc_lsdesc_conn_id {
-	__be32 desc_tag;
-	__be32 desc_len;
-	__be64 connection_id;
+	uint32_t desc_tag;
+	uint32_t desc_len;
+	uint64_t connection_id;
 };
 
 /* FCNVME_LSDESC_ASSOC_ID */
 struct nvmf_fc_lsdesc_assoc_id {
-	__be32 desc_tag;
-	__be32 desc_len;
-	__be64 association_id;
+	uint32_t desc_tag;
+	uint32_t desc_len;
+	uint64_t association_id;
 };
 
 /* FCNVME_LS_CREATE_ASSOCIATION */
@@ -127,23 +127,23 @@ struct nvmf_fc_lsdesc_assoc_id {
 #define FCNVME_ASSOC_SUBNQN_LEN     SPDK_NVMF_FC_NQN_MAX_LEN
 
 struct nvmf_fc_lsdesc_cr_assoc_cmd {
-	__be32	desc_tag;
-	__be32	desc_len;
-	__be16	ersp_ratio;
-	__be16	rsvd10;
-	__be32	rsvd12[9];
-	__be16	cntlid;
-	__be16	sqsize;
-	__be32	rsvd52;
-	uint8_t	hostid[FCNVME_ASSOC_HOSTID_LEN];
-	uint8_t	hostnqn[FCNVME_ASSOC_HOSTNQN_LEN];
-	uint8_t	subnqn[FCNVME_ASSOC_SUBNQN_LEN];
-	uint8_t	rsvd584[432];
+	uint32_t  desc_tag;
+	uint32_t  desc_len;
+	uint16_t  ersp_ratio;
+	uint16_t  rsvd10;
+	uint32_t  rsvd12[9];
+	uint16_t  cntlid;
+	uint16_t  sqsize;
+	uint32_t  rsvd52;
+	uint8_t hostid[FCNVME_ASSOC_HOSTID_LEN];
+	uint8_t hostnqn[FCNVME_ASSOC_HOSTNQN_LEN];
+	uint8_t subnqn[FCNVME_ASSOC_SUBNQN_LEN];
+	uint8_t rsvd584[432];
 };
 
 struct nvmf_fc_ls_cr_assoc_rqst {
 	struct nvmf_fc_ls_rqst_w0 w0;
-	__be32 desc_list_len;
+	uint32_t desc_list_len;
 	struct nvmf_fc_lsdesc_cr_assoc_cmd assoc_cmd;
 };
 
@@ -155,19 +155,19 @@ struct nvmf_fc_ls_cr_assoc_acc {
 
 /* FCNVME_LS_CREATE_CONNECTION */
 struct nvmf_fc_lsdesc_cr_conn_cmd {
-	__be32 desc_tag;		/* FCNVME_LSDESC_xxx */
-	__be32 desc_len;
-	__be16 ersp_ratio;
-	__be16 rsvd10;
-	__be32 rsvd12[9];
-	__be16 qid;
-	__be16 sqsize;
-	__be32 rsvd52;
+	uint32_t desc_tag;              /* FCNVME_LSDESC_xxx */
+	uint32_t desc_len;
+	uint16_t ersp_ratio;
+	uint16_t rsvd10;
+	uint32_t rsvd12[9];
+	uint16_t qid;
+	uint16_t sqsize;
+	uint32_t rsvd52;
 };
 
 struct nvmf_fc_ls_cr_conn_rqst {
 	struct nvmf_fc_ls_rqst_w0 w0;
-	__be32 desc_list_len;
+	uint32_t desc_list_len;
 	struct nvmf_fc_lsdesc_assoc_id assoc_id;
 	struct nvmf_fc_lsdesc_cr_conn_cmd connect_cmd;
 };
@@ -179,18 +179,18 @@ struct nvmf_fc_ls_cr_conn_acc {
 
 /* FCNVME_LS_DISCONNECT */
 struct nvmf_fc_lsdesc_disconn_cmd {
-	__be32 desc_tag;		/* FCNVME_LSDESC_xxx */
-	__be32 desc_len;
+	uint32_t desc_tag;              /* FCNVME_LSDESC_xxx */
+	uint32_t desc_len;
 	uint8_t rsvd8[3];
 	/* note: scope is really a 1 bit field */
-	uint8_t scope;			/* FCNVME_DISCONN_xxx */
-	__be32 rsvd12;
-	__be64 id;
+	uint8_t scope;                  /* FCNVME_DISCONN_xxx */
+	uint32_t rsvd12;
+	uint64_t id;
 };
 
 struct nvmf_fc_ls_disconnect_rqst {
 	struct nvmf_fc_ls_rqst_w0 w0;
-	__be32 desc_list_len;
+	uint32_t desc_list_len;
 	struct nvmf_fc_lsdesc_assoc_id assoc_id;
 	struct nvmf_fc_lsdesc_disconn_cmd disconn_cmd;
 };
@@ -233,21 +233,21 @@ enum fcnvme_ls_rjt_explan {
 
 /* FCNVME_LSDESC_RJT */
 struct nvmf_fc_lsdesc_rjt {
-	__be32 desc_tag;        /* FCNVME_LSDESC_xxx */
-	__be32 desc_len;
+	uint32_t desc_tag;              /* FCNVME_LSDESC_xxx */
+	uint32_t desc_len;
 	uint8_t rsvd8;
 
-	uint8_t reason_code;        /* fcnvme_ls_rjt_reason */
-	uint8_t reason_explanation; /* fcnvme_ls_rjt_explan */
+	uint8_t reason_code;            /* fcnvme_ls_rjt_reason */
+	uint8_t reason_explanation;     /* fcnvme_ls_rjt_explan */
 
 	uint8_t vendor;
-	__be32  rsvd12;
+	uint32_t        rsvd12;
 };
 
 /* FCNVME_LS_RJT */
 struct nvmf_fc_ls_rjt {
 	struct nvmf_fc_ls_rqst_w0 w0;
-	__be32 desc_list_len;
+	uint32_t desc_list_len;
 	struct nvmf_fc_lsdesc_rqst rqst;
 	struct nvmf_fc_lsdesc_rjt rjt;
 };
