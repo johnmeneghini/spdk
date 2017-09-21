@@ -37,9 +37,9 @@ fi
 
 echo -n "Checking comment style..."
 
-git grep --line-number -e '/[*][^ *-]' -- '*.[ch]' | grep -v "lib\/fc" > comment.log || true
-git grep --line-number -e '[^ ][*]/' -- '*.[ch]' ':!lib/vhost/rte_vhost*/*' | grep -v "lib\/fc" >> comment.log || true
-git grep --line-number -e '^[*]' -- '*.[ch]' | grep -v "lib\/fc" >> comment.log || true
+git grep --line-number -e '/[*][^ *-]' -- '*.[ch]' ':!lib/fc/*' > comment.log || true
+git grep --line-number -e '[^ ][*]/' -- '*.[ch]' ':!lib/vhost/rte_vhost*/*' ':!lib/fc/*' >> comment.log || true
+git grep --line-number -e '^[*]' -- '*.[ch]' ':!lib/fc/*' >> comment.log || true
 
 if [ -s comment.log ]; then
 	echo " Incorrect comment formatting detected"
@@ -52,8 +52,8 @@ rm -f comment.log
 
 echo -n "Checking blank lines at end of file..."
 
-if ! git grep -I -l -e . -z | grep -v "lib\/fc" | \
-	xargs -0 -P8 -n1 scripts/eofnl > eofnl.log; then
+if ! git grep -I -l -e .  | grep -v "lib\/fc" | \
+	xargs -P8 -n1 scripts/eofnl > eofnl.log; then
 	echo " Incorrect end-of-file formatting detected"
 	cat eofnl.log
 	rc=1
@@ -63,7 +63,7 @@ fi
 rm -f eofnl.log
 
 echo -n "Checking for POSIX includes..."
-git grep -I -i -f scripts/posix.txt -- './*' ':!include/spdk/stdinc.h' ':!lib/vhost/rte_vhost*/**' ':!scripts/posix.txt' > scripts/posix.log || true
+git grep -I -i -f scripts/posix.txt -- './*' ':!include/spdk/stdinc.h' ':!lib/vhost/rte_vhost*/**' ':!scripts/posix.txt' ':!lib/fc/*' > scripts/posix.log || true
 if [ -s scripts/posix.log ]; then
 	echo "POSIX includes detected. Please include spdk/stdinc.h instead."
 	cat scripts/posix.log
