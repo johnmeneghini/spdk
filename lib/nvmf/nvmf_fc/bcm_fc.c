@@ -89,27 +89,19 @@ static TAILQ_HEAD(, spdk_nvmf_fc_port) g_spdk_nvmf_fc_port_list =
 static TAILQ_HEAD(, spdk_nvmf_fc_conn)g_pending_conns = TAILQ_HEAD_INITIALIZER(g_pending_conns);
 
 void
+spdk_nvmf_bcm_init_poller_queues(struct fc_hwqp *hwqp)
+{
+	bcm_init_rqpair_buffers(hwqp);
+}
+
+void
 spdk_nvmf_fc_init_poller(struct spdk_nvmf_fc_port *fc_port, struct fc_hwqp *hwqp)
 {
 	hwqp->fc_port = fc_port;
-	hwqp->queues.eq.q.posted_limit = 64;
-	hwqp->queues.cq_wq.q.posted_limit = 64;
-	hwqp->queues.cq_rq.q.posted_limit = 64;
-
-	hwqp->queues.eq.auto_arm_flag = FALSE;
-	hwqp->queues.cq_wq.auto_arm_flag = TRUE;
-	hwqp->queues.cq_rq.auto_arm_flag = TRUE;
-
-	hwqp->queues.eq.q.type = BCM_FC_QUEUE_TYPE_EQ;
-	hwqp->queues.cq_wq.q.type = BCM_FC_QUEUE_TYPE_CQ_WQ;
-	hwqp->queues.wq.q.type = BCM_FC_QUEUE_TYPE_WQ;
-	hwqp->queues.cq_rq.q.type = BCM_FC_QUEUE_TYPE_CQ_RQ;
-	hwqp->queues.rq_hdr.q.type = BCM_FC_QUEUE_TYPE_RQ_HDR;
-	hwqp->queues.rq_payload.q.type = BCM_FC_QUEUE_TYPE_RQ_DATA;
 
 	memset(&hwqp->counters, 0, sizeof(struct nvmf_fc_errors));  // clear counters
 
-	bcm_init_rqpair_buffers(hwqp);
+	spdk_nvmf_bcm_init_poller_queues(hwqp);
 	(void)bcm_create_fc_req_mempool(hwqp);
 }
 
