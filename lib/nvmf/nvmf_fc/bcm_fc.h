@@ -600,6 +600,7 @@ struct spdk_nvmf_fc_nport *spdk_nvmf_fc_nport_get(uint8_t port_hdl, uint16_t npo
 struct spdk_nvmf_fc_port *spdk_nvmf_fc_port_list_get(uint8_t port_hdl);
 
 /* protos */
+void spdk_nvmf_bcm_init_poller_queues(struct fc_hwqp *hwqp);
 void spdk_nvmf_fc_init_poller(struct spdk_nvmf_fc_port *fc_port, struct fc_hwqp *hwqp);
 void spdk_nvmf_fc_add_poller(struct fc_hwqp *hwqp);
 void spdk_nvmf_fc_delete_poller(struct fc_hwqp *hwqp);

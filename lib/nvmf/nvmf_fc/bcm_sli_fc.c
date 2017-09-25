@@ -597,6 +597,22 @@ bcm_init_rqpair_buffers(struct fc_hwqp *hwqp)
 	struct fc_rcvq *hdr = &hwqp->queues.rq_hdr;
 	struct fc_rcvq *payload = &hwqp->queues.rq_payload;
 
+	/* Init queue variables */
+	hwqp->queues.eq.q.posted_limit = 64;
+	hwqp->queues.cq_wq.q.posted_limit = 64;
+	hwqp->queues.cq_rq.q.posted_limit = 64;
+
+	hwqp->queues.eq.auto_arm_flag = FALSE;
+	hwqp->queues.cq_wq.auto_arm_flag = TRUE;
+	hwqp->queues.cq_rq.auto_arm_flag = TRUE;
+
+	hwqp->queues.eq.q.type = BCM_FC_QUEUE_TYPE_EQ;
+	hwqp->queues.cq_wq.q.type = BCM_FC_QUEUE_TYPE_CQ_WQ;
+	hwqp->queues.wq.q.type = BCM_FC_QUEUE_TYPE_WQ;
+	hwqp->queues.cq_rq.q.type = BCM_FC_QUEUE_TYPE_CQ_RQ;
+	hwqp->queues.rq_hdr.q.type = BCM_FC_QUEUE_TYPE_RQ_HDR;
+	hwqp->queues.rq_payload.q.type = BCM_FC_QUEUE_TYPE_RQ_DATA;
+
 	/* Make sure CQs are in armed state */
 	bcm_notify_queue(&hwqp->queues.cq_wq.q, TRUE, 0);
 	bcm_notify_queue(&hwqp->queues.cq_rq.q, TRUE, 0);
