@@ -735,8 +735,8 @@ spdk_nvmf_session_set_features_number_of_queues(struct spdk_nvmf_request *req)
 	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
 	uint32_t nr_io_queues;
 
-        SPDK_TRACELOG(SPDK_TRACE_NVMF, "Set Features - Number of Queues Requested, sub:0x%x, compl:0x%x\n",
-                req->cmd->nvme_cmd.cdw11 & 0xffff, req->cmd->nvme_cmd.cdw11 >> 16);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Set Features - Number of Queues Requested, sub:0x%x, compl:0x%x\n",
+		      req->cmd->nvme_cmd.cdw11 & 0xffff, req->cmd->nvme_cmd.cdw11 >> 16);
 
 	/* Extra 1 connection for Admin queue */
 	nr_io_queues = session->max_connections_allowed - 1;
@@ -749,8 +749,9 @@ spdk_nvmf_session_set_features_number_of_queues(struct spdk_nvmf_request *req)
 		/* Number of IO queues has a zero based value */
 		rsp->cdw0 = ((nr_io_queues - 1) << 16) |
 			    (nr_io_queues - 1);
-                SPDK_TRACELOG(SPDK_TRACE_NVMF, "Set Features - Number of Queues Configured, cdw0 sub:0x%x, compl:0x%x\n",
-                        rsp->cdw0 & 0xffff, rsp->cdw0 >> 16);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF,
+			      "Set Features - Number of Queues Configured, cdw0 sub:0x%x, compl:0x%x\n",
+			      rsp->cdw0 & 0xffff, rsp->cdw0 >> 16);
 	}
 
 	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
