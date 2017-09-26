@@ -526,10 +526,10 @@ nvmf_fc_ls_new_association(struct spdk_nvmf_fc_nport *tgtport,
 		/* add association to target port's association list */
 		TAILQ_INSERT_TAIL(&tgtport->fc_associations, assoc, link);
 		tgtport->assoc_count++;
-                SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING,"New Association %p created:\n", assoc);
-                SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING,"\thostnqn:%s\n",assoc->host_nqn);
-                SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING,"\tsubnqn:%s\n",assoc->sub_nqn);
-                SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING,"\twwpn:0x%lx\n",tgtport->fc_portname.u.wwn);
+		SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING, "New Association %p created:\n", assoc);
+		SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING, "\thostnqn:%s\n", assoc->host_nqn);
+		SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING, "\tsubnqn:%s\n", assoc->sub_nqn);
+		SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING, "\twwpn:0x%lx\n", tgtport->fc_portname.u.wwn);
 	} else {
 		SPDK_ERRLOG("out of associations\n");
 	}
@@ -582,11 +582,14 @@ nvmf_fc_ls_new_connection(struct spdk_nvmf_fc_association *assoc,
 		TAILQ_INIT(&fc_conn->free_queue);
 		TAILQ_INIT(&fc_conn->pending_data_buf_queue);
 		TAILQ_INIT(&fc_conn->pending_fc_rw_queue);
-                SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING,"New Connection %p for Association %p created:\n", fc_conn, assoc);
-                SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING,"\tQueue id:0x%x\n", fc_conn->qid);
-                SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING,"\tQueue size requested:0x%x\n", max_q_size);
-                SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING,"\tMax admin queue size supported:0x%x\n", g_nvmf_tgt.max_aq_depth);
-                SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING,"\tMax IO queue size supported:0x%x\n", g_nvmf_tgt.max_queue_depth);
+		SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING, "New Connection %p for Association %p created:\n",
+			      fc_conn, assoc);
+		SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING, "\tQueue id:0x%x\n", fc_conn->qid);
+		SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING, "\tQueue size requested:0x%x\n", max_q_size);
+		SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING, "\tMax admin queue size supported:0x%x\n",
+			      g_nvmf_tgt.max_aq_depth);
+		SPDK_TRACELOG(SPDK_TRACE_FC_LS_PROCESSING, "\tMax IO queue size supported:0x%x\n",
+			      g_nvmf_tgt.max_queue_depth);
 	} else {
 		SPDK_ERRLOG("out of connections\n");
 	}
