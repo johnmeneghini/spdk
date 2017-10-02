@@ -559,6 +559,8 @@ spdk_bdev_put_io(struct spdk_bdev_io *bdev_io)
 		spdk_bdev_io_put_buf(bdev_io);
 	}
 
+	/* scrub the pointer before putting it back into the pool */
+	memset(bdev_io, 0, sizeof(*bdev_io));
 	spdk_mempool_put(g_bdev_mgr.bdev_io_pool, (void *)bdev_io);
 }
 
@@ -1626,7 +1628,7 @@ spdk_bdev_desc_get_bdev(struct spdk_bdev_desc *desc)
 
 int
 spdk_bdev_read_init(struct spdk_bdev *bdev, int32_t length, struct iovec *iov,
-		    uint32_t *iovcnt)
+		    int32_t *iovcnt)
 {
 	if (bdev->fn_table->init_read) {
 		return bdev->fn_table->init_read(length, iov, iovcnt);
@@ -1648,8 +1650,8 @@ spdk_bdev_read_fini(struct spdk_bdev_io *bdev_io, struct iovec *iov, int32_t iov
 }
 
 int
-spdk_bdev_write_init(struct spdk_bdev *bdev, int32_t length, struct iovec *iov, int32_t *iovcnt,
-		     void **iovctx)
+spdk_bdev_write_init(struct spdk_bdev *bdev, int32_t length, struct iovec *iov,
+		     int32_t *iovcnt, void **iovctx)
 {
 	if (bdev->fn_table->init_write) {
 		return bdev->fn_table->init_write(length, iov, iovcnt, iovctx);

@@ -32,6 +32,7 @@
 #
 
 SPDK_ROOT_DIR := $(abspath $(CURDIR)/../../../../..)
+CFLAGS += -I$(SPDK_ROOT_DIR)/lib
 
 TEST_FILE = virtual_ut.c
 

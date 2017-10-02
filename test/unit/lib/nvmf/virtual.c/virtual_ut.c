@@ -34,6 +34,7 @@
 #include "spdk/stdinc.h"
 
 #include "spdk_cunit.h"
+#include "lib/test_env.c"
 
 #include "virtual.c"
 
@@ -159,6 +160,12 @@ spdk_bdev_unmap(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	return 0;
 }
 
+struct spdk_nvmf_fc_request *
+get_fc_req(struct spdk_nvmf_request *req)
+{
+	return NULL;
+}
+
 void
 spdk_trace_record(uint16_t tpoint_id, uint16_t poller_id, uint32_t size, uint64_t object_id,
 		  uint64_t arg1)
@@ -236,7 +243,7 @@ void spdk_bdev_io_get_nvme_status(const struct spdk_bdev_io *bdev_io, int *sct, 
 
 int
 spdk_bdev_read_init(struct spdk_bdev *bdev, int32_t length, struct iovec *iov,
-		    uint32_t *iovcnt)
+		    int32_t *iovcnt)
 {
 	return 0;
 }

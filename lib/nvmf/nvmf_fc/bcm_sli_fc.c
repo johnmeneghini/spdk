@@ -47,6 +47,7 @@
 #include "spdk/likely.h"
 #include "spdk_internal/log.h"
 #include "bcm_fc.h"
+#include "../nvmf_internal.h"
 
 void bcm_process_queues(struct fc_hwqp *hwqp);
 void bcm_nvmf_fc_free_req(struct spdk_nvmf_fc_request *fc_req, bool free_xri);
@@ -336,6 +337,7 @@ bcm_write_queue_entry(bcm_sli_queue_t *q, uint8_t *entry)
 
 	/* We need to check if there is space available */
 	if (bcm_queue_full(q)) {
+		assert(false);
 		SPDK_ERRLOG("%s queue full for type = %#x\n", __func__, q->type);
 		return -1;
 	}
@@ -436,19 +438,19 @@ bcm_parse_cq_entry(struct fc_eventq *cq, uint8_t *cqe, bcm_qentry_type_e *etype,
 		rc = cqe_entry->u.wcqe.status;
 
 		// Flag errors except for FCP_RSP_FAILURE
-		if (rc && (rc != BCM_FC_WCQE_STATUS_FCP_RSP_FAILURE)) {
+		if (rc) {
 
-			SPDK_TRACELOG(SPDK_TRACE_BCM_FC_NVME,
-				      "WCQE: status=%#x hw_status=%#x tag=%#x w1=%#x w2=%#x xb=%d\n",
-				      cqe_entry->u.wcqe.status,
-				      cqe_entry->u.wcqe.hw_status,
-				      cqe_entry->u.wcqe.request_tag,
-				      cqe_entry->u.wcqe.wqe_specific_1,
-				      cqe_entry->u.wcqe.wqe_specific_2,
-				      cqe_entry->u.wcqe.xb);
-			SPDK_TRACELOG(SPDK_TRACE_BCM_FC_NVME, "      %08X %08X %08X %08X\n",
-				      ((uint32_t *)cqe)[0], ((uint32_t *)cqe)[1],
-				      ((uint32_t *)cqe)[2], ((uint32_t *)cqe)[3]);
+			SPDK_ERRLOG(
+				"WCQE: status=%#x hw_status=%#x tag=%#x w1=%#x w2=%#x xb=%d\n",
+				cqe_entry->u.wcqe.status,
+				cqe_entry->u.wcqe.hw_status,
+				cqe_entry->u.wcqe.request_tag,
+				cqe_entry->u.wcqe.wqe_specific_1,
+				cqe_entry->u.wcqe.wqe_specific_2,
+				cqe_entry->u.wcqe.xb);
+			SPDK_ERRLOG("      %08X %08X %08X %08X\n",
+				    ((uint32_t *)cqe)[0], ((uint32_t *)cqe)[1],
+				    ((uint32_t *)cqe)[2], ((uint32_t *)cqe)[3]);
 		}
 		break;
 	}
@@ -804,10 +806,12 @@ bcm_io_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 	cqe_t *cqe_entry = (cqe_t *)cqe;
 	bool free_xri;
 
+
 	free_xri = (!cqe_entry->u.generic.xb ? TRUE : FALSE);
 
 	if (status) {
-		SPDK_ERRLOG("IO WQE Compl(%d)\n", status);
+		SPDK_ERRLOG("IO WQE Compl(%d), FC-RPI(%d), Conn-RPI(%d)\n", status, fc_req->rpi,
+			    fc_req->fc_conn->rpi);
 		goto free_req;
 	}
 
@@ -821,10 +825,17 @@ bcm_io_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 	}
 
 	if (!fc_req->rsp_sent) { /* Data Xfer done */
+
+
 		fc_req->transfered_len = cqe_entry->u.generic.word1.total_data_placed;
 
 		if (fc_req->req.xfer == SPDK_NVME_DATA_HOST_TO_CONTROLLER) {
 			struct spdk_event *event = NULL;
+
+
+			spdk_trace_record(TRACE_FC_WRITE_DONE_FROM_FW, fc_req->poller_lcore, 0, (uint64_t)(&fc_req->req),
+					  0);
+			fc_req->req.req_write_trace[NVMF_FC_WRITE_DONE_FROM_FW] = spdk_get_ticks();
 
 			if ((fc_conn->qid == NVME_ADMIN_QUEUE_ID) ||
 			    (cmd->opc == SPDK_NVME_OPC_FABRIC)) {
@@ -838,11 +849,21 @@ bcm_io_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 			}
 
 		} else {
+			spdk_trace_record(TRACE_FC_READ_DONE_FROM_FW, fc_req->poller_lcore, 0, (uint64_t)(&fc_req->req), 0);
+			fc_req->req.req_read_trace[NVMF_FC_READ_DONE_FROM_FW] = spdk_get_ticks();
 			if (bcm_nvmf_fc_handle_rsp(fc_req)) {
 				goto free_req;
 			}
 		}
 		return;
+	} else  {
+		if (fc_req->req.xfer == SPDK_NVME_DATA_CONTROLLER_TO_HOST) {
+			spdk_trace_record(TRACE_FC_READ_COMPLETE, fc_req->poller_lcore, 0, (uint64_t)(&fc_req->req), 0);
+			fc_req->req.req_read_trace[NVMF_FC_READ_COMPLETE] = spdk_get_ticks();
+		} else if (fc_req->req.xfer == SPDK_NVME_DATA_HOST_TO_CONTROLLER) {
+			spdk_trace_record(TRACE_FC_WRITE_COMPLETE, fc_req->poller_lcore, 0, (uint64_t)(&fc_req->req), 0);
+			fc_req->req.req_write_trace[NVMF_FC_WRITE_COMPLETE] = spdk_get_ticks();
+		}
 	}
 
 	/* IO completed successfully */
@@ -911,6 +932,8 @@ spdk_nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_fc_request *fc_req)
 	if (fc_req->req.xfer == SPDK_NVME_DATA_HOST_TO_CONTROLLER) {
 		SPDK_TRACELOG(SPDK_TRACE_BCM_FC_NVME, "WRITE CMD.\n");
 		/* Check if we have buffer already. If not acquire from bdev */
+		spdk_trace_record(TRACE_FC_WRITE_START, fc_req->poller_lcore, 0, (uint64_t)(&fc_req->req), 0);
+		fc_req->req.req_write_trace[NVMF_FC_WRITE_START] = spdk_get_ticks();
 		if (!fc_req->req.data) {
 			rc = spdk_nvmf_request_exec(&fc_req->req);
 			switch (rc) {
@@ -942,6 +965,8 @@ spdk_nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_fc_request *fc_req)
 						    spdk_nvmf_fc_post_nvme_rqst, (void *)fc_req, NULL);
 			spdk_event_call(event);
 		} else {
+			spdk_trace_record(TRACE_FC_READ_START, fc_req->poller_lcore, 0, (uint64_t)(&fc_req->req), 0);
+			fc_req->req.req_read_trace[NVMF_FC_READ_START] = spdk_get_ticks();
 			spdk_nvmf_fc_post_nvme_rqst(fc_req, NULL);
 		}
 	}
@@ -1006,6 +1031,11 @@ spdk_nvmf_fc_handle_nvme_rqst(struct fc_hwqp *hwqp, struct fc_frame_hdr *frame,
 	if (fc_req == NULL) {
 		goto abort;
 	}
+
+	spdk_trace_record(TRACE_NVMF_IO_START, hwqp->lcore_id, 0, (uint64_t)(&fc_req->req), 0);
+	/* I don't know if it is a read or a write at this point. Adding it to both arrays for now */
+	fc_req->req.req_read_trace[NVMF_READ_IO_START] = spdk_get_ticks();
+	fc_req->req.req_write_trace[NVMF_WRITE_IO_START] = spdk_get_ticks();
 
 	fc_req->req.length = from_be32(&cmd_iu->data_len);
 	fc_req->req.conn = &fc_conn->conn;
@@ -1487,6 +1517,8 @@ bcm_nvmf_fc_send_data(struct spdk_nvmf_fc_request *fc_req)
 			fc_req->rsp_sent = TRUE;
 		}
 		fc_req->xri_activated = TRUE;
+	} else {
+		assert(false);
 	}
 
 	return rc;
@@ -1548,8 +1580,12 @@ bcm_nvmf_fc_recv_data(struct spdk_nvmf_fc_request *fc_req)
 	trecv->fcp_data_receive_length = fc_req->req.length;
 
 	rc = bcm_post_wqe(hwqp, (uint8_t *)trecv, TRUE, bcm_io_cmpl_cb, fc_req);
+	spdk_trace_record(TRACE_FC_WRITE_POST_SGL, fc_req->poller_lcore, 0, (uint64_t)(&fc_req->req), 0);
+	fc_req->req.req_write_trace[NVMF_FC_WRITE_POST_SGL] = spdk_get_ticks();
 	if (!rc) {
 		fc_req->xri_activated = TRUE;
+	} else {
+		assert(false);
 	}
 
 	return rc;
