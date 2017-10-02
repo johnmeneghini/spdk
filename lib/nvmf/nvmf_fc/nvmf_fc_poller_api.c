@@ -161,6 +161,7 @@ nvmf_fc_poller_api_del_connection(void *arg1, void *arg2)
 		struct spdk_nvmf_fc_request *fc_req = NULL;
 		struct fc_hwqp *hwqp = conn_args->hwqp;
 
+		assert( false );
 		TAILQ_FOREACH(fc_req, &hwqp->in_use_reqs, link) {
 			if (fc_req->fc_conn->conn_id == fc_conn->conn_id) {
 				if (fc_req->is_aborted) {
@@ -215,6 +216,8 @@ nvmf_fc_poller_api_abts_received(void *arg1, void *arg2)
 		if ((fc_req->rpi == args->ctx->rpi) &&
 		    (fc_req->oxid == args->ctx->oxid)) {
 
+			assert( false );
+			
 			if (!fc_req->xri_activated) {
 				fc_req->is_aborted = TRUE;
 				ret = NVMF_FC_POLLER_API_SUCCESS;

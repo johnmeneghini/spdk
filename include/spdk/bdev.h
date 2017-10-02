@@ -367,10 +367,10 @@ void spdk_bdev_io_set_scsi_error(struct spdk_bdev_io *bdev_io, enum spdk_scsi_st
 
 int spdk_bdev_read_init(struct spdk_bdev *bdev, int32_t length, struct iovec *iov,
 			uint32_t *iovcnt);
-int spdk_bdev_read_fini(struct spdk_bdev_io *bdev_io, struct iovec *iov, int32_t iovcnt);
-int spdk_bdev_write_init(struct spdk_bdev *bdev, int32_t length, struct iovec *iov, int32_t *iovcnt,
-			 void **iovctx);
-int spdk_bdev_write_fini(struct spdk_bdev_io *bdev_io, struct iovec *iov, int32_t iovcnt);
+int spdk_bdev_read_fini(struct spdk_bdev_io *bdev_io, struct iovec *iov, uint32_t iovcnt);
+int spdk_bdev_write_init(struct spdk_bdev *bdev, uint32_t length, struct iovec *iov,
+			 uint32_t *iovcnt, void **iovctx);
+int spdk_bdev_write_fini(struct spdk_bdev_io *bdev_io, struct iovec *iov, uint32_t iovcnt);
 
 /**
  * Get the status of bdev_io as an NVMe status code.

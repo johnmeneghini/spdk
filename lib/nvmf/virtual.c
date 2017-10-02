@@ -47,6 +47,7 @@
 #include "spdk/string.h"
 #include "spdk/util.h"
 
+#include "nvmf_fc/bcm_fc.h" /* BAD - This should be removed */
 #include "spdk_internal/log.h"
 
 #define MODEL_NUMBER "SPDK Virtual Controller"
@@ -140,9 +141,14 @@ nvmf_virtual_ctrlr_complete_cmd(struct spdk_bdev_io *bdev_io, enum spdk_bdev_io_
 	 * BDEV IO is freed as part of request cleanup function call.
 	 */
 	if (bdev_io->type == SPDK_BDEV_IO_TYPE_READ) {
+		spdk_trace_record(TRACE_FC_READ_RECV_FROM_WAFL, get_fc_req(req)->poller_lcore, 0, (uint64_t)req, 0);
+		req->req_read_trace[NVMF_FC_READ_RECV_FROM_WAFL] = spdk_get_ticks();
 		req->bdev_io = bdev_io;
 		req->iovcnt = bdev_io->u.read.iovcnt;
 	} else {
+		spdk_trace_record(TRACE_FC_WRITE_RECV_FROM_WAFL, get_fc_req(req)->poller_lcore, 0, (uint64_t)req,
+				  0);
+		req->req_write_trace[NVMF_FC_WRITE_RECV_FROM_WAFL] = spdk_get_ticks();
 		req->bdev_io = bdev_io;
 		req->iovcnt = bdev_io->u.write.iovcnt;
 	}
@@ -412,7 +418,6 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 	}
 
 	if (cmd->opc == SPDK_NVME_OPC_READ) {
-		spdk_trace_record(TRACE_NVMF_LIB_READ_START, 0, 0, (uint64_t)req, 0);
 
 		/* modified to for SGL iovs */
 		if (req->data) {
@@ -426,11 +431,15 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 			}
 		} else {
+			spdk_trace_record(TRACE_NVMF_LIB_READ_START, get_fc_req(req)->poller_lcore, 0, (uint64_t)req, 0);
+			req->req_read_trace[NVMF_LIB_READ_START] = spdk_get_ticks();
 			/* acquire IOV buffers from backend */
 			error = spdk_bdev_read_init(bdev, req->length, req->iov, &req->iovcnt);
 			if (error < 0) {
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING;
 			} else if (error == 0) {
+				spdk_trace_record(TRACE_FC_READ_SEND_TO_WAFL, get_fc_req(req)->poller_lcore, 0, (uint64_t)req, 0);
+				req->req_read_trace[NVMF_FC_READ_SEND_TO_WAFL] = spdk_get_ticks();
 				if (spdk_bdev_readv(bdev, ch, req->iov, req->iovcnt, offset, req->length,
 						    nvmf_virtual_ctrlr_complete_cmd, req) == NULL) {
 					response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
@@ -442,7 +451,6 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 		}
 	} else { /* SPDK_NVME_OPC_WRITE */
 		if (req->data) {
-			spdk_trace_record(TRACE_NVMF_LIB_WRITE_START, 0, 0, (uint64_t)req, 0);
 			spdk_bdev_write_init(bdev, req->length, req->iov, &req->iovcnt, &req->iovctx);
 			bcopy(req->data, req->iov[0].iov_base, req->length); // TODO: bcopy each elements
 			if (spdk_bdev_writev(bdev, ch, req->iov, req->iovcnt, offset, req->length,
@@ -457,13 +465,20 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 			}
 		} else {
+			spdk_trace_record(TRACE_NVMF_LIB_WRITE_START, get_fc_req(req)->poller_lcore, 0, (uint64_t)req, 0);
+			req->req_write_trace[NVMF_LIB_WRITE_START] = spdk_get_ticks();
 			/* Acquire IOV buffers from backend */
 			error = spdk_bdev_write_init(bdev, req->length, req->iov, &req->iovcnt, &req->iovctx);
+			spdk_trace_record(TRACE_FC_WRITE_BUFFERS_FROM_WAFL, get_fc_req(req)->poller_lcore, 0, (uint64_t)req,
+					  0);
+			req->req_write_trace[NVMF_FC_WRITE_BUFFERS_FROM_WAFL] = spdk_get_ticks();
 			if (error < 0) {
+				assert( false );
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING;
 			} else if (error == 0) {
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_READY;
 			} else {
+				assert( false );
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_ERROR;
 			}
 		}

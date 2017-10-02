@@ -179,6 +179,38 @@ SPDK_TRACE_REGISTER_FN(nvmf_trace)
 					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
 	spdk_trace_register_description("NVMF_LIB_COMPLETE", "", TRACE_NVMF_LIB_COMPLETE,
 					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+
+	spdk_trace_register_description("NVMF_FC_READ_START", "", TRACE_FC_READ_START,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_READ_SEND_TO_WAFL", "", TRACE_FC_READ_SEND_TO_WAFL,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_READ_RECV_FROM_WAFL", "", TRACE_FC_READ_RECV_FROM_WAFL,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_READ_POST_SGL", "", TRACE_FC_READ_POST_SGL,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_READ_DONE_FROM_FW", "", TRACE_FC_READ_DONE_FROM_FW,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_READ_COMPLETE", "", TRACE_FC_READ_COMPLETE,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+
+	spdk_trace_register_description("NVMF_FC_WRITE_START", "", TRACE_FC_WRITE_START,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_WRITE_BUFFERS_FROM_WAFL", "",
+					TRACE_FC_WRITE_BUFFERS_FROM_WAFL,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_WRITE_POST_SGL", "", TRACE_FC_WRITE_POST_SGL,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_WRITE_DONE_FROM_FW", "", TRACE_FC_WRITE_DONE_FROM_FW,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_WRITE_SEND_TO_WAFL", "", TRACE_FC_WRITE_SEND_TO_WAFL,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_WRITE_RECV_FROM_WAFL", "", TRACE_FC_WRITE_RECV_FROM_WAFL,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_WRITE_SEND_RESP", "", TRACE_FC_WRITE_SEND_RESP,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_WRITE_COMPLETE", "", TRACE_FC_WRITE_COMPLETE,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+
 	spdk_trace_register_description("NVMF_IO_COMPLETION_DONE", "", TRACE_NVMF_IO_COMPLETE,
 					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
 }

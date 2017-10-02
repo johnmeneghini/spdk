@@ -541,7 +541,7 @@ spdk_reactors_init(unsigned int max_delay_us)
 			snprintf(mempool_name, sizeof(mempool_name), "spdk_event_mempool_%d", i);
 			g_spdk_event_mempool[i] = spdk_mempool_create(mempool_name,
 						  (262144 / socket_count),
-						  sizeof(struct spdk_event), -1, i);
+						  sizeof(struct spdk_event), 0, i);
 
 			if (g_spdk_event_mempool[i] == NULL) {
 				SPDK_ERRLOG("spdk_event_mempool creation failed on socket %d\n", i);
@@ -555,7 +555,7 @@ spdk_reactors_init(unsigned int max_delay_us)
 				g_spdk_event_mempool[i] = spdk_mempool_create(
 								  mempool_name,
 								  (262144 / socket_count),
-								  sizeof(struct spdk_event), -1,
+								  sizeof(struct spdk_event), 0,
 								  SPDK_ENV_SOCKET_ID_ANY);
 
 				if (g_spdk_event_mempool[i] == NULL) {

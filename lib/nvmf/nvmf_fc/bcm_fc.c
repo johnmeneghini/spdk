@@ -55,7 +55,7 @@
 #include "bcm_fc.h"
 
 /* externs */
-extern int bcm_nvmf_fc_handle_rsp(struct spdk_nvmf_request *req);
+extern int bcm_nvmf_fc_handle_rsp(struct spdk_nvmf_fc_request *req);
 extern int bcm_nvmf_fc_send_data(struct spdk_nvmf_fc_request *fc_req);
 extern void bcm_nvmf_fc_free_req(struct spdk_nvmf_fc_request *fc_req, bool free_xri);
 extern int bcm_nvmf_fc_xmt_bls_rsp(struct fc_hwqp *hwqp, uint16_t ox_id, uint16_t rx_id,
@@ -603,9 +603,15 @@ spdk_nvmf_fc_request_complete_process(void *arg1, void *arg2)
 		bcm_nvmf_fc_free_req(fc_req, !fc_req->xri_activated);
 	} else if (rsp->status.sc == SPDK_NVME_SC_SUCCESS &&
 		   req->xfer == SPDK_NVME_DATA_CONTROLLER_TO_HOST) {
+		spdk_trace_record(TRACE_FC_READ_POST_SGL, fc_req->poller_lcore, 0, (uint64_t)(&fc_req->req), 0);
+		req->req_read_trace[NVMF_FC_READ_POST_SGL] = spdk_get_ticks();
 		rc = bcm_nvmf_fc_send_data(fc_req);
 	} else {
-		rc = bcm_nvmf_fc_handle_rsp(req);
+		if (req->xfer == SPDK_NVME_DATA_HOST_TO_CONTROLLER) {
+			spdk_trace_record(TRACE_FC_WRITE_SEND_RESP, fc_req->poller_lcore, 0, (uint64_t)(&fc_req->req), 0);
+			req->req_write_trace[NVMF_FC_WRITE_SEND_RESP] = spdk_get_ticks();
+		}
+		rc = bcm_nvmf_fc_handle_rsp(fc_req);
 	}
 
 	if (rc) {
@@ -618,6 +624,7 @@ spdk_nvmf_fc_request_complete(struct spdk_nvmf_request *req)
 {
 	struct spdk_nvmf_fc_request *fc_req = get_fc_req(req);
 	struct spdk_event *event = NULL;
+	static uint64_t i = 0;
 
 	/* Check if we need to switch to correct lcore of HWQP. */
 #ifndef NETAPP
@@ -633,7 +640,7 @@ spdk_nvmf_fc_request_complete(struct spdk_nvmf_request *req)
 		/* Switch to correct HWQP lcore. */
 		event = spdk_event_allocate(fc_req->poller_lcore,
 					    spdk_nvmf_fc_request_complete_process,
-					    (void *)req, NULL);
+					    (void *)req, (void*) i++);
 		spdk_event_call(event);
 #ifndef NETAPP
 	} else {

@@ -37,6 +37,7 @@
 #include <stdio.h>
 
 #include "spdk_cunit.h"
+#include "lib/test_env.c"
 
 #include "virtual.c"
 
@@ -115,6 +116,12 @@ struct spdk_bdev_io *spdk_bdev_flush(struct spdk_bdev *bdev, struct spdk_io_chan
 struct spdk_bdev_io *spdk_bdev_unmap(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 				     struct spdk_scsi_unmap_bdesc *unmap_d, uint16_t bdesc_count, spdk_bdev_io_completion_cb cb,
 				     void *cb_arg)
+{
+	return NULL;
+}
+
+struct spdk_nvmf_fc_request *
+get_fc_req(struct spdk_nvmf_request *req)
 {
 	return NULL;
 }
