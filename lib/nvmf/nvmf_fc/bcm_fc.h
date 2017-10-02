@@ -266,6 +266,8 @@ struct spdk_fc_wwn {
 struct spdk_nvmf_fc_rem_port_info {
 	uint32_t s_id;
 	uint32_t rpi;
+	uint32_t assoc_count;  /* # of associations related to this port. Used by remote_port removal code */
+	spdk_fc_object_state_t rport_state;
 	TAILQ_ENTRY(spdk_nvmf_fc_rem_port_info) link;
 };
 
@@ -284,6 +286,7 @@ struct spdk_nvmf_fc_nport {
 
 	/* list of remote ports (i.e. initiators) connected to nport */
 	TAILQ_HEAD(, spdk_nvmf_fc_rem_port_info) rem_port_list;
+	uint32_t rport_count;
 
 	/* list of associations to nport */
 	TAILQ_HEAD(, spdk_nvmf_fc_association) fc_associations;
@@ -478,7 +481,9 @@ struct nvmf_fc_aq_data_buf {
 
 struct spdk_nvmf_fc_association {
 	uint64_t assoc_id;
+	uint32_t s_id;
 	struct spdk_nvmf_fc_nport *tgtport;
+	struct spdk_nvmf_fc_rem_port_info *rport;
 	struct spdk_nvmf_subsystem *subsystem;
 	struct spdk_nvmf_fc_session *fc_session;
 	spdk_fc_object_state_t assoc_state;
@@ -578,7 +583,9 @@ int spdk_nvmf_fc_delete_association(struct spdk_nvmf_fc_nport *tgtport,
 				    uint64_t assoc_id,
 				    spdk_nvmf_fc_del_assoc_cb del_assoc_cb,
 				    void *cb_data);
-void spdk_nvmf_fc_handle_ls_rqst(struct spdk_nvmf_fc_nport *tgtport,
+void spdk_nvmf_fc_handle_ls_rqst(uint32_t s_id,
+				 struct spdk_nvmf_fc_nport *tgtport,
+				 struct spdk_nvmf_fc_rem_port_info *rport,
 				 struct nvmf_fc_ls_rqst *ls_rqst);
 
 /* Add a port to the global port list */
@@ -620,8 +627,12 @@ spdk_err_t spdk_nvmf_hwqp_port_set_online(struct fc_hwqp *hwqp);
 
 spdk_err_t spdk_nvmf_hwqp_port_set_offline(struct fc_hwqp *hwqp);
 
+uint32_t spdk_nvmf_fc_nport_get_association_count(struct spdk_nvmf_fc_nport *nport);
+
 /* Returns true if the Nport is empty of all associations */
 bool spdk_nvmf_fc_nport_is_association_empty(struct spdk_nvmf_fc_nport *nport);
+
+bool spdk_nvmf_fc_nport_is_rport_empty(struct spdk_nvmf_fc_nport *nport);
 
 spdk_err_t spdk_nvmf_fc_nport_set_state(struct spdk_nvmf_fc_nport *nport,
 					spdk_fc_object_state_t state);
@@ -632,10 +643,16 @@ spdk_err_t spdk_nvmf_fc_assoc_set_state(struct spdk_nvmf_fc_association *assoc,
 bool spdk_nvmf_fc_nport_add_rem_port(struct spdk_nvmf_fc_nport *nport,
 				     struct spdk_nvmf_fc_rem_port_info *rem_port);
 
+bool spdk_nvmf_fc_nport_remove_rem_port(struct spdk_nvmf_fc_nport *nport,
+				     struct spdk_nvmf_fc_rem_port_info *rem_port);
+
 uint32_t spdk_nvmf_fc_get_prli_service_params(void);
 
 uint32_t spdk_nvmf_bcm_fc_calc_max_q_depth(uint32_t nRQ, uint32_t RQsz,
 		uint32_t mA, uint32_t mAC,
 		uint32_t AQsz);
+
+spdk_err_t spdk_nvmf_fc_rport_set_state(
+	struct spdk_nvmf_fc_rem_port_info *rport, spdk_fc_object_state_t state);
 
 #endif

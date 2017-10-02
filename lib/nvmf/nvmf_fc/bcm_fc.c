@@ -346,11 +346,29 @@ spdk_nvmf_hwqp_port_set_offline(struct fc_hwqp *hwqp)
 	}
 }
 
+uint32_t
+spdk_nvmf_fc_nport_get_association_count(struct spdk_nvmf_fc_nport *nport)
+{
+	return nport->assoc_count;
+}
+
 /* Returns true if the Nport is empty of all associations */
 bool
 spdk_nvmf_fc_nport_is_association_empty(struct spdk_nvmf_fc_nport *nport)
 {
 	if (nport && (TAILQ_EMPTY(&nport->fc_associations) || (0 == nport->assoc_count))) {
+		return true;
+	} else {
+		return false;
+	}
+}
+
+/* Returns true if the Nport is empty of all rem_ports */
+bool
+spdk_nvmf_fc_nport_is_rport_empty(struct spdk_nvmf_fc_nport *nport)
+{
+	if (nport && TAILQ_EMPTY(&nport->rem_port_list)) {
+		assert(nport->rport_count == 0);
 		return true;
 	} else {
 		return false;
@@ -385,6 +403,20 @@ spdk_nvmf_fc_nport_add_rem_port(struct spdk_nvmf_fc_nport *nport,
 {
 	if (nport && rport) {
 		TAILQ_INSERT_TAIL(&nport->rem_port_list, rport, link);
+		nport->rport_count++;
+		return SPDK_SUCCESS;
+	} else {
+		return SPDK_ERR_INTERNAL;
+	}
+}
+
+bool
+spdk_nvmf_fc_nport_remove_rem_port(struct spdk_nvmf_fc_nport *nport,
+				struct spdk_nvmf_fc_rem_port_info *rport)
+{
+	if (nport && rport) {
+		TAILQ_REMOVE(&nport->rem_port_list, rport, link);
+		nport->rport_count--;
 		return SPDK_SUCCESS;
 	} else {
 		return SPDK_ERR_INTERNAL;
@@ -395,6 +427,18 @@ uint32_t
 spdk_nvmf_fc_get_prli_service_params(void)
 {
 	return (SPDK_NVMF_FC_DISCOVERY_SERVICE | SPDK_NVMF_FC_TARGET_FUNCTION);
+}
+
+spdk_err_t
+spdk_nvmf_fc_rport_set_state(
+	struct spdk_nvmf_fc_rem_port_info *rport, spdk_fc_object_state_t state)
+{
+	if (rport) {
+		rport->rport_state = state;
+		return SPDK_SUCCESS;
+	} else {
+		return SPDK_ERR_INTERNAL;
+	}
 }
 
 /*** Accessor functions for the bcm-fc structures - END */

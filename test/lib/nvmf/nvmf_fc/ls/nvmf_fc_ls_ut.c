@@ -404,7 +404,9 @@ spdk_nvmf_subsystem_host_allowed(struct spdk_nvmf_subsystem *subsystem,
 /* ********* the tests ********* */
 
 static void
-run_create_assoc_test(struct spdk_nvmf_fc_nport *tgtport)
+run_create_assoc_test(
+	struct spdk_nvmf_fc_nport *tgtport,
+	struct spdk_nvmf_fc_rem_port_info *rport)
 {
 	struct nvmf_fc_ls_rqst ls_rqst;
 	struct nvmf_fc_ls_cr_assoc_rqst ca_rqst;
@@ -430,13 +432,14 @@ run_create_assoc_test(struct spdk_nvmf_fc_nport *tgtport)
 	ls_rqst.rpi = 5000;
 	ls_rqst.private_data = NULL;
 
-	spdk_nvmf_fc_handle_ls_rqst(tgtport, &ls_rqst);
+	spdk_nvmf_fc_handle_ls_rqst(0, tgtport, rport, &ls_rqst);
 }
 
 
 static void
 run_create_conn_test(struct spdk_nvmf_fc_nport *tgtport,
-		     uint64_t assoc_id)
+	struct spdk_nvmf_fc_rem_port_info *rport,
+	uint64_t assoc_id)
 {
 	struct nvmf_fc_ls_rqst ls_rqst;
 	struct nvmf_fc_ls_cr_conn_rqst cc_rqst;
@@ -472,12 +475,13 @@ run_create_conn_test(struct spdk_nvmf_fc_nport *tgtport,
 	ls_rqst.rpi = 5000;
 	ls_rqst.private_data = NULL;
 
-	spdk_nvmf_fc_handle_ls_rqst(tgtport, &ls_rqst);
+	spdk_nvmf_fc_handle_ls_rqst(0, tgtport, rport, &ls_rqst);
 }
 
 static void
 run_disconn_test(struct spdk_nvmf_fc_nport *tgtport,
-		 uint64_t assoc_id)
+	struct spdk_nvmf_fc_rem_port_info *rport,
+	uint64_t assoc_id)
 {
 	struct nvmf_fc_ls_rqst ls_rqst;
 	struct nvmf_fc_ls_disconnect_rqst dc_rqst;
@@ -511,7 +515,7 @@ run_disconn_test(struct spdk_nvmf_fc_nport *tgtport,
 	ls_rqst.rpi = 5000;
 	ls_rqst.private_data = NULL;
 
-	spdk_nvmf_fc_handle_ls_rqst(tgtport, &ls_rqst);
+	spdk_nvmf_fc_handle_ls_rqst(0, tgtport, rport, &ls_rqst);
 }
 
 static int
@@ -664,6 +668,7 @@ test_process_ls_cmds(void)
 {
 	struct spdk_nvmf_fc_port fcport;
 	struct spdk_nvmf_fc_nport tgtport;
+	struct spdk_nvmf_fc_rem_port_info rport;
 	uint32_t i;
 	uint64_t assoc_id[1024];
 
@@ -685,28 +690,28 @@ test_process_ls_cmds(void)
 
 	g_test_run_type = TEST_RUN_TYPE_CREATE_ASSOC;
 
-	run_create_assoc_test(&tgtport);
+	run_create_assoc_test(&tgtport, &rport);
 	if (g_last_rslt == 0) {
 		g_test_run_type = TEST_RUN_TYPE_CREATE_CONN;
 		while (g_last_rslt == 0)
-			run_create_conn_test(&tgtport, g_curr_assoc_id);
+			run_create_conn_test(&tgtport, &rport, g_curr_assoc_id);
 		g_test_run_type = TEST_RUN_TYPE_DISCONNECT;
-		run_disconn_test(&tgtport, g_curr_assoc_id);
+		run_disconn_test(&tgtport, &rport, g_curr_assoc_id);
 		g_create_conn_test_cnt = 0;
 		g_test_run_type = TEST_RUN_TYPE_CONN_BAD_ASSOC;
-		run_create_conn_test(&tgtport, g_curr_assoc_id);
+		run_create_conn_test(&tgtport, &rport, g_curr_assoc_id);
 	}
 
 	for (i = 0; i < g_nvmf_tgt.max_associations; i++) {
 		g_test_run_type = TEST_RUN_TYPE_CREATE_ASSOC;
-		run_create_assoc_test(&tgtport);
+		run_create_assoc_test(&tgtport, &rport);
 		if (g_last_rslt == 0) {
 			int j;
 			assoc_id[i] = g_curr_assoc_id;
 			g_test_run_type = TEST_RUN_TYPE_CREATE_CONN;
 			for (j = 1; j < g_nvmf_tgt.max_queues_per_session; j++) {
 				if (g_last_rslt == 0) {
-					run_create_conn_test(&tgtport, g_curr_assoc_id);
+					run_create_conn_test(&tgtport, &rport, g_curr_assoc_id);
 				}
 			}
 		} else  {
@@ -717,7 +722,7 @@ test_process_ls_cmds(void)
 	g_test_run_type = TEST_RUN_TYPE_DISCONNECT;
 	for (i = 0; i < g_nvmf_tgt.max_associations; i++) {
 		if (g_last_rslt == 0) {
-			run_disconn_test(&tgtport, assoc_id[i]);
+			run_disconn_test(&tgtport, &rport, assoc_id[i]);
 		}
 	}
 
