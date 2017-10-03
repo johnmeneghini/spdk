@@ -644,7 +644,7 @@ bool spdk_nvmf_fc_nport_add_rem_port(struct spdk_nvmf_fc_nport *nport,
 				     struct spdk_nvmf_fc_rem_port_info *rem_port);
 
 bool spdk_nvmf_fc_nport_remove_rem_port(struct spdk_nvmf_fc_nport *nport,
-				     struct spdk_nvmf_fc_rem_port_info *rem_port);
+					struct spdk_nvmf_fc_rem_port_info *rem_port);
 
 uint32_t spdk_nvmf_fc_get_prli_service_params(void);
 

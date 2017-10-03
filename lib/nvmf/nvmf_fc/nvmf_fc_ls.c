@@ -521,7 +521,7 @@ nvmf_fc_ls_new_association(uint32_t s_id,
 	}
 
 	assoc = (struct spdk_nvmf_fc_association *)
-			spdk_mempool_get(g_fc_ls_assoc_pool);
+		spdk_mempool_get(g_fc_ls_assoc_pool);
 
 	if (assoc) {
 		memset((void *)assoc, 0, sizeof(*assoc));
