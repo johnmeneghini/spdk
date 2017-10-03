@@ -412,7 +412,7 @@ spdk_nvmf_fc_nport_add_rem_port(struct spdk_nvmf_fc_nport *nport,
 
 bool
 spdk_nvmf_fc_nport_remove_rem_port(struct spdk_nvmf_fc_nport *nport,
-				struct spdk_nvmf_fc_rem_port_info *rport)
+				   struct spdk_nvmf_fc_rem_port_info *rport)
 {
 	if (nport && rport) {
 		TAILQ_REMOVE(&nport->rem_port_list, rport, link);

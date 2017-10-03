@@ -442,8 +442,8 @@ run_create_assoc_test(
 
 static void
 run_create_conn_test(struct spdk_nvmf_fc_nport *tgtport,
-	struct spdk_nvmf_fc_rem_port_info *rport,
-	uint64_t assoc_id)
+		     struct spdk_nvmf_fc_rem_port_info *rport,
+		     uint64_t assoc_id)
 {
 	struct nvmf_fc_ls_rqst ls_rqst;
 	struct nvmf_fc_ls_cr_conn_rqst cc_rqst;
@@ -484,8 +484,8 @@ run_create_conn_test(struct spdk_nvmf_fc_nport *tgtport,
 
 static void
 run_disconn_test(struct spdk_nvmf_fc_nport *tgtport,
-	struct spdk_nvmf_fc_rem_port_info *rport,
-	uint64_t assoc_id)
+		 struct spdk_nvmf_fc_rem_port_info *rport,
+		 uint64_t assoc_id)
 {
 	struct nvmf_fc_ls_rqst ls_rqst;
 	struct nvmf_fc_ls_disconnect_rqst dc_rqst;
