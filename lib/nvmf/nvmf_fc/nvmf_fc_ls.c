@@ -443,11 +443,27 @@ static inline uint32_t nvmf_fc_lsdesc_len(size_t sz)
 }
 
 static struct spdk_nvmf_subsystem *
+nvmf_fc_ls_find_subsystem(uint8_t *subnqn)
+{
+	struct spdk_nvmf_subsystem *subsystem;
+
+	subsystem = spdk_nvmf_find_subsystem((const char *)subnqn);
+	if (!subsystem || subsystem->is_removed) {
+		return NULL;
+	}
+
+	return subsystem;
+
+}
+
+static bool
 nvmf_fc_ls_valid_subnqn(uint8_t *subnqn)
 {
-	if (!memchr(subnqn, '\0', FCNVME_ASSOC_SUBNQN_LEN))
-		return NULL;
-	return spdk_nvmf_find_subsystem((const char *)subnqn);
+	if (!memchr(subnqn, '\0', FCNVME_ASSOC_SUBNQN_LEN)) {
+		return false;
+	}
+
+	return true;
 }
 
 static bool
@@ -1024,7 +1040,11 @@ nvmf_fc_ls_create_association(uint32_t s_id,
 		errmsg_ind = VERR_ERSP_RATIO;
 		rc = FCNVME_RJT_RC_INV_PARAM;
 		ec = FCNVME_RJT_EXP_INV_ESRP;
-	} else if ((subsys = nvmf_fc_ls_valid_subnqn(rqst->assoc_cmd.subnqn))
+	} else if (!nvmf_fc_ls_valid_subnqn(rqst->assoc_cmd.subnqn)) {
+		errmsg_ind = VERR_SUBNQN;
+		rc = FCNVME_RJT_RC_INV_PARAM;
+		ec = FCNVME_RJT_EXP_INV_SUBNQN;
+	} else if ((subsys = nvmf_fc_ls_find_subsystem(rqst->assoc_cmd.subnqn))
 		   == NULL) {
 		errmsg_ind = VERR_SUBNQN;
 		rc = FCNVME_RJT_RC_INV_PARAM;
