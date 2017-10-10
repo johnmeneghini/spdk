@@ -640,7 +640,7 @@ spdk_nvmf_fc_request_complete(struct spdk_nvmf_request *req)
 		/* Switch to correct HWQP lcore. */
 		event = spdk_event_allocate(fc_req->poller_lcore,
 					    spdk_nvmf_fc_request_complete_process,
-					    (void *)req, (void*) i++);
+					    (void *)req, (void *) i++);
 		spdk_event_call(event);
 #ifndef NETAPP
 	} else {

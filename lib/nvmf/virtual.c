@@ -473,12 +473,12 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 					  0);
 			req->req_write_trace[NVMF_FC_WRITE_BUFFERS_FROM_WAFL] = spdk_get_ticks();
 			if (error < 0) {
-				assert( false );
+				assert(false);
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING;
 			} else if (error == 0) {
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_READY;
 			} else {
-				assert( false );
+				assert(false);
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_ERROR;
 			}
 		}

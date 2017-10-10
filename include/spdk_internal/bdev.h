@@ -134,16 +134,16 @@ struct spdk_bdev_fn_table {
 	struct spdk_io_channel *(*get_io_channel)(void *ctx, uint32_t priority);
 
 	/** API to acquire/init vector of I/O Buffers for read */
-	int (*init_read)(uint32_t length, struct iovec *iov, uint32_t *iovcnt);
+	int (*init_read)(int32_t length, struct iovec *iov, int32_t *iovcnt);
 
 	/** API to release vector of I/O Buffers  acquired for read */
-	int (*fini_read)(struct iovec *iov, uint32_t iovcnt, void *ctx);
+	int (*fini_read)(struct iovec *iov, int32_t iovcnt, void *ctx);
 
 	/** API to acquire vector of I/O Buffers for write */
-	int (*init_write)(uint32_t length, struct iovec *iov, uint32_t *iovcnt, void **iovctx);
+	int (*init_write)(int32_t length, struct iovec *iov, int32_t *iovcnt, void **iovctx);
 
 	/** API to release vector of I/O Buffers  acquired for write */
-	int (*fini_write)(struct iovec *iov, uint32_t iovcnt, void *ctx);
+	int (*fini_write)(struct iovec *iov, int32_t iovcnt, void *ctx);
 
 	/**
 	 * Output driver-specific configuration to a JSON stream. Optional - may be NULL.
@@ -163,8 +163,7 @@ struct spdk_bdev_io *spdk_bdev_get_child_io(struct spdk_bdev_io *parent,
 		spdk_bdev_io_completion_cb cb,
 		void *cb_arg);
 void spdk_bdev_io_resubmit(struct spdk_bdev_io *bdev_io, struct spdk_bdev *new_bdev);
-void spdk_bdev_io_complete(struct spdk_bdev_io *bdev_io,
-			   enum spdk_bdev_io_status status);
+void spdk_bdev_io_complete(struct spdk_bdev_io *bdev_io, enum spdk_bdev_io_status status);
 
 /**
  * Complete a bdev_io with an NVMe status code.
