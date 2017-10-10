@@ -57,7 +57,7 @@
 #define UINT32_MAX  (4294967295U)
 #endif
 
-#define NVMF_FC_MAX_IO_QUEUES       	2
+#define NVMF_FC_MAX_IO_QUEUES       	16
 #define HWQP_POLLER_TIMER_MSEC      	0
 #define MAX_IOVS                    	128
 

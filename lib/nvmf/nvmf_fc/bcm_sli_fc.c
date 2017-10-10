@@ -832,6 +832,9 @@ bcm_io_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 		if (fc_req->req.xfer == SPDK_NVME_DATA_HOST_TO_CONTROLLER) {
 			struct spdk_event *event = NULL;
 
+			if (fc_req->transfered_len != fc_req->req.length) {
+				assert(false);
+			}
 
 			spdk_trace_record(TRACE_FC_WRITE_DONE_FROM_FW, fc_req->poller_lcore, 0, (uint64_t)(&fc_req->req),
 					  0);
@@ -851,6 +854,13 @@ bcm_io_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 		} else {
 			spdk_trace_record(TRACE_FC_READ_DONE_FROM_FW, fc_req->poller_lcore, 0, (uint64_t)(&fc_req->req), 0);
 			fc_req->req.req_read_trace[NVMF_FC_READ_DONE_FROM_FW] = spdk_get_ticks();
+
+			fc_req->transfered_len = cqe_entry->u.generic.word1.total_data_placed;
+
+			if (fc_req->transfered_len != fc_req->req.length) {
+				assert(false);
+			}
+
 			if (bcm_nvmf_fc_handle_rsp(fc_req)) {
 				goto free_req;
 			}
@@ -1395,6 +1405,7 @@ bcm_nvmf_fc_fill_sgl(struct spdk_nvmf_fc_request *fc_req)
 	/* Use RQ buffer for SGL */
 	req_buf = hwqp->queues.rq_payload.buffer[fc_req->buf_index].virt;
 	sge = &req_buf->sge[0];
+	memset(sge, 0, (sizeof(bcm_sge_t) * (MAX_NUM_OF_IOVECTORS + 2)));
 
 	if (fc_req->req.xfer == SPDK_NVME_DATA_HOST_TO_CONTROLLER) { /* Write */
 		uint64_t xfer_rdy_phys;
@@ -1498,6 +1509,13 @@ bcm_nvmf_fc_send_data(struct spdk_nvmf_fc_request *fc_req)
 	    (cmd->opc != SPDK_NVME_OPC_FABRIC)) {
 		fc_conn->rsp_count++;
 		tsend->ar = TRUE;
+
+		/* Advance our sq_head pointer */
+		if (fc_conn->conn.sq_head == fc_conn->conn.sq_head_max) {
+			fc_conn->conn.sq_head = 0;
+		} else {
+			fc_conn->conn.sq_head++;
+		}
 	}
 
 	tsend->command = BCM_WQE_FCP_TSEND64;
@@ -1643,7 +1661,8 @@ bcm_nvmf_fc_handle_rsp(struct spdk_nvmf_fc_request *fc_req)
 	struct spdk_nvmf_fc_conn *fc_conn = bcm_get_fc_conn(conn);
 	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
 	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
-	uint16_t status = *((uint16_t *)&rsp->status), ersp_len = 0;
+	uint16_t status = *((uint16_t *)&rsp->status);
+	uint16_t ersp_len = 0;
 
 	rsp->sqhd = conn->sq_head;
 
@@ -1670,7 +1689,6 @@ bcm_nvmf_fc_handle_rsp(struct spdk_nvmf_fc_request *fc_req)
 	    (cmd->opc == SPDK_NVME_OPC_FABRIC) ||
 	    (status & 0xFFFE) || rsp->cdw0 || rsp->rsvd1 ||
 	    (req->length != fc_req->transfered_len)) {
-
 		/* Fill ERSP Len */
 		to_be16(&ersp_len, (sizeof(struct nvme_ersp_iu) / sizeof(uint32_t)));
 		fc_req->ersp.ersp_len = ersp_len;
@@ -1689,6 +1707,7 @@ bcm_nvmf_fc_handle_rsp(struct spdk_nvmf_fc_request *fc_req)
 		SPDK_TRACELOG(SPDK_TRACE_BCM_FC_NVME, "Posting RSP.\n");
 		rc = bcm_nvmf_fc_xmt_rsp(fc_req, NULL, 0);
 	}
+
 	return rc;
 }
 
