@@ -52,8 +52,8 @@ rm -f comment.log
 
 echo -n "Checking blank lines at end of file..."
 
-if ! git grep -I -l -e .  | grep -v "lib\/fc" | \
-	xargs -P8 -n1 scripts/eofnl > eofnl.log; then
+if ! git grep -I -l -e . | grep -v "lib\/fc" | \
+	xargs -0 -P8 -n1 scripts/eofnl > eofnl.log; then
 	echo " Incorrect end-of-file formatting detected"
 	cat eofnl.log
 	rc=1
