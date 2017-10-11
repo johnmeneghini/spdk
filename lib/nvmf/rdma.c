@@ -418,7 +418,7 @@ spdk_nvmf_rdma_conn_create(struct rdma_cm_id *id, struct ibv_comp_channel *chann
 }
 
 static int
-request_transfer_in(struct spdk_nvmf_request *req)
+spdk_nvmf_request_transfer_in(struct spdk_nvmf_request *req)
 {
 	int				rc;
 	struct spdk_nvmf_rdma_request	*rdma_req = get_rdma_req(req);
@@ -445,7 +445,7 @@ request_transfer_in(struct spdk_nvmf_request *req)
 }
 
 static int
-request_transfer_out(struct spdk_nvmf_request *req)
+spdk_nvmf_request_transfer_out(struct spdk_nvmf_request *req)
 {
 	int 				rc;
 	struct spdk_nvmf_rdma_request	*rdma_req = get_rdma_req(req);
@@ -528,17 +528,17 @@ spdk_nvmf_rdma_request_transfer_data(struct spdk_nvmf_request *req)
 
 	if (req->xfer == SPDK_NVME_DATA_NONE) {
 		/* If no data transfer, this can bypass the queue */
-		return request_transfer_out(req);
+		return spdk_nvmf_request_transfer_out(req);
 	}
 
 	if (rdma_conn->cur_rdma_rw_depth < rdma_conn->max_rw_depth) {
 		if (req->xfer == SPDK_NVME_DATA_CONTROLLER_TO_HOST) {
-			rc = request_transfer_out(req);
+			rc = spdk_nvmf_request_transfer_out(req);
 			spdk_nvmf_request_cleanup(req);
 			return rc;
 
 		} else if (req->xfer == SPDK_NVME_DATA_HOST_TO_CONTROLLER) {
-			return request_transfer_in(req);
+			return spdk_nvmf_request_transfer_in(req);
 		}
 	} else {
 		TAILQ_INSERT_TAIL(&rdma_conn->pending_rdma_rw_queue, rdma_req, link);
@@ -548,7 +548,7 @@ spdk_nvmf_rdma_request_transfer_data(struct spdk_nvmf_request *req)
 }
 
 static int
-nvmf_rdma_connect(struct rdma_cm_event *event)
+spdk_nvmf_rdma_connect(struct rdma_cm_event *event)
 {
 	struct spdk_nvmf_rdma_conn	*rdma_conn = NULL;
 	struct spdk_nvmf_rdma_listen_addr *addr;
@@ -671,7 +671,7 @@ err0:
 }
 
 static int
-nvmf_rdma_disconnect(struct rdma_cm_event *evt)
+spdk_nvmf_rdma_disconnect(struct rdma_cm_event *evt)
 {
 	struct spdk_nvmf_conn		*conn;
 	struct spdk_nvmf_session	*session;
@@ -1077,7 +1077,7 @@ spdk_nvmf_rdma_acceptor_poll(void)
 
 			switch (event->event) {
 			case RDMA_CM_EVENT_CONNECT_REQUEST:
-				rc = nvmf_rdma_connect(event);
+				rc = spdk_nvmf_rdma_connect(event);
 				if (rc < 0) {
 					SPDK_ERRLOG("Unable to process connect event. rc: %d\n", rc);
 					break;
@@ -1089,7 +1089,7 @@ spdk_nvmf_rdma_acceptor_poll(void)
 			case RDMA_CM_EVENT_DISCONNECTED:
 			case RDMA_CM_EVENT_DEVICE_REMOVAL:
 			case RDMA_CM_EVENT_TIMEWAIT_EXIT:
-				rc = nvmf_rdma_disconnect(event);
+				rc = spdk_nvmf_rdma_disconnect(event);
 				if (rc < 0) {
 					SPDK_ERRLOG("Unable to process disconnect event. rc: %d\n", rc);
 					break;
@@ -1327,7 +1327,7 @@ spdk_nvmf_rdma_request_complete(struct spdk_nvmf_request *req)
 	    req->xfer == SPDK_NVME_DATA_CONTROLLER_TO_HOST) {
 		rc = spdk_nvmf_rdma_request_transfer_data(req);
 	} else {
-		rc = request_transfer_out(req);
+		rc = spdk_nvmf_request_transfer_out(req);
 	}
 
 	return rc;
