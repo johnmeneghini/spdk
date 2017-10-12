@@ -58,7 +58,7 @@
 				pwwn[0]); \
 	} while(0)
 
-struct spdk_hw_port_init_args;
+struct spdk_nvmf_bcm_fc_hw_port_init_args;
 
 /**
  * @brief target private ocs structure
@@ -80,7 +80,7 @@ typedef struct {
 	int32_t	watermark_min;			/**< lower limit for watermark */
 	int32_t	watermark_max;			/**< upper limit for watermark */
 
-	struct spdk_hw_port_init_args *args;
+	struct spdk_nvmf_bcm_fc_hw_port_init_args *args;
 	
 } ocs_scsi_tgt_t;
 

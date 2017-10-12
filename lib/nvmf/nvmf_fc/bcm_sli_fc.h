@@ -375,17 +375,18 @@ typedef struct fc_abts_ctx {
 	uint16_t rpi;
 	uint16_t oxid;
 	uint16_t rxid;
-	struct spdk_nvmf_fc_nport *nport;
+	struct spdk_nvmf_bcm_fc_nport *nport;
 	void *free_args;
 } fc_abts_ctx_t;
 
 /* Caller context */
-typedef void (*bcm_fc_caller_cb)(void *hwqp, int32_t status, void *args);
+typedef void (*spdk_nvmf_bcm_fc_caller_cb)(void *hwqp, int32_t status, void *args);
 
 typedef struct fc_caller_ctx {
 	void *ctx;
-	bcm_fc_caller_cb cb;
+	spdk_nvmf_bcm_fc_caller_cb cb;
 	void *cb_args;
+	TAILQ_ENTRY(fc_caller_ctx) link;
 } fc_caller_ctx_t;
 
 /* WQ related */
@@ -1164,5 +1165,56 @@ typedef struct bcm_send_frame_wqe_s {
 			cq_id: 16;
 	uint32_t	fc_header_2_5[4];
 } bcm_send_frame_wqe_t;
+
+typedef struct bcm_gen_request64_wqe_s {
+	bcm_bde_t	bde;
+	uint32_t	request_payload_length;
+	uint32_t	relative_offset;
+	uint32_t	: 8,
+			df_ctl: 8,
+			type: 8,
+			r_ctl: 8;
+	uint32_t	xri_tag: 16,
+			context_tag: 16;
+	uint32_t	: 2,
+			ct: 2,
+			: 4,
+			command: 8,
+			class: 3,
+				: 1,
+				  pu: 2,
+				  : 2,
+				    timer: 8;
+	uint32_t	abort_tag;
+	uint32_t	request_tag: 16,
+			: 16;
+	uint32_t	ebde_cnt: 4,
+			: 3,
+			len_loc: 2,
+			qosd: 1,
+			: 1,
+			xbl: 1,
+			hlm: 1,
+			iod: 1,
+			dbde: 1,
+			wqes: 1,
+			pri: 3,
+			pv: 1,
+			eat: 1,
+			xc: 1,
+			: 1,
+			ccpe: 1,
+			ccp: 8;
+	uint32_t	cmd_type: 4,
+			: 3,
+			wqec: 1,
+			: 8,
+			cq_id: 16;
+	uint32_t	remote_n_port_id: 24,
+			: 8;
+	uint32_t	rsvd13;
+	uint32_t	rsvd14;
+	uint32_t	max_response_payload_length;
+} bcm_gen_request64_wqe_t;
 
 #endif

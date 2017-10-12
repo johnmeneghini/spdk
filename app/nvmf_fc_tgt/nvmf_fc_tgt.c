@@ -49,8 +49,8 @@
 static TAILQ_HEAD(, nvmf_tgt_subsystem) g_subsystems = TAILQ_HEAD_INITIALIZER(g_subsystems);
 static bool g_subsystems_shutdown;
 
-static struct spdk_nvmf_fc_ops g_nvmf_fc_ops = {
-	spdk_master_enqueue_event,
+static struct spdk_nvmf_bcm_fc_master_ops g_nvmf_fc_ops = {
+	spdk_nvmf_bcm_fc_master_enqueue_event,
 };
 
 static void
@@ -60,7 +60,7 @@ shutdown_complete(void)
 }
 
 static void
-subsystem_delete_event(void *arg1, void *arg2)
+nvmf_fc_subsystem_delete_event(void *arg1, void *arg2)
 {
 	struct nvmf_tgt_subsystem *app_subsys = arg1;
 	struct spdk_nvmf_subsystem *subsystem = app_subsys->subsystem;
@@ -78,7 +78,7 @@ subsystem_delete_event(void *arg1, void *arg2)
 }
 
 static void
-nvmf_tgt_delete_subsystem(struct nvmf_tgt_subsystem *app_subsys)
+nvmf_fc_tgt_delete_subsystem(struct nvmf_tgt_subsystem *app_subsys)
 {
 	struct spdk_event *event;
 
@@ -86,66 +86,70 @@ nvmf_tgt_delete_subsystem(struct nvmf_tgt_subsystem *app_subsys)
 	 * Unregister the poller - this starts a chain of events that will eventually free
 	 * the subsystem's memory.
 	 */
-	event = spdk_event_allocate(spdk_env_get_current_core(), subsystem_delete_event,
+	event = spdk_event_allocate(spdk_env_get_current_core(), nvmf_fc_subsystem_delete_event,
 				    app_subsys, NULL);
 	spdk_poller_unregister(&app_subsys->poller, event);
 }
 
 static void
-shutdown_subsystems(void)
+nvmf_fc_shutdown_subsystems(void)
 {
 	struct nvmf_tgt_subsystem *app_subsys, *tmp;
 
 	g_subsystems_shutdown = true;
 	TAILQ_FOREACH_SAFE(app_subsys, &g_subsystems, tailq, tmp) {
-		nvmf_tgt_delete_subsystem(app_subsys);
+		nvmf_fc_tgt_delete_subsystem(app_subsys);
 	}
 }
 
-void
-spdk_nvmf_fc_shutdown_cb(void)
+static void
+nvmf_fc_shutdown_cb(void)
 {
 	SPDK_NOTICELOG("\n=========================\n");
 	SPDK_NOTICELOG("   NVMF FC shutdown signal\n");
 	SPDK_NOTICELOG("=========================\n");
 
-	shutdown_subsystems();
+	nvmf_fc_shutdown_subsystems();
 	spdk_fc_api_subsystem_exit();
 }
 
+/* Don't need subsystem poller unless running direct device or
+ * for subsystem removal AEN support
 static void
-subsystem_poll(void *arg)
+nvmf_fc_subsystem_poll(void *arg)
 {
 	struct nvmf_tgt_subsystem *app_subsys = arg;
 
 	spdk_nvmf_subsystem_poll(app_subsys->subsystem);
-}
+} */
 
 static void
-_nvmf_fc_tgt_start_subsystem(void *arg1, void *arg2)
+nvmf_fc_tgt_start_subsystem(void *arg1, void *arg2)
 {
 	struct nvmf_tgt_subsystem *app_subsys = arg1;
 	struct spdk_nvmf_subsystem *subsystem = app_subsys->subsystem;
-	int lcore = spdk_env_get_current_core();
+	/* int lcore = spdk_env_get_current_core(); */
 
 	spdk_nvmf_subsystem_start(subsystem);
 
-	spdk_poller_register(&app_subsys->poller, subsystem_poll, app_subsys, lcore, 0);
+	/* Don't need to start poller unless running direct device or
+	* for subsystem removal AEN support */
+	/* spdk_poller_register(&app_subsys->poller, subsystem_poll, app_subsys, lcore, 0); */
 }
 
 void
-nvmf_fc_tgt_start_subsystem(struct nvmf_tgt_subsystem *app_subsys)
+spdk_nvmf_bcm_fc_tgt_start_subsystem(struct nvmf_tgt_subsystem *app_subsys)
 {
 	struct spdk_event *event;
 
-	event = spdk_event_allocate(app_subsys->lcore, _nvmf_fc_tgt_start_subsystem,
+	event = spdk_event_allocate(app_subsys->lcore, nvmf_fc_tgt_start_subsystem,
 				    app_subsys, NULL);
 	spdk_event_call(event);
 }
 
 struct nvmf_tgt_subsystem *
-nvmf_tgt_create_subsystem(const char *name, enum spdk_nvmf_subtype subtype,
-			  enum spdk_nvmf_subsystem_mode mode, uint32_t lcore)
+spdk_nvmf_bcm_fc_tgt_create_subsystem(const char *name, enum spdk_nvmf_subtype subtype,
+				      enum spdk_nvmf_subsystem_mode mode, uint32_t lcore)
 {
 	struct spdk_nvmf_subsystem *subsystem;
 	struct nvmf_tgt_subsystem *app_subsys;
@@ -162,8 +166,8 @@ nvmf_tgt_create_subsystem(const char *name, enum spdk_nvmf_subtype subtype,
 	}
 
 	subsystem = spdk_nvmf_create_subsystem(name, subtype, mode, app_subsys,
-					       spdk_nvmf_fc_subsys_connect_cb,
-					       spdk_nvmf_fc_subsys_disconnect_cb);
+					       spdk_nvmf_bcm_fc_subsys_connect_cb,
+					       spdk_nvmf_bcm_fc_subsys_disconnect_cb);
 
 	if (subsystem == NULL) {
 		SPDK_ERRLOG("Subsystem creation failed\n");
@@ -183,8 +187,8 @@ nvmf_tgt_create_subsystem(const char *name, enum spdk_nvmf_subtype subtype,
 }
 
 /* This function can only be used before the pollers are started. */
-void
-nvmf_tgt_delete_subsystems(void)
+static void
+nvmf_fc_tgt_delete_subsystems(void)
 {
 	struct nvmf_tgt_subsystem *app_subsys, *tmp;
 	struct spdk_nvmf_subsystem *subsystem;
@@ -198,25 +202,25 @@ nvmf_tgt_delete_subsystems(void)
 }
 
 struct nvmf_tgt_subsystem *
-nvmf_tgt_subsystem_first(void)
+spdk_nvmf_bcm_fc_tgt_subsystem_first(void)
 {
 	return TAILQ_FIRST(&g_subsystems);
 }
 
 struct nvmf_tgt_subsystem *
-nvmf_tgt_subsystem_next(struct nvmf_tgt_subsystem *subsystem)
+spdk_nvmf_bcm_fc_tgt_subsystem_next(struct nvmf_tgt_subsystem *subsystem)
 {
 	return TAILQ_NEXT(subsystem, tailq);
 }
 
 int
-nvmf_tgt_shutdown_subsystem_by_nqn(const char *nqn)
+spdk_nvmf_bcm_fc_tgt_shutdown_subsystem_by_nqn(const char *nqn)
 {
 	struct nvmf_tgt_subsystem *tgt_subsystem, *subsys_tmp;
 
 	TAILQ_FOREACH_SAFE(tgt_subsystem, &g_subsystems, tailq, subsys_tmp) {
 		if (strcmp(tgt_subsystem->subsystem->subnqn, nqn) == 0) {
-			nvmf_tgt_delete_subsystem(tgt_subsystem);
+			nvmf_fc_tgt_delete_subsystem(tgt_subsystem);
 			return 0;
 		}
 	}
@@ -224,11 +228,11 @@ nvmf_tgt_shutdown_subsystem_by_nqn(const char *nqn)
 }
 
 static void
-spdk_nvmf_fc_startup(void *arg1, void *arg2)
+nvmf_fc_startup(void *arg1, void *arg2)
 {
 	int rc;
 
-	rc = spdk_nvmf_parse_conf();
+	rc = spdk_nvmf_bcm_fc_parse_conf();
 	if (rc < 0) {
 		SPDK_ERRLOG("spdk_nvmf_parse_conf() failed\n");
 		goto initialize_error;
@@ -251,21 +255,21 @@ spdk_nvmf_fc_startup(void *arg1, void *arg2)
 	return;
 
 initialize_error:
-	nvmf_tgt_delete_subsystems();
+	nvmf_fc_tgt_delete_subsystems();
 	spdk_app_stop(rc);
 }
 
 int
-spdk_nvmf_fc_tgt_start(struct spdk_app_opts *opts)
+spdk_nvmf_bcm_fc_tgt_start(struct spdk_app_opts *opts)
 {
 	int rc;
 
-	opts->shutdown_cb = spdk_nvmf_fc_shutdown_cb;
+	opts->shutdown_cb = nvmf_fc_shutdown_cb;
 	spdk_app_init(opts);
 
 	printf("Total cores available: %d\n", spdk_env_get_core_count());
 	/* Blocks until the application is exiting */
-	rc = spdk_app_start(spdk_nvmf_fc_startup, NULL, NULL);
+	rc = spdk_app_start(nvmf_fc_startup, NULL, NULL);
 
 	spdk_app_fini();
 
@@ -273,7 +277,8 @@ spdk_nvmf_fc_tgt_start(struct spdk_app_opts *opts)
 }
 
 spdk_err_t
-spdk_nvmf_fc_tgt_add_port(const char *trname, struct spdk_nvmf_fc_nport *nport)
+spdk_nvmf_bcm_fc_tgt_add_port(const char *trname,
+			      struct spdk_nvmf_bcm_fc_nport *nport)
 {
 	struct spdk_nvmf_listen_addr *fc_listen_addr = NULL;
 	char traddr[64];
@@ -303,7 +308,8 @@ spdk_nvmf_fc_tgt_add_port(const char *trname, struct spdk_nvmf_fc_nport *nport)
 }
 
 spdk_err_t
-spdk_nvmf_fc_tgt_remove_port(const char *trname, struct spdk_nvmf_fc_nport *nport)
+spdk_nvmf_bcm_fc_tgt_remove_port(const char *trname,
+				 struct spdk_nvmf_bcm_fc_nport *nport)
 {
 	char traddr[64];
 	struct spdk_nvmf_subsystem *subsystem = NULL;

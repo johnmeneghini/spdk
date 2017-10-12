@@ -63,32 +63,6 @@ SPDK_STATIC_ASSERT(sizeof(union nvmf_c2h_msg) == 16, "Incorrect size");
 
 #define MAX_NUM_OF_IOVECTORS 17
 
-typedef enum _spdk_nvmf_trace_read {
-	NVMF_READ_IO_START,
-	NVMF_LIB_READ_START,
-	NVMF_FC_READ_START,
-	NVMF_FC_READ_SEND_TO_WAFL,
-	NVMF_FC_READ_RECV_FROM_WAFL,
-	NVMF_FC_READ_POST_SGL,
-	NVMF_FC_READ_DONE_FROM_FW,
-	NVMF_FC_READ_COMPLETE,
-	NVMF_IO_MAX_READ
-} spdk_nvmf_trace_read;
-
-typedef enum _spdk_nvmf_trace_write {
-	NVMF_WRITE_IO_START,
-	NVMF_LIB_WRITE_START,
-	NVMF_FC_WRITE_START,
-	NVMF_FC_WRITE_BUFFERS_FROM_WAFL,
-	NVMF_FC_WRITE_POST_SGL,
-	NVMF_FC_WRITE_DONE_FROM_FW,
-	NVMF_FC_WRITE_SEND_TO_WAFL,
-	NVMF_FC_WRITE_RECV_FROM_WAFL,
-	NVMF_FC_WRITE_SEND_RESP,
-	NVMF_FC_WRITE_COMPLETE,
-	NVMF_IO_MAX_WRITE
-} spdk_nvmf_trace_write;
-
 struct spdk_nvmf_request {
 	struct spdk_nvmf_conn		*conn;
 	uint32_t			length;
@@ -101,8 +75,6 @@ struct spdk_nvmf_request {
 	union nvmf_c2h_msg		*rsp;
 	struct spdk_scsi_unmap_bdesc	*unmap_bdesc;
 	struct spdk_bdev_io 		*bdev_io;
-	uint64_t req_read_trace[NVMF_IO_MAX_READ];
-	uint64_t req_write_trace[NVMF_IO_MAX_WRITE];
 };
 
 int
@@ -110,8 +82,7 @@ spdk_nvmf_request_exec(struct spdk_nvmf_request *req);
 
 int spdk_nvmf_request_complete(struct spdk_nvmf_request *req);
 
-int spdk_nvmf_request_abort(struct spdk_nvmf_request *req);
-
 void spdk_nvmf_request_cleanup(struct spdk_nvmf_request *req);
 
+int spdk_nvmf_request_abort(struct spdk_nvmf_request *req);
 #endif

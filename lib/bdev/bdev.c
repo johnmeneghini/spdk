@@ -1224,6 +1224,17 @@ spdk_bdev_free_io(struct spdk_bdev_io *bdev_io)
 	return 0;
 }
 
+void
+bdev_io_deferred_completion(void *arg1, void *arg2)
+{
+	struct spdk_bdev_io *bdev_io = arg1;
+	enum spdk_bdev_io_status status = (enum spdk_bdev_io_status)arg2;
+
+	assert(bdev_io->in_submit_request == false);
+
+	spdk_bdev_io_complete(bdev_io, status);
+}
+
 static void
 _spdk_bdev_io_complete(void *ctx)
 {
@@ -1626,16 +1637,93 @@ spdk_bdev_desc_get_bdev(struct spdk_bdev_desc *desc)
 	return desc->bdev;
 }
 
+static int
+spdk_bdev_get_buff(struct iovec *iov, int32_t *iovcnt, int32_t length)
+{
+	struct spdk_mempool *pool;
+	void *buf = NULL;
+	int32_t i = 0, max_buff_len;
+
+	if (!iov) {
+		goto error;
+	}
+
+	*iovcnt = 0;
+
+	while (length) {
+		/* Always use from small buff to be in sync with netapp wafl */
+		pool = g_bdev_mgr.buf_small_pool;
+		max_buff_len = SPDK_BDEV_SMALL_BUF_MAX_SIZE;
+
+		buf = spdk_mempool_get(pool);
+		if (buf) {
+			iov[i].iov_base = buf;
+			iov[i].iov_len  = spdk_min(length, max_buff_len);
+			++ *iovcnt;
+		} else {
+			while (i) {
+				i --;
+				spdk_mempool_put(pool, iov[i].iov_base);
+				iov[i].iov_base = NULL;
+				iov[i].iov_len = 0;
+			}
+			*iovcnt = 0;
+			goto error;
+		}
+
+		length -= iov[i].iov_len;
+		i ++;
+	}
+
+	return 0;
+error:
+	SPDK_ERRLOG("Bdev buffer allocation failed\n");
+	return -1;
+}
+
+static int
+spdk_bdev_put_buff(struct spdk_bdev_io *bdev_io, struct iovec *iov, int32_t iovcnt)
+{
+	struct spdk_mempool *pool;
+	need_buf_tailq_t *tailq;
+	struct spdk_bdev_io *tmp;
+	int32_t i;
+	struct spdk_bdev_mgmt_channel *ch;
+
+	if (!iov) {
+		return -1;
+	}
+
+	ch = spdk_io_channel_get_ctx(bdev_io->ch->mgmt_channel);
+
+	for (i = 0; i < iovcnt; i++) {
+		pool = g_bdev_mgr.buf_small_pool;
+		tailq = &ch->need_buf_small;
+
+		if (TAILQ_EMPTY(tailq)) {
+			spdk_mempool_put(pool, iov[i].iov_base);
+		} else {
+			/* give the buffer to others on pending list. */
+			tmp = TAILQ_FIRST(tailq);
+			TAILQ_REMOVE(tailq, tmp, buf_link);
+			spdk_bdev_io_set_buf(tmp, iov[i].iov_base);
+		}
+		iov[i].iov_base = NULL;
+		iov[i].iov_len = 0;
+	}
+
+	return 0;
+}
+
 int
 spdk_bdev_read_init(struct spdk_bdev *bdev, int32_t length, struct iovec *iov,
 		    int32_t *iovcnt)
 {
 	if (bdev->fn_table->init_read) {
 		return bdev->fn_table->init_read(length, iov, iovcnt);
+	} else {
+		return spdk_bdev_get_buff(iov, iovcnt, length);
 	}
-
-	/* If init_read is not defined by bdev, no special handling required */
-	return 0;
 }
 
 int
@@ -1643,56 +1731,20 @@ spdk_bdev_read_fini(struct spdk_bdev_io *bdev_io, struct iovec *iov, int32_t iov
 {
 	if (bdev_io->bdev->fn_table->fini_read) {
 		return bdev_io->bdev->fn_table->fini_read(iov, iovcnt, bdev_io->caller_ctx);
+	} else {
+		return spdk_bdev_put_buff(bdev_io, iov, iovcnt);
 	}
-
-	/* If fini_read is not defined by bdev, no special handling required */
-	return 0;
 }
 
 int
-spdk_bdev_write_init(struct spdk_bdev *bdev, int32_t length, struct iovec *iov,
-		     int32_t *iovcnt, void **iovctx)
+spdk_bdev_write_init(struct spdk_bdev *bdev, int32_t length, struct iovec *iov, int32_t *iovcnt,
+		     void **iovctx)
 {
 	if (bdev->fn_table->init_write) {
 		return bdev->fn_table->init_write(length, iov, iovcnt, iovctx);
 	} else {
-		struct spdk_mempool *pool;
-		void *buf = NULL;
-		int32_t i = 0, max_buff_len;
-
-		if (!iov) {
-			goto error;
-		}
-		*iovcnt = 0;
-
-		while (length) {
-			if (length <= SPDK_BDEV_SMALL_BUF_MAX_SIZE) {
-				pool = g_bdev_mgr.buf_small_pool;
-				max_buff_len = SPDK_BDEV_SMALL_BUF_MAX_SIZE;
-			} else {
-				pool = g_bdev_mgr.buf_large_pool;
-				max_buff_len = SPDK_BDEV_LARGE_BUF_MAX_SIZE;
-			}
-
-			buf = spdk_mempool_get(pool);
-			if (buf) {
-				iov[i].iov_base = buf; //This is unaligned. How do we return alligned ?
-				iov[i].iov_len  = spdk_min(length, max_buff_len);
-				++ *iovcnt;
-			} else {
-				while (i >= 0) {
-					spdk_mempool_put(pool, iov[i].iov_base);
-				}
-				goto error;
-			}
-
-			length -= iov[i].iov_len;
-			i ++;
-		}
+		return spdk_bdev_get_buff(iov, iovcnt, length);
 	}
-	return 0;
-error:
-	return -1;
 }
 
 int
@@ -1701,41 +1753,8 @@ spdk_bdev_write_fini(struct spdk_bdev_io *bdev_io, struct iovec *iov, int32_t io
 	if (bdev_io->bdev->fn_table->fini_write) {
 		return bdev_io->bdev->fn_table->fini_write(iov, iovcnt, bdev_io->caller_ctx);
 	} else {
-		struct spdk_mempool *pool;
-		need_buf_tailq_t *tailq;
-		struct spdk_bdev_io *tmp;
-		int32_t i;
-		struct spdk_bdev_mgmt_channel *ch;
-
-		if (!iov) {
-			goto done;
-		}
-
-		ch = spdk_io_channel_get_ctx(bdev_io->ch->mgmt_channel);
-
-		for (i = 0; i < iovcnt; i++) {
-			if (iov[i].iov_len <= SPDK_BDEV_SMALL_BUF_MAX_SIZE) {
-				pool = g_bdev_mgr.buf_small_pool;
-				tailq = &ch->need_buf_small;
-			} else {
-				pool = g_bdev_mgr.buf_large_pool;
-				tailq = &ch->need_buf_large;
-			}
-
-			if (TAILQ_EMPTY(tailq)) {
-				spdk_mempool_put(pool, iov[i].iov_base);
-			} else {
-				// give the buffer to others on pending list.
-				tmp = TAILQ_FIRST(tailq);
-				TAILQ_REMOVE(tailq, tmp, buf_link);
-				spdk_bdev_io_set_buf(tmp, iov[i].iov_base);
-			}
-			iov[i].iov_base = NULL;
-			iov[i].iov_len = 0;
-		}
+		return spdk_bdev_put_buff(bdev_io, iov, iovcnt);
 	}
-done:
-	return 0;
 }
 
 void

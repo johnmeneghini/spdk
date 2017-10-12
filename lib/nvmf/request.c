@@ -285,6 +285,24 @@ spdk_nvmf_request_cleanup(struct spdk_nvmf_request *req)
 }
 
 int
+spdk_nvmf_request_abort(struct spdk_nvmf_request *req)
+{
+	struct spdk_nvmf_session *session = req->conn->sess;
+	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
+
+	if (session && (cmd->opc != SPDK_NVME_OPC_FABRIC)) {
+		struct spdk_nvmf_subsystem *subsystem;
+
+		subsystem = session->subsys;
+
+		if (subsystem->ops->io_abort) {
+			subsystem->ops->io_abort(req);
+		}
+	}
+	return 0;
+}
+
+int
 spdk_nvmf_request_exec(struct spdk_nvmf_request *req)
 {
 	struct spdk_nvmf_session *session = req->conn->sess;
@@ -328,11 +346,4 @@ spdk_nvmf_request_exec(struct spdk_nvmf_request *req)
 	}
 
 	return status;
-}
-
-int
-spdk_nvmf_request_abort(struct spdk_nvmf_request *req)
-{
-	/* TODO: implement abort, at least for commands that are still queued in software */
-	return -1;
 }

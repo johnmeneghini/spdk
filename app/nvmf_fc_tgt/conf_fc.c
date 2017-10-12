@@ -71,34 +71,35 @@ struct spdk_nvmf_probe_ctx {
 
 #define SPDK_NVMF_CONFIG_IN_CAPSULE_DATA_SIZE_DEFAULT 4096
 #define SPDK_NVMF_CONFIG_IN_CAPSULE_DATA_SIZE_MIN 4096
-#define SPDK_NVMF_CONFIG_IN_CAPSULE_DATA_SIZE_MAX 131072
+#define SPDK_NVMF_CONFIG_IN_CAPSULE_DATA_SIZE_MAX 65536
 
-#define SPDK_NVMF_CONFIG_MAX_IO_SIZE_DEFAULT 131072
+#define SPDK_NVMF_CONFIG_MAX_IO_SIZE_DEFAULT 65536
 #define SPDK_NVMF_CONFIG_MAX_IO_SIZE_MIN 4096
-#define SPDK_NVMF_CONFIG_MAX_IO_SIZE_MAX 131072
+#define SPDK_NVMF_CONFIG_MAX_IO_SIZE_MAX 65536
 
 static int32_t g_last_core = -1;
 
 static int
-spdk_add_nvmf_discovery_subsystem(void)
+nvmf_fc_add_discovery_subsystem(void)
 {
 	struct nvmf_tgt_subsystem *app_subsys;
 
-	app_subsys = nvmf_tgt_create_subsystem(SPDK_NVMF_DISCOVERY_NQN, SPDK_NVMF_SUBTYPE_DISCOVERY,
-					       NVMF_SUBSYSTEM_MODE_DIRECT,
-					       spdk_env_get_master_lcore());
+	app_subsys = spdk_nvmf_bcm_fc_tgt_create_subsystem(SPDK_NVMF_DISCOVERY_NQN,
+			SPDK_NVMF_SUBTYPE_DISCOVERY,
+			NVMF_SUBSYSTEM_MODE_DIRECT,
+			spdk_env_get_master_lcore());
 	if (app_subsys == NULL) {
 		SPDK_ERRLOG("Failed creating discovery nvmf library subsystem\n");
 		return -1;
 	}
 
-	nvmf_fc_tgt_start_subsystem(app_subsys);
+	spdk_nvmf_bcm_fc_tgt_start_subsystem(app_subsys);
 
 	return 0;
 }
 
 static int
-spdk_nvmf_parse_nvmf_tgt(void)
+nvmf_fc_parse_nvmf_tgt(void)
 {
 	struct spdk_conf_section *sp;
 	int max_assoc;
@@ -172,9 +173,9 @@ spdk_nvmf_parse_nvmf_tgt(void)
 		return rc;
 	}
 
-	rc = spdk_add_nvmf_discovery_subsystem();
+	rc = nvmf_fc_add_discovery_subsystem();
 	if (rc != 0) {
-		SPDK_ERRLOG("spdk_add_nvmf_discovery_subsystem failed\n");
+		SPDK_ERRLOG("nvmf_add_discovery_subsystem failed\n");
 		return rc;
 	}
 
@@ -244,7 +245,7 @@ attach_cb(void *cb_ctx, const struct spdk_nvme_transport_id *trid,
 #endif
 
 static int
-spdk_nvmf_validate_sn(const char *sn)
+nvmf_fc_validate_sn(const char *sn)
 {
 	size_t len;
 
@@ -258,7 +259,7 @@ spdk_nvmf_validate_sn(const char *sn)
 }
 
 static int
-spdk_nvmf_allocate_lcore(uint64_t mask, uint32_t lcore)
+nvmf_fc_allocate_lcore(uint64_t mask, uint32_t lcore)
 {
 	uint32_t end;
 
@@ -279,7 +280,7 @@ spdk_nvmf_allocate_lcore(uint64_t mask, uint32_t lcore)
 }
 
 static int
-spdk_nvmf_parse_subsystem(struct spdk_conf_section *sp)
+nvmf_fc_parse_subsystem(struct spdk_conf_section *sp)
 {
 	const char *nqn, *mode_str;
 	int i, ret;
@@ -319,17 +320,17 @@ spdk_nvmf_parse_subsystem(struct spdk_conf_section *sp)
 		num_devs++;
 	}
 
-	ret = spdk_nvmf_construct_subsystem(nqn, mode_str, lcore,
-					    num_listen_addrs, listen_addrs,
-					    num_hosts, hosts,
-					    bdf, sn,
-					    num_devs, devs);
+	ret = spdk_nvmf_bcm_fc_construct_subsystem(nqn, mode_str, lcore,
+			num_listen_addrs,
+			listen_addrs, num_hosts,
+			hosts, bdf, sn, num_devs,
+			devs);
 
 	return ret;
 }
 
 static int
-spdk_nvmf_parse_subsystems(void)
+nvmf_fc_parse_subsystems(void)
 {
 	int rc = 0;
 	struct spdk_conf_section *sp;
@@ -337,7 +338,7 @@ spdk_nvmf_parse_subsystems(void)
 	sp = spdk_conf_first_section(NULL);
 	while (sp != NULL) {
 		if (spdk_conf_section_match_prefix(sp, "Subsystem")) {
-			rc = spdk_nvmf_parse_subsystem(sp);
+			rc = nvmf_fc_parse_subsystem(sp);
 			if (rc < 0) {
 				return -1;
 			}
@@ -348,18 +349,18 @@ spdk_nvmf_parse_subsystems(void)
 }
 
 int
-spdk_nvmf_parse_conf(void)
+spdk_nvmf_bcm_fc_parse_conf(void)
 {
 	int rc;
 
 	/* NVMf section */
-	rc = spdk_nvmf_parse_nvmf_tgt();
+	rc = nvmf_fc_parse_nvmf_tgt();
 	if (rc < 0) {
 		return rc;
 	}
 
 	/* Subsystem sections */
-	rc = spdk_nvmf_parse_subsystems();
+	rc = nvmf_fc_parse_subsystems();
 	if (rc < 0) {
 		return rc;
 	}
@@ -368,11 +369,13 @@ spdk_nvmf_parse_conf(void)
 }
 
 int
-spdk_nvmf_construct_subsystem(const char *name,
-			      const char *mode_str, int32_t lcore,
-			      int num_listen_addresses, struct rpc_listen_address *addresses,
-			      int num_hosts, char *hosts[], const char *bdf,
-			      const char *sn, int num_devs, char *dev_list[])
+spdk_nvmf_bcm_fc_construct_subsystem(const char *name,
+				     const char *mode_str, int32_t lcore,
+				     int num_listen_addresses,
+				     struct rpc_listen_address *addresses,
+				     int num_hosts, char *hosts[],
+				     const char *bdf, const char *sn,
+				     int num_devs, char *dev_list[])
 {
 	struct spdk_nvmf_subsystem *subsystem;
 	struct nvmf_tgt_subsystem *app_subsys;
@@ -396,7 +399,7 @@ spdk_nvmf_construct_subsystem(const char *name,
 
 	/* Determine which core to assign to the subsystem */
 	mask = spdk_app_get_core_mask();
-	lcore = spdk_nvmf_allocate_lcore(mask, lcore);
+	lcore = nvmf_fc_allocate_lcore(mask, lcore);
 	g_last_core = lcore;
 
 	/* Determine the mode the subsysem will operate in */
@@ -414,8 +417,9 @@ spdk_nvmf_construct_subsystem(const char *name,
 		return -1;
 	}
 
-	app_subsys = nvmf_tgt_create_subsystem(name, SPDK_NVMF_SUBTYPE_NVME,
-					       mode, lcore);
+	app_subsys = spdk_nvmf_bcm_fc_tgt_create_subsystem(name,
+			SPDK_NVMF_SUBTYPE_NVME,
+			mode, lcore);
 	if (app_subsys == NULL) {
 		SPDK_ERRLOG("Subsystem creation failed\n");
 		return -1;
@@ -478,7 +482,7 @@ spdk_nvmf_construct_subsystem(const char *name,
 			SPDK_ERRLOG("Subsystem %s: missing serial number\n", name);
 			goto error;
 		}
-		if (spdk_nvmf_validate_sn(sn) != 0) {
+		if (nvmf_fc_validate_sn(sn) != 0) {
 			goto error;
 		}
 
@@ -510,7 +514,7 @@ spdk_nvmf_construct_subsystem(const char *name,
 		}
 	}
 
-	nvmf_fc_tgt_start_subsystem(app_subsys);
+	spdk_nvmf_bcm_fc_tgt_start_subsystem(app_subsys);
 
 	return 0;
 

@@ -42,6 +42,7 @@
 #include "spdk/copy_engine.h"
 #include "spdk/io_channel.h"
 #include "spdk/string.h"
+#include "spdk/event.h"
 
 #include "spdk_internal/bdev.h"
 #include "spdk_internal/log.h"
@@ -81,7 +82,16 @@ malloc_done(void *ref, int status)
 	}
 
 	if (--task->num_outstanding == 0) {
+#ifdef SPDK_CONFIG_BCM_FC
+		struct spdk_event *event = NULL;
+		/* Complete asynchronously to match other back-end implentations */
+		event = spdk_event_allocate(spdk_env_get_current_core(),
+					    bdev_io_deferred_completion,
+					    spdk_bdev_io_from_ctx(task), (void *)task->status);
+		spdk_event_call(event);
+#else
 		spdk_bdev_io_complete(spdk_bdev_io_from_ctx(task), task->status);
+#endif
 	}
 }
 

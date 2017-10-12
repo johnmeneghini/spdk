@@ -148,7 +148,7 @@ main(int argc, char **argv)
 		sleep(10);
 	}
 
-	rc = spdk_nvmf_fc_tgt_start(&opts);
+	rc = spdk_nvmf_bcm_fc_tgt_start(&opts);
 
 	return rc;
 }
