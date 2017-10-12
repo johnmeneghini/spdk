@@ -109,9 +109,14 @@ struct spdk_nvmf_ctrlr_ops {
 	int (*process_io_cmd)(struct spdk_nvmf_request *req);
 
 	/**
-	 * Process IO command.
+	 * Cleanup IO command.
 	 */
 	void (*io_cleanup)(struct spdk_nvmf_request *req);
+
+	/**
+	 * Abort IO command.
+	 */
+	void (*io_abort)(struct spdk_nvmf_request *req);
 
 	/**
 	 * Poll for completions.
@@ -128,7 +133,7 @@ struct spdk_nvmf_subsystem_allowed_listener {
 	union {
 		struct spdk_nvmf_listen_addr *listen_addr;
 #ifdef SPDK_CONFIG_BCM_FC
-		struct spdk_nvmf_fc_nport *fc_nport;
+		struct spdk_nvmf_bcm_fc_nport *fc_nport;
 #endif
 	};
 	TAILQ_ENTRY(spdk_nvmf_subsystem_allowed_listener)	link;

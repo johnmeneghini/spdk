@@ -150,10 +150,10 @@ spdk_rpc_get_nvmf_subsystems(struct spdk_jsonrpc_server_conn *conn,
 
 	w = spdk_jsonrpc_begin_result(conn, id);
 	spdk_json_write_array_begin(w);
-	tgt_subsystem = nvmf_tgt_subsystem_first();
+	tgt_subsystem = spdk_nvmf_bcm_fc_tgt_subsystem_first();
 	while (tgt_subsystem) {
 		dump_nvmf_subsystem(w, tgt_subsystem);
-		tgt_subsystem = nvmf_tgt_subsystem_next(tgt_subsystem);
+		tgt_subsystem = spdk_nvmf_bcm_fc_tgt_subsystem_next(tgt_subsystem);
 	}
 	spdk_json_write_array_end(w);
 	spdk_jsonrpc_end_result(conn, w);
@@ -306,12 +306,12 @@ spdk_rpc_construct_nvmf_subsystem(struct spdk_jsonrpc_server_conn *conn,
 		goto invalid;
 	}
 
-	ret = spdk_nvmf_construct_subsystem(req.nqn, req.mode, req.core,
-					    req.listen_addresses.num_listen_address,
-					    req.listen_addresses.addresses,
-					    req.hosts.num_hosts, req.hosts.hosts, req.pci_address,
-					    req.serial_number,
-					    req.namespaces.num_names, req.namespaces.names);
+	ret = spdk_nvmf_bcm_fc_construct_subsystem(req.nqn, req.mode, req.core,
+			req.listen_addresses.num_listen_address,
+			req.listen_addresses.addresses,
+			req.hosts.num_hosts, req.hosts.hosts, req.pci_address,
+			req.serial_number,
+			req.namespaces.num_names, req.namespaces.names);
 	if (ret) {
 		goto invalid;
 	}
@@ -363,7 +363,7 @@ spdk_rpc_delete_nvmf_subsystem(struct spdk_jsonrpc_server_conn *conn,
 		goto invalid;
 	}
 
-	if (nvmf_tgt_shutdown_subsystem_by_nqn(req.nqn)) {
+	if (spdk_nvmf_bcm_fc_tgt_shutdown_subsystem_by_nqn(req.nqn)) {
 		SPDK_ERRLOG("shutdown_subsystem failed\n");
 		goto invalid;
 	}

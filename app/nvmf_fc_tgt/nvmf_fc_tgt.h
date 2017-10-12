@@ -58,37 +58,35 @@ struct nvmf_tgt_subsystem {
 	uint32_t lcore;
 };
 
-extern struct spdk_nvmf_tgt_conf g_spdk_nvmf_tgt_conf;
+struct nvmf_tgt_subsystem *
+spdk_nvmf_bcm_fc_tgt_subsystem_first(void);
 
 struct nvmf_tgt_subsystem *
-nvmf_tgt_subsystem_first(void);
+spdk_nvmf_bcm_fc_tgt_subsystem_next(struct nvmf_tgt_subsystem *subsystem);
+
+int spdk_nvmf_bcm_fc_parse_conf(void);
 
 struct nvmf_tgt_subsystem *
-nvmf_tgt_subsystem_next(struct nvmf_tgt_subsystem *subsystem);
+spdk_nvmf_bcm_fc_tgt_create_subsystem(const char *name,
+				      enum spdk_nvmf_subtype subtype,
+				      enum spdk_nvmf_subsystem_mode mode,
+				      uint32_t lcore);
 
-int spdk_nvmf_parse_conf(void);
-
-void nvmf_fc_tgt_start_subsystem(struct nvmf_tgt_subsystem *subsystem);
-
-struct nvmf_tgt_subsystem *nvmf_tgt_create_subsystem(const char *name,
-		enum spdk_nvmf_subtype subtype,
-		enum spdk_nvmf_subsystem_mode mode,
-		uint32_t lcore);
+void
+spdk_nvmf_bcm_fc_tgt_start_subsystem(struct nvmf_tgt_subsystem *app_subsys);
 
 int
-spdk_nvmf_construct_subsystem(const char *name,
-			      const char *mode, int32_t lcore,
-			      int num_listen_addresses, struct rpc_listen_address *addresses,
-			      int num_hosts, char *hosts[], const char *bdf,
-			      const char *sn, int num_devs, char *dev_list[]);
+spdk_nvmf_bcm_fc_construct_subsystem(const char *name,
+				     const char *mode, int32_t lcore,
+				     int num_listen_addresses,
+				     struct rpc_listen_address *addresses,
+				     int num_hosts, char *hosts[],
+				     const char *bdf, const char *sn,
+				     int num_devs, char *dev_list[]);
 
 int
-nvmf_tgt_shutdown_subsystem_by_nqn(const char *nqn);
+spdk_nvmf_bcm_fc_tgt_shutdown_subsystem_by_nqn(const char *nqn);
 
-int spdk_nvmf_fc_tgt_start(struct spdk_app_opts *opts);
-
-/* This function can only be used before the pollers are started. */
-void nvmf_tgt_delete_subsystems(void);
-void spdk_nvmf_fc_shutdown_cb(void);
+int spdk_nvmf_bcm_fc_tgt_start(struct spdk_app_opts *opts);
 
 #endif

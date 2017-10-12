@@ -47,8 +47,8 @@
 #include "spdk/string.h"
 #include "spdk/util.h"
 
-#include "nvmf_fc/bcm_fc.h" /* BAD - This should be removed */
 #include "spdk_internal/log.h"
+#include "spdk_internal/event.h"
 
 #define MODEL_NUMBER "SPDK Virtual Controller"
 #define FW_VERSION "FFFFFFFF"
@@ -141,14 +141,9 @@ nvmf_virtual_ctrlr_complete_cmd(struct spdk_bdev_io *bdev_io, enum spdk_bdev_io_
 	 * BDEV IO is freed as part of request cleanup function call.
 	 */
 	if (bdev_io->type == SPDK_BDEV_IO_TYPE_READ) {
-		spdk_trace_record(TRACE_FC_READ_RECV_FROM_WAFL, get_fc_req(req)->poller_lcore, 0, (uint64_t)req, 0);
-		req->req_read_trace[NVMF_FC_READ_RECV_FROM_WAFL] = spdk_get_ticks();
 		req->bdev_io = bdev_io;
 		req->iovcnt = bdev_io->u.read.iovcnt;
 	} else {
-		spdk_trace_record(TRACE_FC_WRITE_RECV_FROM_WAFL, get_fc_req(req)->poller_lcore, 0, (uint64_t)req,
-				  0);
-		req->req_write_trace[NVMF_FC_WRITE_RECV_FROM_WAFL] = spdk_get_ticks();
 		req->bdev_io = bdev_io;
 		req->iovcnt = bdev_io->u.write.iovcnt;
 	}
@@ -418,7 +413,6 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 	}
 
 	if (cmd->opc == SPDK_NVME_OPC_READ) {
-
 		/* modified to for SGL iovs */
 		if (req->data) {
 			req->iovcnt = 1;
@@ -431,15 +425,11 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 			}
 		} else {
-			spdk_trace_record(TRACE_NVMF_LIB_READ_START, get_fc_req(req)->poller_lcore, 0, (uint64_t)req, 0);
-			req->req_read_trace[NVMF_LIB_READ_START] = spdk_get_ticks();
 			/* acquire IOV buffers from backend */
 			error = spdk_bdev_read_init(bdev, req->length, req->iov, &req->iovcnt);
 			if (error < 0) {
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING;
 			} else if (error == 0) {
-				spdk_trace_record(TRACE_FC_READ_SEND_TO_WAFL, get_fc_req(req)->poller_lcore, 0, (uint64_t)req, 0);
-				req->req_read_trace[NVMF_FC_READ_SEND_TO_WAFL] = spdk_get_ticks();
 				if (spdk_bdev_readv(bdev, ch, req->iov, req->iovcnt, offset, req->length,
 						    nvmf_virtual_ctrlr_complete_cmd, req) == NULL) {
 					response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
@@ -465,20 +455,13 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 			}
 		} else {
-			spdk_trace_record(TRACE_NVMF_LIB_WRITE_START, get_fc_req(req)->poller_lcore, 0, (uint64_t)req, 0);
-			req->req_write_trace[NVMF_LIB_WRITE_START] = spdk_get_ticks();
 			/* Acquire IOV buffers from backend */
 			error = spdk_bdev_write_init(bdev, req->length, req->iov, &req->iovcnt, &req->iovctx);
-			spdk_trace_record(TRACE_FC_WRITE_BUFFERS_FROM_WAFL, get_fc_req(req)->poller_lcore, 0, (uint64_t)req,
-					  0);
-			req->req_write_trace[NVMF_FC_WRITE_BUFFERS_FROM_WAFL] = spdk_get_ticks();
 			if (error < 0) {
-				assert(false);
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING;
 			} else if (error == 0) {
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_READY;
 			} else {
-				assert(false);
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_ERROR;
 			}
 		}
@@ -589,6 +572,40 @@ nvmf_virtual_ctrlr_process_io_cmd(struct spdk_nvmf_request *req)
 }
 
 static void
+nvmf_virtual_ctrlr_queue_request_complete(void *arg1, void *arg2)
+{
+	struct spdk_nvmf_request *req = arg1;
+
+	spdk_nvmf_request_complete(req);
+}
+
+static void
+nvmf_virtual_ctrlr_process_io_abort(struct spdk_nvmf_request *req)
+{
+	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
+	struct spdk_nvmf_session *session = req->conn->sess;
+
+	/* For now we only support aborting AEN and others NOP */
+	if ((req->conn->type == CONN_TYPE_AQ) &&
+	    (cmd->opc == SPDK_NVME_OPC_ASYNC_EVENT_REQUEST)) {
+		struct spdk_event *event = NULL;
+
+		session->aer_req = NULL;
+
+		/* Dont call in this context. Schedule for later */
+		event = spdk_event_allocate(spdk_env_get_master_lcore(),
+					    nvmf_virtual_ctrlr_queue_request_complete,
+					    (void *)req, NULL);
+		spdk_event_call(event);
+	}
+
+	/*
+	 * NOTE: bdev ios abort handlers should not call request complete
+	 * in this context. They need to shedule for later.
+	 */
+}
+
+static void
 nvmf_virtual_ctrlr_process_io_cleanup(struct spdk_nvmf_request *req)
 {
 	uint32_t nsid;
@@ -666,6 +683,7 @@ const struct spdk_nvmf_ctrlr_ops spdk_nvmf_virtual_ctrlr_ops = {
 	.process_admin_cmd		= nvmf_virtual_ctrlr_process_admin_cmd,
 	.process_io_cmd			= nvmf_virtual_ctrlr_process_io_cmd,
 	.io_cleanup			= nvmf_virtual_ctrlr_process_io_cleanup,
+	.io_abort			= nvmf_virtual_ctrlr_process_io_abort,
 	.poll_for_completions		= nvmf_virtual_ctrlr_poll_for_completions,
 	.detach				= nvmf_virtual_ctrlr_detach,
 };

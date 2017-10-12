@@ -41,86 +41,160 @@
 #include "spdk/endian.h"
 #include "spdk/nvmf_spec.h"
 #include "spdk/string.h"
-#include "spdk/trace.h"
 #include "spdk/util.h"
 #include "spdk/event.h"
 #include "spdk/likely.h"
 #include "spdk_internal/log.h"
 #include "bcm_fc.h"
-#include "../nvmf_internal.h"
+#include "nvmf/nvmf_internal.h"
 
-void bcm_process_queues(struct fc_hwqp *hwqp);
-void bcm_nvmf_fc_free_req(struct spdk_nvmf_fc_request *fc_req, bool free_xri);
-int bcm_init_rqpair_buffers(struct fc_hwqp *hwqp);
-int bcm_create_fc_req_mempool(struct fc_hwqp *hwqp);
-int bcm_nvmf_fc_recv_data(struct spdk_nvmf_fc_request *fc_req);
-int bcm_nvmf_fc_xmt_ls_rsp(struct spdk_nvmf_fc_nport *tgtport, struct nvmf_fc_ls_rqst *ls_rqst);
-int bcm_nvmf_fc_handle_rsp(struct spdk_nvmf_fc_request *req);
-int bcm_nvmf_fc_send_data(struct spdk_nvmf_fc_request *fc_req);
-int bcm_nvmf_fc_issue_abort(struct fc_hwqp *hwqp, fc_xri_t *xri, bool send_abts,
-			    bcm_fc_caller_cb cb, void *cb_args);
-int bcm_nvmf_fc_xmt_bls_rsp(struct fc_hwqp *hwqp, uint16_t ox_id, uint16_t rx_id,
-			    uint16_t rpi, bool rjt, uint8_t rjt_exp, bcm_fc_caller_cb cb, void *cb_args);
+char *fc_req_state_strs[] = {
+	"SPDK_NVMF_BCM_FC_REQ_INIT",
+	"SPDK_NVMF_BCM_FC_REQ_READ_BDEV",
+	"SPDK_NVMF_BCM_FC_REQ_READ_XFER",
+	"SPDK_NVMF_BCM_FC_REQ_READ_RSP",
+	"SPDK_NVMF_BCM_FC_REQ_WRITE_XFER",
+	"SPDK_NVMF_BCM_FC_REQ_WRITE_BDEV",
+	"SPDK_NVMF_BCM_FC_REQ_WRITE_RSP",
+	"SPDK_NVMF_BCM_FC_REQ_NONE_BDEV",
+	"SPDK_NVMF_BCM_FC_REQ_NONE_RSP",
+	"SPDK_NVMF_BCM_FC_REQ_SUCCESS",
+	"SPDK_NVMF_BCM_FC_REQ_FAILED"
+};
 
-static inline struct spdk_nvmf_fc_conn *
-bcm_get_fc_conn(struct spdk_nvmf_conn *conn)
+void spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
+void spdk_nvmf_bcm_fc_free_req(struct spdk_nvmf_bcm_fc_request *fc_req,
+			       bool xri_active);
+int spdk_nvmf_bcm_fc_init_rqpair_buffers(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
+int spdk_nvmf_bcm_fc_create_req_mempool(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
+int nvmf_fc_recv_data(struct spdk_nvmf_bcm_fc_request *fc_req);
+int spdk_nvmf_bcm_fc_xmt_ls_rsp(struct spdk_nvmf_bcm_fc_nport *tgtport,
+				struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst);
+int spdk_nvmf_bcm_fc_handle_rsp(struct spdk_nvmf_bcm_fc_request *req);
+int spdk_nvmf_bcm_fc_send_data(struct spdk_nvmf_bcm_fc_request *fc_req);
+int spdk_nvmf_bcm_fc_issue_abort(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
+				 struct spdk_nvmf_bcm_fc_xri *xri,
+				 bool send_abts, spdk_nvmf_bcm_fc_caller_cb cb,
+				 void *cb_args);
+int spdk_nvmf_bcm_fc_xmt_bls_rsp(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
+				 uint16_t ox_id, uint16_t rx_id, uint16_t rpi,
+				 bool rjt, uint8_t rjt_exp,
+				 spdk_nvmf_bcm_fc_caller_cb cb, void *cb_args);
+void spdk_nvmf_bcm_fc_req_set_state(struct spdk_nvmf_bcm_fc_request *fc_req,
+				    spdk_nvmf_bcm_fc_request_state_t state);
+void spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
+				bool send_abts, spdk_nvmf_bcm_fc_caller_cb cb,
+				void *cb_args);
+void spdk_nvmf_bcm_fc_req_abort_complete(void *arg1, void *arg2);
+static int nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req);
+
+static inline uint16_t
+nvmf_fc_advance_conn_sqhead(struct spdk_nvmf_conn *conn)
 {
-	return (struct spdk_nvmf_fc_conn *)
-	       ((uintptr_t)conn - offsetof(struct spdk_nvmf_fc_conn, conn));
+	/* advance sq_head pointer - wrap if needed */
+	conn->sq_head = (conn->sq_head == conn->sq_head_max) ?
+			0 : (conn->sq_head + 1);
+	return conn->sq_head;
 }
 
+static inline bool
+nvmf_fc_sq_90percent_full(struct spdk_nvmf_conn *conn)
+{
+	/* TODO: Figure how to calculate this. */
+	return true;
+}
+
+static inline struct spdk_nvmf_bcm_fc_conn *
+nvmf_fc_get_conn(struct spdk_nvmf_conn *conn)
+{
+	return (struct spdk_nvmf_bcm_fc_conn *)
+	       ((uintptr_t)conn - offsetof(struct spdk_nvmf_bcm_fc_conn, conn));
+}
+
+static inline bool
+nvmf_fc_send_ersp_required(struct spdk_nvmf_bcm_fc_request *fc_req,
+			   uint32_t rsp_cnt, uint32_t xfer_len)
+{
+	struct spdk_nvmf_request *req = &fc_req->req;
+	struct spdk_nvmf_conn *conn = req->conn;
+	struct spdk_nvmf_bcm_fc_conn *fc_conn = nvmf_fc_get_conn(conn);
+	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
+	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
+	uint16_t status = *((uint16_t *)&rsp->status);
+	bool rc = false;
+
+	/*
+	 * Check if we need to send ERSP
+	 * 1) For every N responses where N == ersp_ratio
+	 * 2) Fabric commands.
+	 * 3) Completion status failed or Completion dw0 or dw1 valid.
+	 * 4) SQ == 90% full.
+	 * 5) Transfer length not equal to CMD IU length
+	 */
+
+	if (!(rsp_cnt % fc_conn->esrp_ratio) ||
+	    nvmf_fc_sq_90percent_full(conn) ||
+	    (cmd->opc == SPDK_NVME_OPC_FABRIC) ||
+	    (status & 0xFFFE) || rsp->cdw0 || rsp->rsvd1 ||
+	    (req->length != xfer_len)) {
+		rc = true;
+	}
+	return rc;
+}
+
+
 static inline void
-bcm_queue_tail_inc(bcm_sli_queue_t *q)
+nvmf_fc_queue_tail_inc(bcm_sli_queue_t *q)
 {
 	q->tail = (q->tail + 1) % q->max_entries;
 }
 
 static inline void
-bcm_queue_head_inc(bcm_sli_queue_t *q)
+nvmf_fc_queue_head_inc(bcm_sli_queue_t *q)
 {
 	q->head = (q->head + 1) % q->max_entries;
 }
 
 static inline void *
-bcm_queue_head_node(bcm_sli_queue_t *q)
+nvmf_fc_queue_head_node(bcm_sli_queue_t *q)
 {
 	return q->address + q->head * q->size;
 }
 
 static inline void *
-bcm_queue_tail_node(bcm_sli_queue_t *q)
+nvmf_fc_queue_tail_node(bcm_sli_queue_t *q)
 {
 	return q->address + q->tail * q->size;
 }
 
 static inline bool
-bcm_queue_full(bcm_sli_queue_t *q)
+nvmf_fc_queue_full(bcm_sli_queue_t *q)
 {
 	return (q->used >= q->max_entries);
 }
 
 static uint32_t
-bcm_rqpair_get_buffer_id(struct fc_hwqp *hwqp, uint16_t rqindex)
+nvmf_fc_rqpair_get_buffer_id(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint16_t rqindex)
 {
 	return hwqp->queues.rq_hdr.rq_map[rqindex];
 }
 
 static fc_frame_hdr_t *
-bcm_rqpair_get_frame_header(struct fc_hwqp *hwqp, uint16_t rqindex)
+nvmf_fc_rqpair_get_frame_header(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint16_t rqindex)
 {
 	uint32_t buf_index = hwqp->queues.rq_hdr.rq_map[rqindex];
 	return hwqp->queues.rq_hdr.buffer[buf_index].virt;
 }
 
 static bcm_buffer_desc_t *
-bcm_rqpair_get_frame_buffer(struct fc_hwqp *hwqp, uint16_t rqindex)
+nvmf_fc_rqpair_get_frame_buffer(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint16_t rqindex)
 {
 	uint32_t buf_index = hwqp->queues.rq_hdr.rq_map[rqindex]; // Use header map.
 	return hwqp->queues.rq_payload.buffer + buf_index;
 }
 
 int
-bcm_create_fc_req_mempool(struct fc_hwqp *hwqp)
+spdk_nvmf_bcm_fc_create_req_mempool(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 {
 	char *name = NULL;
 	static int unique_number = 0;
@@ -131,7 +205,7 @@ bcm_create_fc_req_mempool(struct fc_hwqp *hwqp)
 	name = spdk_sprintf_alloc("NVMF_FC_REQ_POOL:%d", unique_number);
 	hwqp->fc_request_pool = spdk_mempool_create(name,
 				hwqp->queues.rq_hdr.num_buffers,
-				sizeof(struct spdk_nvmf_fc_request),
+				sizeof(struct spdk_nvmf_bcm_fc_request),
 				0, SPDK_ENV_SOCKET_ID_ANY);
 
 	if (hwqp->fc_request_pool == NULL) {
@@ -143,36 +217,209 @@ bcm_create_fc_req_mempool(struct fc_hwqp *hwqp)
 	return 0;
 }
 
-static inline struct spdk_nvmf_fc_request *
-spdk_nvmf_fc_alloc_req_buf(struct fc_hwqp *hwqp)
+static inline struct spdk_nvmf_bcm_fc_request *
+nvmf_fc_alloc_req_buf(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 {
-	struct spdk_nvmf_fc_request *fc_req;
+	struct spdk_nvmf_bcm_fc_request *fc_req;
 
-	fc_req = (struct spdk_nvmf_fc_request *)spdk_mempool_get(hwqp->fc_request_pool);
+	fc_req = (struct spdk_nvmf_bcm_fc_request *)spdk_mempool_get(hwqp->fc_request_pool);
 	if (!fc_req) {
 		SPDK_ERRLOG("Alloc request buffer failed\n");
 		return NULL;
 	}
 
-	memset(fc_req, 0, sizeof(struct spdk_nvmf_fc_request));
+	memset(fc_req, 0, sizeof(struct spdk_nvmf_bcm_fc_request));
 	TAILQ_INSERT_TAIL(&hwqp->in_use_reqs, fc_req, link);
+	TAILQ_INIT(&fc_req->abort_cbs);
 	return fc_req;
 }
 
 static inline void
-spdk_nvmf_fc_free_req_buf(struct fc_hwqp *hwqp, struct spdk_nvmf_fc_request *fc_req)
+nvmf_fc_free_req_buf(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct spdk_nvmf_bcm_fc_request *fc_req)
 {
-	spdk_mempool_put(hwqp->fc_request_pool, (void *)fc_req);
+	if (fc_req->state != SPDK_NVMF_BCM_FC_REQ_SUCCESS) {
+		/* Log an error for debug purpose. */
+		spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_FAILED);
+	}
+
 	TAILQ_REMOVE(&hwqp->in_use_reqs, fc_req, link);
+	spdk_mempool_put(hwqp->fc_request_pool, (void *)fc_req);
 }
 
-static int
-find_nport_from_sid(struct fc_hwqp *hwqp, uint32_t s_id, uint32_t d_id,
-		    struct spdk_nvmf_fc_nport **tgtport, uint16_t *rpi)
+void
+spdk_nvmf_bcm_fc_req_set_state(struct spdk_nvmf_bcm_fc_request *fc_req,
+			       spdk_nvmf_bcm_fc_request_state_t state)
 {
-	int rc = -1;  // TODO: set default error code
-	struct spdk_nvmf_fc_nport *n_port = NULL;
-	struct spdk_nvmf_fc_rem_port_info *rem_port = NULL;
+
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
+		      "FC Request(%p):\n\tState Old:%s New:%s\n", fc_req,
+		      fc_req_state_strs[fc_req->state], fc_req_state_strs[state]);
+	fc_req->state = state;
+}
+
+
+static inline bool
+spdk_nvmf_bcm_fc_req_in_bdev(struct spdk_nvmf_bcm_fc_request *fc_req)
+{
+	switch (fc_req->state) {
+	case SPDK_NVMF_BCM_FC_REQ_READ_BDEV:
+	case SPDK_NVMF_BCM_FC_REQ_WRITE_BDEV:
+	case SPDK_NVMF_BCM_FC_REQ_NONE_BDEV:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static inline bool
+spdk_nvmf_bcm_fc_req_in_xfer(struct spdk_nvmf_bcm_fc_request *fc_req)
+{
+	switch (fc_req->state) {
+	case SPDK_NVMF_BCM_FC_REQ_READ_XFER:
+	case SPDK_NVMF_BCM_FC_REQ_READ_RSP:
+	case SPDK_NVMF_BCM_FC_REQ_WRITE_XFER:
+	case SPDK_NVMF_BCM_FC_REQ_WRITE_RSP:
+	case SPDK_NVMF_BCM_FC_REQ_NONE_RSP:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static inline void
+spdk_nvmf_bcm_fc_process_pending_req(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
+{
+	struct spdk_nvmf_bcm_fc_conn *fc_conn = NULL;
+	struct spdk_nvmf_bcm_fc_request *fc_req = NULL, *tmp;
+	int budget = 64;
+
+	TAILQ_FOREACH(fc_conn, &hwqp->connection_list, link) {
+		TAILQ_FOREACH_SAFE(fc_req, &fc_conn->pending_queue, pending_link, tmp) {
+			if (!nvmf_fc_execute_nvme_rqst(fc_req)) {
+				/* Succesfuly posted, Delete from pending. */
+				TAILQ_REMOVE(&fc_conn->pending_queue, fc_req, pending_link);
+			}
+
+			if (budget) {
+				budget --;
+			} else {
+				return;
+			}
+		}
+	}
+}
+
+static inline bool
+spdk_nvmf_bcm_fc_req_in_pending(struct spdk_nvmf_bcm_fc_request *fc_req)
+{
+	struct spdk_nvmf_bcm_fc_request *tmp = NULL;
+
+	TAILQ_FOREACH(tmp, &fc_req->fc_conn->pending_queue, pending_link) {
+		if (tmp == fc_req) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void
+spdk_nvmf_bcm_fc_req_abort_complete(void *arg1, void *arg2)
+{
+	struct spdk_nvmf_bcm_fc_request *fc_req =
+		(struct spdk_nvmf_bcm_fc_request *)arg1;
+	fc_caller_ctx_t *ctx = NULL, *tmp = NULL;
+
+	/* Request abort completed. Notify all the callbacks */
+	TAILQ_FOREACH_SAFE(ctx, &fc_req->abort_cbs, link, tmp) {
+		/* Notify */
+		ctx->cb(fc_req->hwqp, 0, ctx->cb_args);
+		/* Remove */
+		TAILQ_REMOVE(&fc_req->abort_cbs, ctx, link);
+		/* free */
+		spdk_free(ctx);
+	}
+
+	spdk_nvmf_bcm_fc_free_req(fc_req, false);
+}
+
+static void
+spdk_nvmf_bcm_fc_req_bdev_abort(void *arg1, void *arg2)
+{
+	struct spdk_nvmf_bcm_fc_request *fc_req = arg1;
+
+	spdk_nvmf_request_abort(&fc_req->req);
+}
+
+void
+spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
+			   bool send_abts, spdk_nvmf_bcm_fc_caller_cb cb,
+			   void *cb_args)
+{
+	fc_caller_ctx_t *ctx = NULL;
+	struct spdk_event *event = NULL;
+
+	/* Add the cb to list */
+	if (cb) {
+		ctx = spdk_malloc(sizeof(fc_caller_ctx_t));
+		if (!ctx) {
+			SPDK_ERRLOG("%s: ctx alloc failed. \n", __func__);
+			return;
+		}
+		ctx->cb = cb;
+		ctx->cb_args = cb_args;
+
+		TAILQ_INSERT_TAIL(&fc_req->abort_cbs, ctx, link);
+	}
+
+	/* Check if the request is already marked for deletion */
+	if (fc_req->is_aborted) {
+		return;
+	}
+
+	/* Mark request as aborted */
+	fc_req->is_aborted = true;
+
+	if (spdk_nvmf_bcm_fc_req_in_bdev(fc_req)) {
+		/* Notify bdev */
+		if ((fc_req->fc_conn->qid == CONN_TYPE_AQ) ||
+		    (fc_req->req.cmd->nvme_cmd.opc == SPDK_NVME_OPC_FABRIC)) {
+			/* Switch to master lcore */
+			event = spdk_event_allocate(spdk_env_get_master_lcore(),
+						    spdk_nvmf_bcm_fc_req_bdev_abort,
+						    (void *)fc_req, NULL);
+			spdk_event_call(event);
+		} else {
+			spdk_nvmf_bcm_fc_req_bdev_abort(fc_req, NULL);
+		}
+	} else if (spdk_nvmf_bcm_fc_req_in_xfer(fc_req)) {
+		/* Notify hw */
+		spdk_nvmf_bcm_fc_issue_abort(fc_req->hwqp, fc_req->xri,
+					     send_abts, NULL, NULL);
+	} else if (spdk_nvmf_bcm_fc_req_in_pending(fc_req)) {
+		/* Remove from pending */
+		TAILQ_REMOVE(&fc_req->fc_conn->pending_queue, fc_req, pending_link);
+		goto complete;
+	} else {
+		/* Should never happen */
+		SPDK_ERRLOG("%s: Request in invalid state\n", __func__);
+		goto complete;
+	}
+
+	return;
+complete:
+	event = spdk_event_allocate(fc_req->poller_lcore,
+				    spdk_nvmf_bcm_fc_req_abort_complete, (void *)fc_req, NULL);
+	spdk_event_call(event);
+}
+
+
+static int
+nvmf_fc_find_nport_from_sid(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t s_id, uint32_t d_id,
+			    struct spdk_nvmf_bcm_fc_nport **tgtport, uint16_t *rpi)
+{
+	int rc = -1;
+	struct spdk_nvmf_bcm_fc_nport *n_port = NULL;
+	struct spdk_nvmf_bcm_fc_remote_port_info *rem_port = NULL;
 
 	assert(hwqp);
 	assert(tgtport);
@@ -192,26 +439,8 @@ find_nport_from_sid(struct fc_hwqp *hwqp, uint32_t s_id, uint32_t d_id,
 	return rc;
 }
 
-static spdk_err_t
-find_rport_from_sid(uint32_t s_id,
-		    struct spdk_nvmf_fc_nport *tgtport,
-		    struct spdk_nvmf_fc_rem_port_info **rport)
-{
-	int rc = SPDK_ERR_INTERNAL;
-	struct spdk_nvmf_fc_rem_port_info *rem_port = NULL;
-
-	TAILQ_FOREACH(rem_port, &tgtport->rem_port_list, link) {
-		if (rem_port->s_id == s_id) {
-			*rport = rem_port;
-			rc = SPDK_SUCCESS;
-			break;
-		}
-	}
-	return rc;
-}
-
 static void
-bcm_notify_queue(bcm_sli_queue_t *q, bool arm_queue, uint16_t num_entries)
+nvmf_fc_bcm_notify_queue(bcm_sli_queue_t *q, bool arm_queue, uint16_t num_entries)
 {
 	doorbell_t *reg, entry;
 
@@ -251,7 +480,7 @@ bcm_notify_queue(bcm_sli_queue_t *q, bool arm_queue, uint16_t num_entries)
 }
 
 static uint8_t
-bcm_queue_entry_is_valid(bcm_sli_queue_t *q, uint8_t *qe, uint8_t clear)
+nvmf_fc_queue_entry_is_valid(bcm_sli_queue_t *q, uint8_t *qe, uint8_t clear)
 {
 	uint8_t valid = 0;
 
@@ -281,7 +510,7 @@ bcm_queue_entry_is_valid(bcm_sli_queue_t *q, uint8_t *qe, uint8_t clear)
 }
 
 static int
-bcm_read_queue_entry(bcm_sli_queue_t *q, uint8_t *entry)
+nvmf_fc_read_queue_entry(bcm_sli_queue_t *q, uint8_t *entry)
 {
 	uint8_t	*qe;
 
@@ -297,10 +526,10 @@ bcm_read_queue_entry(bcm_sli_queue_t *q, uint8_t *entry)
 	}
 
 	/* Get the tail entry */
-	qe = bcm_queue_tail_node(q);
+	qe = nvmf_fc_queue_tail_node(q);
 
 	/* Check if entry is valid */
-	if (!bcm_queue_entry_is_valid(q, qe, TRUE)) {
+	if (!nvmf_fc_queue_entry_is_valid(q, qe, true)) {
 		return -1;
 	}
 
@@ -309,13 +538,13 @@ bcm_read_queue_entry(bcm_sli_queue_t *q, uint8_t *entry)
 		memcpy(entry, qe, q->size);
 	}
 
-	bcm_queue_tail_inc(q);
+	nvmf_fc_queue_tail_inc(q);
 
 	return 0;
 }
 
 static int
-bcm_write_queue_entry(bcm_sli_queue_t *q, uint8_t *entry)
+nvmf_fc_write_queue_entry(bcm_sli_queue_t *q, uint8_t *entry)
 {
 	uint8_t	*qe;
 
@@ -336,25 +565,24 @@ bcm_write_queue_entry(bcm_sli_queue_t *q, uint8_t *entry)
 	}
 
 	/* We need to check if there is space available */
-	if (bcm_queue_full(q)) {
-		assert(false);
+	if (nvmf_fc_queue_full(q)) {
 		SPDK_ERRLOG("%s queue full for type = %#x\n", __func__, q->type);
 		return -1;
 	}
 
 	/* Copy entry */
-	qe = bcm_queue_head_node(q);
+	qe = nvmf_fc_queue_head_node(q);
 	memcpy(qe, entry, q->size);
 
 	/* Update queue */
-	bcm_queue_head_inc(q);
+	nvmf_fc_queue_head_inc(q);
 
 	return 0;
 }
 
 static int
-bcm_post_wqe(struct fc_hwqp *hwqp, uint8_t *entry, bool notify,
-	     bcm_fc_wqe_cb cb, void *cb_args)
+nvmf_fc_post_wqe(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint8_t *entry, bool notify,
+		 bcm_fc_wqe_cb cb, void *cb_args)
 {
 	int rc = -1;
 	fc_wqe_ctx_t *wqe_ctx;
@@ -373,7 +601,7 @@ bcm_post_wqe(struct fc_hwqp *hwqp, uint8_t *entry, bool notify,
 	/* Update request tag in the WQE entry */
 	wqe->request_tag = wq->q.head;
 
-	rc = bcm_write_queue_entry(&wq->q, entry);
+	rc = nvmf_fc_write_queue_entry(&wq->q, entry);
 	if (rc) {
 		SPDK_ERRLOG("%s: WQE write failed. \n", __func__);
 		hwqp->counters.wqe_write_err++;
@@ -382,14 +610,14 @@ bcm_post_wqe(struct fc_hwqp *hwqp, uint8_t *entry, bool notify,
 	wq->q.used++;
 
 	if (notify) {
-		bcm_notify_queue(&wq->q, FALSE, 1);
+		nvmf_fc_bcm_notify_queue(&wq->q, false, 1);
 	}
 done:
 	return rc;
 }
 
 static int
-bcm_parse_eq_entry(struct eqe *qe, uint16_t *cq_id)
+nvmf_fc_parse_eq_entry(struct eqe *qe, uint16_t *cq_id)
 {
 	int rc = 0;
 
@@ -420,7 +648,7 @@ bcm_parse_eq_entry(struct eqe *qe, uint16_t *cq_id)
 }
 
 static int
-bcm_parse_cq_entry(struct fc_eventq *cq, uint8_t *cqe, bcm_qentry_type_e *etype, uint16_t *r_id)
+nvmf_fc_parse_cq_entry(struct fc_eventq *cq, uint8_t *cqe, bcm_qentry_type_e *etype, uint16_t *r_id)
 {
 	int     rc = -1;
 	cqe_t *cqe_entry = (cqe_t *)cqe;
@@ -436,19 +664,16 @@ bcm_parse_cq_entry(struct fc_eventq *cq, uint8_t *cqe, bcm_qentry_type_e *etype,
 		*etype = BCM_FC_QENTRY_WQ;
 		*r_id = cqe_entry->u.wcqe.request_tag;
 		rc = cqe_entry->u.wcqe.status;
-
-		// Flag errors except for FCP_RSP_FAILURE
 		if (rc) {
 
-			SPDK_ERRLOG(
-				"WCQE: status=%#x hw_status=%#x tag=%#x w1=%#x w2=%#x xb=%d\n",
-				cqe_entry->u.wcqe.status,
-				cqe_entry->u.wcqe.hw_status,
-				cqe_entry->u.wcqe.request_tag,
-				cqe_entry->u.wcqe.wqe_specific_1,
-				cqe_entry->u.wcqe.wqe_specific_2,
-				cqe_entry->u.wcqe.xb);
-			SPDK_ERRLOG("      %08X %08X %08X %08X\n",
+			SPDK_ERRLOG("WCQE: status=%#x hw_status=%#x tag=%#x w1=%#x w2=%#x xb=%d\n",
+				    cqe_entry->u.wcqe.status,
+				    cqe_entry->u.wcqe.hw_status,
+				    cqe_entry->u.wcqe.request_tag,
+				    cqe_entry->u.wcqe.wqe_specific_1,
+				    cqe_entry->u.wcqe.wqe_specific_2,
+				    cqe_entry->u.wcqe.xb);
+			SPDK_ERRLOG("  %08X %08X %08X %08X\n",
 				    ((uint32_t *)cqe)[0], ((uint32_t *)cqe)[1],
 				    ((uint32_t *)cqe)[2], ((uint32_t *)cqe)[3]);
 		}
@@ -489,7 +714,7 @@ bcm_parse_cq_entry(struct fc_eventq *cq, uint8_t *cqe, bcm_qentry_type_e *etype,
 }
 
 static int
-bcm_rqe_rqid_and_index(uint8_t *cqe, uint16_t *rq_id, uint32_t *index)
+nvmf_fc_rqe_rqid_and_index(uint8_t *cqe, uint16_t *rq_id, uint32_t *index)
 {
 	bcm_fc_async_rcqe_t	*rcqe = (void *)cqe;
 	bcm_fc_async_rcqe_v1_t	*rcqe_v1 = (void *)cqe;
@@ -509,7 +734,7 @@ bcm_rqe_rqid_and_index(uint8_t *cqe, uint16_t *rq_id, uint32_t *index)
 		} else {
 			*index = rcqe->rq_element_index;
 			rc = rcqe->status;
-			SPDK_TRACELOG(SPDK_TRACE_BCM_FC_NVME,
+			SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
 				      "%s: status=%02x rq_id=%d, index=%x pdpl=%x sof=%02x eof=%02x hdpl=%x\n",
 				      __func__, rcqe->status,
 				      rcqe->rq_id,
@@ -524,7 +749,7 @@ bcm_rqe_rqid_and_index(uint8_t *cqe, uint16_t *rq_id, uint32_t *index)
 		} else {
 			*index = rcqe_v1->rq_element_index;
 			rc = rcqe_v1->status;
-			SPDK_TRACELOG(SPDK_TRACE_BCM_FC_NVME,
+			SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
 				      "%s: status=%02x rq_id=%d, index=%x pdpl=%x sof=%02x eof=%02x hdpl=%x\n",
 				      __func__, rcqe_v1->status,
 				      rcqe_v1->rq_id, rcqe_v1->rq_element_index,
@@ -536,7 +761,7 @@ bcm_rqe_rqid_and_index(uint8_t *cqe, uint16_t *rq_id, uint32_t *index)
 
 		rc = rcqe->status;
 
-		SPDK_TRACELOG(SPDK_TRACE_BCM_FC_NVME,
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
 			      "%s: status=%02x rq_id=%d, index=%x pdpl=%x sof=%02x eof=%02x hdpl=%x\n", __func__,
 			      rcqe->status, rcqe->rq_id, rcqe->rq_element_index, rcqe->payload_data_placement_length,
 			      rcqe->sof_byte, rcqe->eof_byte, rcqe->header_data_placement_length);
@@ -546,7 +771,7 @@ bcm_rqe_rqid_and_index(uint8_t *cqe, uint16_t *rq_id, uint32_t *index)
 }
 
 static int
-bcm_rqpair_buffer_post(struct fc_hwqp *hwqp, uint16_t idx, bool notify)
+nvmf_fc_rqpair_buffer_post(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint16_t idx, bool notify)
 {
 	int rc;
 	struct fc_rcvq *hdr = &hwqp->queues.rq_hdr;
@@ -556,19 +781,19 @@ bcm_rqpair_buffer_post(struct fc_hwqp *hwqp, uint16_t idx, bool notify)
 	/* Post payload buffer */
 	phys_hdr[0] =  PTR_TO_ADDR32_HI(payload->buffer[idx].phys);
 	phys_hdr[1] =  PTR_TO_ADDR32_LO(payload->buffer[idx].phys);
-	rc = bcm_write_queue_entry(&payload->q, (uint8_t *)phys_hdr);
+	rc = nvmf_fc_write_queue_entry(&payload->q, (uint8_t *)phys_hdr);
 	if (!rc) {
 		/* Post header buffer */
 		phys_hdr[0] =  PTR_TO_ADDR32_HI(hdr->buffer[idx].phys);
 		phys_hdr[1] =  PTR_TO_ADDR32_LO(hdr->buffer[idx].phys);
-		rc = bcm_write_queue_entry(&hdr->q, (uint8_t *)phys_hdr);
+		rc = nvmf_fc_write_queue_entry(&hdr->q, (uint8_t *)phys_hdr);
 		if (!rc) {
 
 			hwqp->queues.rq_hdr.q.used++;
 			hwqp->queues.rq_payload.q.used++;
 
 			if (notify) {
-				bcm_notify_queue(&hdr->q, FALSE, 1);
+				nvmf_fc_bcm_notify_queue(&hdr->q, false, 1);
 			}
 		}
 	}
@@ -576,23 +801,23 @@ bcm_rqpair_buffer_post(struct fc_hwqp *hwqp, uint16_t idx, bool notify)
 }
 
 static void
-bcm_rqpair_buffer_release(struct fc_hwqp *hwqp, uint16_t buff_idx)
+nvmf_fc_rqpair_buffer_release(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint16_t buff_idx)
 {
 	/* Decrement used */
 	hwqp->queues.rq_hdr.q.used--;
 	hwqp->queues.rq_payload.q.used--;
 
 	/* Increment tail */
-	bcm_queue_tail_inc(&hwqp->queues.rq_hdr.q);
-	bcm_queue_tail_inc(&hwqp->queues.rq_payload.q);
+	nvmf_fc_queue_tail_inc(&hwqp->queues.rq_hdr.q);
+	nvmf_fc_queue_tail_inc(&hwqp->queues.rq_payload.q);
 
 	/* Repost the freebuffer to head of queue. */
 	hwqp->queues.rq_hdr.rq_map[hwqp->queues.rq_hdr.q.head] = buff_idx;
-	bcm_rqpair_buffer_post(hwqp, buff_idx, TRUE);
+	nvmf_fc_rqpair_buffer_post(hwqp, buff_idx, true);
 }
 
 int
-bcm_init_rqpair_buffers(struct fc_hwqp *hwqp)
+spdk_nvmf_bcm_fc_init_rqpair_buffers(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 {
 	int rc = 0;
 	uint16_t i;
@@ -600,13 +825,17 @@ bcm_init_rqpair_buffers(struct fc_hwqp *hwqp)
 	struct fc_rcvq *payload = &hwqp->queues.rq_payload;
 
 	/* Init queue variables */
-	hwqp->queues.eq.q.posted_limit = 64;
-	hwqp->queues.cq_wq.q.posted_limit = 64;
-	hwqp->queues.cq_rq.q.posted_limit = 64;
+	hwqp->queues.eq.q.posted_limit = 16;
+	hwqp->queues.cq_wq.q.posted_limit = 16;
+	hwqp->queues.cq_rq.q.posted_limit = 16;
 
-	hwqp->queues.eq.auto_arm_flag = FALSE;
-	hwqp->queues.cq_wq.auto_arm_flag = TRUE;
-	hwqp->queues.cq_rq.auto_arm_flag = TRUE;
+	hwqp->queues.eq.q.processed_limit = 64;
+	hwqp->queues.cq_wq.q.processed_limit = 64;
+	hwqp->queues.cq_rq.q.processed_limit = 64;
+
+	hwqp->queues.eq.auto_arm_flag = false;
+	hwqp->queues.cq_wq.auto_arm_flag = true;
+	hwqp->queues.cq_rq.auto_arm_flag = true;
 
 	hwqp->queues.eq.q.type = BCM_FC_QUEUE_TYPE_EQ;
 	hwqp->queues.cq_wq.q.type = BCM_FC_QUEUE_TYPE_CQ_WQ;
@@ -616,8 +845,8 @@ bcm_init_rqpair_buffers(struct fc_hwqp *hwqp)
 	hwqp->queues.rq_payload.q.type = BCM_FC_QUEUE_TYPE_RQ_DATA;
 
 	/* Make sure CQs are in armed state */
-	bcm_notify_queue(&hwqp->queues.cq_wq.q, TRUE, 0);
-	bcm_notify_queue(&hwqp->queues.cq_rq.q, TRUE, 0);
+	nvmf_fc_bcm_notify_queue(&hwqp->queues.cq_wq.q, true, 0);
+	nvmf_fc_bcm_notify_queue(&hwqp->queues.cq_rq.q, true, 0);
 
 	assert(hdr->q.max_entries == payload->q.max_entries);
 	assert(hdr->q.max_entries <= MAX_RQ_ENTRIES);
@@ -626,7 +855,7 @@ bcm_init_rqpair_buffers(struct fc_hwqp *hwqp)
 	payload->q.head = payload->q.tail = 0;
 
 	for (i = 0; i < hdr->q.max_entries; i++) {
-		rc = bcm_rqpair_buffer_post(hwqp, i, FALSE);
+		rc = nvmf_fc_rqpair_buffer_post(hwqp, i, false);
 		if (rc) {
 			break;
 		}
@@ -635,7 +864,7 @@ bcm_init_rqpair_buffers(struct fc_hwqp *hwqp)
 
 	if (!rc) {
 		/* Ring doorbell for one less */
-		bcm_notify_queue(&hdr->q, FALSE, (hdr->q.max_entries - 1));
+		nvmf_fc_bcm_notify_queue(&hdr->q, false, (hdr->q.max_entries - 1));
 	}
 
 	return rc;
@@ -645,7 +874,8 @@ static void
 spdk_nvmf_fc_post_nvme_rqst(void *arg1, void *arg2)
 {
 	int rc = 0;
-	struct spdk_nvmf_fc_request *fc_req = (struct spdk_nvmf_fc_request *)arg1;
+	struct spdk_nvmf_bcm_fc_request *fc_req =
+		(struct spdk_nvmf_bcm_fc_request *)arg1;
 
 	rc = spdk_nvmf_request_exec(&fc_req->req);
 	switch (rc) {
@@ -659,12 +889,15 @@ spdk_nvmf_fc_post_nvme_rqst(void *arg1, void *arg2)
 
 	/* Issue abort for oxid */
 	SPDK_ERRLOG("Aborted CMD\n");
+
+	spdk_nvmf_bcm_fc_free_req(fc_req, false);
 }
 
 static void
-bcm_nvmf_add_xri_pending(struct fc_hwqp *hwqp, fc_xri_t *xri)
+nvmf_fc_nvmf_add_xri_pending(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
+			     struct spdk_nvmf_bcm_fc_xri *xri)
 {
-	fc_xri_t *tmp;
+	struct spdk_nvmf_bcm_fc_xri *tmp;
 
 	/* Check if its already exists. */
 	TAILQ_FOREACH(tmp, &hwqp->pending_xri_list, link) {
@@ -677,34 +910,51 @@ bcm_nvmf_add_xri_pending(struct fc_hwqp *hwqp, fc_xri_t *xri)
 	TAILQ_INSERT_TAIL(&hwqp->pending_xri_list, xri, link);
 }
 
-
 static void
-bcm_nvmf_del_xri_pending(struct fc_hwqp *hwqp, uint32_t xri)
+nvmf_fc_nvmf_del_xri_pending(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t xri)
 {
-	fc_xri_t *tmp;
+	struct spdk_nvmf_bcm_fc_xri *tmp;
 
 	TAILQ_FOREACH(tmp, &hwqp->pending_xri_list, link) {
 		if (tmp->xri == xri) {
-			spdk_nvmf_fc_put_xri(hwqp, tmp);
+			spdk_nvmf_bcm_fc_put_xri(hwqp, tmp);
 			TAILQ_REMOVE(&hwqp->pending_xri_list, tmp, link);
 			return;
 		}
 	}
 }
 
+static void
+nvmf_fc_cleanup_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
+		    struct spdk_nvmf_bcm_fc_xri *xri, uint8_t *cqe)
+{
+	cqe_t *cqe_entry = (cqe_t *)cqe;
+	bool xri_active;
+
+	/* Check if XRI is active with in firmware */
+	xri_active = cqe_entry->u.generic.xb ? true : false;
+
+	if (xri_active) {
+		/* This will be cleaned up by XRI_ABORTED_CQE. */
+		nvmf_fc_nvmf_add_xri_pending(hwqp, xri);
+	} else {
+		spdk_nvmf_bcm_fc_put_xri(hwqp, xri);
+	}
+}
+
 void
-bcm_nvmf_fc_free_req(struct spdk_nvmf_fc_request *fc_req, bool free_xri)
+spdk_nvmf_bcm_fc_free_req(struct spdk_nvmf_bcm_fc_request *fc_req, bool xri_active)
 {
 	if (!fc_req) {
 		return;
 	}
 
 	if (fc_req->xri) {
-		if (!free_xri) {
+		if (xri_active) {
 			/* This will be cleaned up by XRI_ABORTED_CQE. */
-			bcm_nvmf_add_xri_pending(fc_req->hwqp, fc_req->xri);
+			nvmf_fc_nvmf_add_xri_pending(fc_req->hwqp, fc_req->xri);
 		} else {
-			spdk_nvmf_fc_put_xri(fc_req->hwqp, fc_req->xri);
+			spdk_nvmf_bcm_fc_put_xri(fc_req->hwqp, fc_req->xri);
 		}
 	}
 	fc_req->xri = NULL;
@@ -719,26 +969,21 @@ bcm_nvmf_fc_free_req(struct spdk_nvmf_fc_request *fc_req, bool free_xri)
 	}
 
 	/* Release RQ buffer */
-	bcm_rqpair_buffer_release(fc_req->hwqp, fc_req->buf_index);
+	nvmf_fc_rqpair_buffer_release(fc_req->hwqp, fc_req->buf_index);
 
 	/* Free Fc request */
-	spdk_nvmf_fc_free_req_buf(fc_req->hwqp, fc_req);
+	nvmf_fc_free_req_buf(fc_req->hwqp, fc_req);
 }
 
 static void
-bcm_abort_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
+nvmf_fc_abort_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 {
-	struct fc_hwqp *hwqp = ctx;
+	struct spdk_nvmf_bcm_fc_hwqp *hwqp = ctx;
 	fc_caller_ctx_t *carg = arg;
-	fc_xri_t *xri = carg->ctx;
+	struct spdk_nvmf_bcm_fc_xri *xri = carg->ctx;
 
 	SPDK_NOTICELOG("IO Aborted(XRI:%d, Status=%d)\n", xri->xri, status);
 
-	if (!status) {
-		/* This will be cleaned up by XRI_ABORTED_CQE. */
-		bcm_nvmf_add_xri_pending(hwqp, xri);
-	}
-
 	if (carg->cb) {
 		carg->cb(hwqp, status, carg->cb_args);
 	}
@@ -747,20 +992,15 @@ bcm_abort_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 }
 
 static void
-bcm_bls_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
+nvmf_fc_bls_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 {
-	struct fc_hwqp *hwqp = ctx;
+	struct spdk_nvmf_bcm_fc_hwqp *hwqp = ctx;
 	fc_caller_ctx_t *carg = arg;
-	fc_xri_t *xri = carg->ctx;
-	cqe_t *cqe_entry = (cqe_t *)cqe;
+	struct spdk_nvmf_bcm_fc_xri *xri = carg->ctx;
 
 	SPDK_NOTICELOG("BLS WQE Compl(%d) \n", status);
 
-	if (!cqe_entry->u.generic.xb) {
-		spdk_nvmf_fc_put_xri(hwqp, xri);
-	} else {
-		bcm_nvmf_add_xri_pending(hwqp, xri);
-	}
+	nvmf_fc_cleanup_xri(hwqp, xri, cqe);
 
 	if (carg->cb) {
 		carg->cb(hwqp, status, carg->cb_args);
@@ -770,128 +1010,113 @@ bcm_bls_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 }
 
 static void
-bcm_ls_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
+nvmf_fc_srsr_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 {
-	struct nvmf_fc_ls_rqst *ls_rqst = arg;
-	struct fc_hwqp *hwqp = ctx;
+	struct spdk_nvmf_bcm_fc_hwqp *hwqp = ctx;
+	fc_caller_ctx_t *carg = arg;
+	struct spdk_nvmf_bcm_fc_xri *xri = carg->ctx;
 
-	/* Release XRI */
-	spdk_nvmf_fc_put_xri(hwqp, ls_rqst->xri);
+	SPDK_NOTICELOG("SRSR WQE Compl(%d) \n", status);
+
+	nvmf_fc_cleanup_xri(hwqp, xri, cqe);
+
+	if (carg->cb) {
+		carg->cb(hwqp, status, carg->cb_args);
+	}
+
+	spdk_free(carg);
+}
+
+static void
+nvmf_fc_ls_rsp_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
+{
+	struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst = arg;
+	struct spdk_nvmf_bcm_fc_hwqp *hwqp = ctx;
+
+	nvmf_fc_cleanup_xri(hwqp, ls_rqst->xri, cqe);
 
 	/* Release RQ buffer */
-	bcm_rqpair_buffer_release(hwqp, ls_rqst->rqstbuf.buf_index);
+	nvmf_fc_rqpair_buffer_release(hwqp, ls_rqst->rqstbuf.buf_index);
 
 	if (status) {
 		SPDK_ERRLOG("LS WQE Compl(%d) error\n", status);
 	}
 }
 
-/* Remove #if 0 when being called by bcm_nvmf_fc_unsol_abort() */
-#if 0
 static void
-bcm_default_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
+nvmf_fc_io_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 {
-	if (status) {
-		SPDK_ERRLOG("Generic WQE Compl(%d) error\n", status);
-	}
-}
-#endif
-
-static void
-bcm_io_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
-{
-	struct spdk_nvmf_fc_request *fc_req = arg;
-	struct spdk_nvmf_fc_conn *fc_conn = fc_req->fc_conn;
+	struct spdk_nvmf_bcm_fc_request *fc_req = arg;
+	struct spdk_nvmf_bcm_fc_conn *fc_conn = fc_req->fc_conn;
 	struct spdk_nvme_cmd *cmd = &fc_req->req.cmd->nvme_cmd;
 	cqe_t *cqe_entry = (cqe_t *)cqe;
-	bool free_xri;
+	bool xri_active;
 
-
-	free_xri = (!cqe_entry->u.generic.xb ? TRUE : FALSE);
-
-	if (status) {
-		SPDK_ERRLOG("IO WQE Compl(%d), FC-RPI(%d), Conn-RPI(%d)\n", status, fc_req->rpi,
-			    fc_req->fc_conn->rpi);
-		goto free_req;
-	}
+	xri_active = (cqe_entry->u.generic.xb ? true : false);
 
 	if (fc_req->is_aborted) {
-		/*
-		 * Abort is posted after the WQE is completed.
-		 * XRI will be cleaned as part of XRI_ABORTED_CQE.
-		 */
-		free_xri = FALSE;
-		goto free_req;
+		/* Cleanup XRI based on CQE. */
+		nvmf_fc_cleanup_xri(fc_req->hwqp, fc_req->xri, cqe);
+		fc_req->xri = NULL;
+		spdk_nvmf_bcm_fc_req_abort_complete(fc_req, NULL);
+		return;
 	}
 
-	if (!fc_req->rsp_sent) { /* Data Xfer done */
+	if (status) {
+		SPDK_ERRLOG("IO WQE Compl(%d)\n", status);
+		goto abort_req;
+	}
 
+	/* Write Tranfer done */
+	if (fc_req->state == SPDK_NVMF_BCM_FC_REQ_WRITE_XFER) {
+		struct spdk_event *event = NULL;
 
 		fc_req->transfered_len = cqe_entry->u.generic.word1.total_data_placed;
 
-		if (fc_req->req.xfer == SPDK_NVME_DATA_HOST_TO_CONTROLLER) {
-			struct spdk_event *event = NULL;
+		spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_WRITE_BDEV);
 
-			if (fc_req->transfered_len != fc_req->req.length) {
-				assert(false);
-			}
-
-			spdk_trace_record(TRACE_FC_WRITE_DONE_FROM_FW, fc_req->poller_lcore, 0, (uint64_t)(&fc_req->req),
-					  0);
-			fc_req->req.req_write_trace[NVMF_FC_WRITE_DONE_FROM_FW] = spdk_get_ticks();
-
-			if ((fc_conn->qid == NVME_ADMIN_QUEUE_ID) ||
-			    (cmd->opc == SPDK_NVME_OPC_FABRIC)) {
-				/* Switch to master lcore for AQ cmds */
-				event = spdk_event_allocate(spdk_env_get_master_lcore(),
-							    spdk_nvmf_fc_post_nvme_rqst,
-							    (void *)fc_req, NULL);
-				spdk_event_call(event);
-			} else {
-				spdk_nvmf_fc_post_nvme_rqst(fc_req, NULL);
-			}
-
+		if ((fc_conn->qid == CONN_TYPE_AQ) ||
+		    (cmd->opc == SPDK_NVME_OPC_FABRIC)) {
+			/* Switch to master lcore for AQ cmds */
+			event = spdk_event_allocate(spdk_env_get_master_lcore(),
+						    spdk_nvmf_fc_post_nvme_rqst,
+						    (void *)fc_req, NULL);
+			spdk_event_call(event);
 		} else {
-			spdk_trace_record(TRACE_FC_READ_DONE_FROM_FW, fc_req->poller_lcore, 0, (uint64_t)(&fc_req->req), 0);
-			fc_req->req.req_read_trace[NVMF_FC_READ_DONE_FROM_FW] = spdk_get_ticks();
-
-			fc_req->transfered_len = cqe_entry->u.generic.word1.total_data_placed;
-
-			if (fc_req->transfered_len != fc_req->req.length) {
-				assert(false);
-			}
-
-			if (bcm_nvmf_fc_handle_rsp(fc_req)) {
-				goto free_req;
-			}
+			spdk_nvmf_fc_post_nvme_rqst(fc_req, NULL);
 		}
 		return;
-	} else  {
-		if (fc_req->req.xfer == SPDK_NVME_DATA_CONTROLLER_TO_HOST) {
-			spdk_trace_record(TRACE_FC_READ_COMPLETE, fc_req->poller_lcore, 0, (uint64_t)(&fc_req->req), 0);
-			fc_req->req.req_read_trace[NVMF_FC_READ_COMPLETE] = spdk_get_ticks();
-		} else if (fc_req->req.xfer == SPDK_NVME_DATA_HOST_TO_CONTROLLER) {
-			spdk_trace_record(TRACE_FC_WRITE_COMPLETE, fc_req->poller_lcore, 0, (uint64_t)(&fc_req->req), 0);
-			fc_req->req.req_write_trace[NVMF_FC_WRITE_COMPLETE] = spdk_get_ticks();
+	}
+	/* Read Tranfer done */
+	else if (fc_req->state == SPDK_NVMF_BCM_FC_REQ_READ_XFER) {
+
+		fc_req->transfered_len = cqe_entry->u.generic.word1.total_data_placed;
+
+		spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_READ_RSP);
+		if (spdk_nvmf_bcm_fc_handle_rsp(fc_req)) {
+			goto abort_req;
 		}
+		return;
 	}
 
 	/* IO completed successfully */
+	spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_SUCCESS);
 
-free_req:
-	bcm_nvmf_fc_free_req(fc_req, free_xri);
+abort_req: /* Should we send ABTS in abort case ? */
+	spdk_nvmf_bcm_fc_free_req(fc_req, xri_active);
 }
 
 static void
-bcm_process_wqe_completion(struct fc_hwqp *hwqp, uint16_t req_tag, int status, uint8_t *cqe)
+nvmf_fc_process_wqe_completion(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint16_t req_tag, int status,
+			       uint8_t *cqe)
 {
 	fc_wqe_ctx_t *wqe_ctx;
 
-	SPDK_TRACELOG(SPDK_TRACE_BCM_FC_NVME, "WQE Compl(%d)\n", status);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "WQE Compl(%d)\n", status);
 
 	/* Free WQE slot */
 	hwqp->queues.wq.q.used--;
-	bcm_queue_tail_inc(&hwqp->queues.wq.q);
+	nvmf_fc_queue_tail_inc(&hwqp->queues.wq.q);
 
 	/* Call the callback */
 	wqe_ctx = &hwqp->queues.wq.ctx_map[req_tag];
@@ -899,107 +1124,124 @@ bcm_process_wqe_completion(struct fc_hwqp *hwqp, uint16_t req_tag, int status, u
 }
 
 static int
-spdk_nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_fc_request *fc_req)
+nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req)
 {
-	int rc = 0;
 	struct spdk_nvme_cmd *cmd = &fc_req->req.cmd->nvme_cmd;
-	struct spdk_nvmf_fc_conn *fc_conn = fc_req->fc_conn;
+	struct spdk_nvmf_bcm_fc_conn *fc_conn = fc_req->fc_conn;
 	struct spdk_event *event = NULL;
 
+	/* Allocate an XRI */
+	fc_req->xri = spdk_nvmf_bcm_fc_get_xri(fc_req->hwqp);
+	if (!fc_req->xri) {
+		goto pending;
+	}
+
+	/* If xfer, Create buffers for required. */
 	if (fc_req->req.length) {
-		/* Create buffers for all AQ commands and
-		 * IOQ commands except for Read/Write
-		 */
-		if (fc_req->req.conn->type == CONN_TYPE_AQ ||
-		    (fc_req->req.conn->type == CONN_TYPE_IOQ &&
+		/* Except for IO Read/Write create dma memory  */
+		if (fc_conn->qid == CONN_TYPE_AQ ||
+		    cmd->opc == SPDK_NVME_OPC_FABRIC ||
+		    (fc_conn->qid == CONN_TYPE_IOQ &&
 		     cmd->opc != SPDK_NVME_OPC_READ &&
 		     cmd->opc != SPDK_NVME_OPC_WRITE)) {
 
 			fc_req->req.data = spdk_dma_zmalloc(fc_req->req.length, 4096, NULL);
 			if (!fc_req->req.data) {
-				SPDK_TRACELOG(SPDK_TRACE_BCM_FC_NVME, "No buffer. Requeue\n");
-				TAILQ_INSERT_TAIL(&fc_conn->pending_data_buf_queue,
-						  fc_req, pending_link);
+				SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
+					      "Admin buffer alloc failed. Requeue\n");
 				fc_req->hwqp->counters.aq_buf_alloc_err++;
-				goto done;
+				goto pending;
 			}
 
-			/*
-			 * Request module will only use data pointer since it is set.
-			 * Below we are using req.iov memory for storing ->data phys
-			 * segment address.
-			 */
+			/* Convert data to IOV format */
 			fc_req->req.iovcnt = spdk_dma_virt_to_iovec(fc_req->req.data,
 					     fc_req->req.length, fc_req->req.iov, MAX_NUM_OF_IOVECTORS);
 			if (!fc_req->req.iovcnt) {
-				spdk_dma_free(fc_req->req.data);
-				fc_req->req.data = NULL;
+				SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
+					      "Admin buffer to iov failed. Requeue\n");
+				fc_req->hwqp->counters.aq_buf_alloc_err++;
+				goto pending;
+			}
+		}
+		/* For IO queue Writes, alloc buffers */
+		else if (cmd->opc == SPDK_NVME_OPC_WRITE) {
+			switch (spdk_nvmf_request_exec(&fc_req->req)) {
+			case SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_READY:
+				break;
+			case SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING:
+				SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
+					      "Write buffer alloc failed. Requeue\n");
+				fc_req->hwqp->counters.write_buf_alloc_err++;
+				goto pending;
+			default:
 				goto error;
 			}
 		}
 	}
 
+	/* Xfer data from host, in case of host to controller. (Write) */
 	if (fc_req->req.xfer == SPDK_NVME_DATA_HOST_TO_CONTROLLER) {
-		SPDK_TRACELOG(SPDK_TRACE_BCM_FC_NVME, "WRITE CMD.\n");
-		/* Check if we have buffer already. If not acquire from bdev */
-		spdk_trace_record(TRACE_FC_WRITE_START, fc_req->poller_lcore, 0, (uint64_t)(&fc_req->req), 0);
-		fc_req->req.req_write_trace[NVMF_FC_WRITE_START] = spdk_get_ticks();
-		if (!fc_req->req.data) {
-			rc = spdk_nvmf_request_exec(&fc_req->req);
-			switch (rc) {
-			case SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_READY:
-				break;
-			case SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING:
-				TAILQ_INSERT_TAIL(&fc_conn->pending_data_buf_queue,
-						  fc_req, pending_link);
-				goto done;
-			case SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_ERROR:
-			default:
-				fc_req->hwqp->counters.fc_req_buf_err++;
-				goto error;
-			}
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "WRITE CMD.\n");
 
-			SPDK_TRACELOG(SPDK_TRACE_BCM_FC_NVME, "Got IOV buffers from bdev.\n");
-		}
+		spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_WRITE_XFER);
 
-		/* Got the buffer. Post trecv. */
-		if (bcm_nvmf_fc_recv_data(fc_req)) {
+		if (nvmf_fc_recv_data(fc_req)) {
 			goto error;
 		}
+	} else { /* Post to backend */
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "READ/NONE CMD\n");
 
-	} else {
-		SPDK_TRACELOG(SPDK_TRACE_BCM_FC_NVME, "READ/NONE CMD\n");
-		if ((fc_conn->qid == NVME_ADMIN_QUEUE_ID) || (cmd->opc == SPDK_NVME_OPC_FABRIC)) {
+		if (fc_req->req.xfer == SPDK_NVME_DATA_CONTROLLER_TO_HOST) {
+			spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_READ_BDEV);
+		} else {
+			spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_NONE_BDEV);
+		}
+		if ((fc_conn->qid == CONN_TYPE_AQ) || (cmd->opc == SPDK_NVME_OPC_FABRIC)) {
 			/* Switch to master lcore for admin queue commands. */
 			event = spdk_event_allocate(spdk_env_get_master_lcore(),
 						    spdk_nvmf_fc_post_nvme_rqst, (void *)fc_req, NULL);
 			spdk_event_call(event);
 		} else {
-			spdk_trace_record(TRACE_FC_READ_START, fc_req->poller_lcore, 0, (uint64_t)(&fc_req->req), 0);
-			fc_req->req.req_read_trace[NVMF_FC_READ_START] = spdk_get_ticks();
 			spdk_nvmf_fc_post_nvme_rqst(fc_req, NULL);
 		}
 	}
-done:
+
 	return 0;
+
+pending:
+	if (fc_req->xri) {
+		spdk_nvmf_bcm_fc_put_xri(fc_req->hwqp, fc_req->xri);
+		fc_req->xri = NULL;
+	}
+
+	if (fc_req->req.data) {
+		/* This can happen when conversion to iov failed. */
+		spdk_dma_free(fc_req->req.data);
+		fc_req->req.data = NULL;
+	}
+
+	return 1;
 error:
-	return -1;
+	/* Dropped return success to caller */
+	fc_req->hwqp->counters.unexpected_err++;
+	spdk_nvmf_bcm_fc_free_req(fc_req, false);
+	return 0;
 }
 
 static int
-spdk_nvmf_fc_handle_nvme_rqst(struct fc_hwqp *hwqp, struct fc_frame_hdr *frame,
-			      uint32_t buf_idx, struct bcm_buffer_desc *buffer, uint32_t plen)
+nvmf_fc_handle_nvme_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_frame_hdr *frame,
+			 uint32_t buf_idx, struct bcm_buffer_desc *buffer, uint32_t plen)
 {
 	uint16_t cmnd_len;
 	uint64_t rqst_conn_id;
-	struct nvmf_fc_rq_buf_nvme_cmd *req_buf = NULL;
-	struct spdk_nvmf_fc_request *fc_req = NULL;
-	struct nvme_cmnd_iu *cmd_iu = NULL;
-	struct spdk_nvmf_fc_conn *fc_conn = NULL;
+	struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd *req_buf = NULL;
+	struct spdk_nvmf_bcm_fc_request *fc_req = NULL;
+	struct spdk_nvmf_fc_cmnd_iu *cmd_iu = NULL;
+	struct spdk_nvmf_bcm_fc_conn *fc_conn = NULL;
 	enum spdk_nvme_data_transfer xfer;
 	bool found = false;
 
-	req_buf = (struct nvmf_fc_rq_buf_nvme_cmd *)buffer->virt;
+	req_buf = (struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd *)buffer->virt;
 	cmd_iu = &req_buf->cmd_iu;
 	cmnd_len = req_buf->cmd_iu.cmnd_iu_len;
 	cmnd_len = from_be16(&cmnd_len);
@@ -1007,7 +1249,7 @@ spdk_nvmf_fc_handle_nvme_rqst(struct fc_hwqp *hwqp, struct fc_frame_hdr *frame,
 	/* check for a valid cmnd_iu format */
 	if ((cmd_iu->fc_id != NVME_CMND_IU_FC_ID) ||
 	    (cmd_iu->scsi_id != NVME_CMND_IU_SCSI_ID) ||
-	    (cmnd_len != NVME_CMND_IU_SIZE / 4)) {
+	    (cmnd_len != sizeof(struct spdk_nvmf_fc_cmnd_iu) / 4)) {
 		SPDK_ERRLOG("IU CMD error\n");
 		hwqp->counters.nvme_cmd_iu_err++;
 		goto abort;
@@ -1037,15 +1279,11 @@ spdk_nvmf_fc_handle_nvme_rqst(struct fc_hwqp *hwqp, struct fc_frame_hdr *frame,
 	}
 
 	/* allocate a request buffer */
-	fc_req = spdk_nvmf_fc_alloc_req_buf(hwqp);
+	fc_req = nvmf_fc_alloc_req_buf(hwqp);
 	if (fc_req == NULL) {
+		/* Should not happen. Since fc_reqs == RQ buffers */
 		goto abort;
 	}
-
-	spdk_trace_record(TRACE_NVMF_IO_START, hwqp->lcore_id, 0, (uint64_t)(&fc_req->req), 0);
-	/* I don't know if it is a read or a write at this point. Adding it to both arrays for now */
-	fc_req->req.req_read_trace[NVMF_READ_IO_START] = spdk_get_ticks();
-	fc_req->req.req_write_trace[NVMF_WRITE_IO_START] = spdk_get_ticks();
 
 	fc_req->req.length = from_be32(&cmd_iu->data_len);
 	fc_req->req.conn = &fc_conn->conn;
@@ -1058,14 +1296,10 @@ spdk_nvmf_fc_handle_nvme_rqst(struct fc_hwqp *hwqp, struct fc_frame_hdr *frame,
 	fc_req->poller_lcore = hwqp->lcore_id;
 	fc_req->hwqp = hwqp;
 	fc_req->fc_conn = fc_conn;
-	fc_req->xri = spdk_nvmf_fc_get_xri(hwqp);
 	fc_req->req.xfer = xfer;
 
-	/* Save the fc request pointer in RQ buff */
-	req_buf->fc_req = fc_req;
-
-	if (spdk_nvmf_fc_execute_nvme_rqst(fc_req)) {
-		goto abort;
+	if (nvmf_fc_execute_nvme_rqst(fc_req)) {
+		TAILQ_INSERT_TAIL(&fc_conn->pending_queue, fc_req, pending_link);
 	}
 
 	return 0;
@@ -1077,55 +1311,48 @@ abort:
 }
 
 static int
-spdk_nvmf_fc_process_frame(struct fc_hwqp *hwqp, uint32_t buff_idx, fc_frame_hdr_t *frame,
-			   bcm_buffer_desc_t *buffer, uint32_t plen)
+nvmf_fc_process_frame(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t buff_idx, fc_frame_hdr_t *frame,
+		      bcm_buffer_desc_t *buffer, uint32_t plen)
 {
 	int rc;
 	uint32_t s_id, d_id;
 	uint16_t rpi;
-	struct spdk_nvmf_fc_nport *nport;
-	struct spdk_nvmf_fc_rem_port_info *rport = NULL;
-	struct nvmf_fc_ls_rqst *ls_rqst;
+	struct spdk_nvmf_bcm_fc_nport *nport;
+	struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst;
 
 	s_id = (uint32_t)frame->s_id;
 	d_id = (uint32_t)frame->d_id;
 	s_id = from_be32(&s_id) >> 8;
 	d_id = from_be32(&d_id) >> 8;
 
-	SPDK_TRACELOG(SPDK_TRACE_BCM_FC_NVME, "Process NVME frame\n");
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "Process NVME frame\n");
 
-	rc = find_nport_from_sid(hwqp, s_id, d_id, &nport, &rpi);
+	rc = nvmf_fc_find_nport_from_sid(hwqp, s_id, d_id, &nport, &rpi);
 	if (rc) {
 		SPDK_ERRLOG("%s Nport not found. Dropping\n", __func__);
 		hwqp->counters.nport_invalid++;
 		return rc;
 	}
 
-	rc = find_rport_from_sid(s_id, nport, &rport);
-	if (rc != SPDK_SUCCESS) {
-		SPDK_ERRLOG("%s Remote port not found. Dropping\n", __func__);
-		return rc;
-	}
-
 	if ((frame->r_ctl == NVME_FC_R_CTL_LS_REQUEST) &&
 	    (frame->type == NVME_FC_TYPE_NVMF_DATA)) {
 
-		SPDK_TRACELOG(SPDK_TRACE_BCM_FC_NVME, "Process LS NVME frame\n");
-		struct nvmf_fc_rq_buf_ls_request *req_buf = buffer->virt;
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "Process LS NVME frame\n");
+		struct spdk_nvmf_bcm_fc_rq_buf_ls_request *req_buf = buffer->virt;
 
 		/* Use the RQ buffer for holding LS request. */
-		ls_rqst = (struct nvmf_fc_ls_rqst *)&req_buf->ls_rqst;
+		ls_rqst = (struct spdk_nvmf_bcm_fc_ls_rqst *)&req_buf->ls_rqst;
 
 		/* Fill in the LS request structure */
 		ls_rqst->rqstbuf.virt = (void *)&req_buf->rqst;
 		ls_rqst->rqstbuf.phys = buffer->phys +
-					offsetof(struct nvmf_fc_rq_buf_ls_request, rqst);
+					offsetof(struct spdk_nvmf_bcm_fc_rq_buf_ls_request, rqst);
 		ls_rqst->rqstbuf.buf_index = buff_idx;
 		ls_rqst->rqst_len = plen;
 
 		ls_rqst->rspbuf.virt = (void *)&req_buf->resp;
 		ls_rqst->rspbuf.phys = buffer->phys +
-				       offsetof(struct nvmf_fc_rq_buf_ls_request, resp);
+				       offsetof(struct spdk_nvmf_bcm_fc_rq_buf_ls_request, resp);
 		ls_rqst->rsp_len = BCM_MAX_RESP_BUFFER_SIZE;
 
 		ls_rqst->private_data = (void *)hwqp;
@@ -1134,16 +1361,16 @@ spdk_nvmf_fc_process_frame(struct fc_hwqp *hwqp, uint32_t buff_idx, fc_frame_hdr
 		ls_rqst->oxid = from_be16(&ls_rqst->oxid);
 
 		/* get an XRI for this request */
-		ls_rqst->xri = spdk_nvmf_fc_get_xri(hwqp);
+		ls_rqst->xri = spdk_nvmf_bcm_fc_get_xri(hwqp);
 
 		/* Handle the request to LS module */
-		spdk_nvmf_fc_handle_ls_rqst(s_id, nport, rport, ls_rqst);
+		spdk_nvmf_bcm_fc_handle_ls_rqst(nport, ls_rqst);
 
 	} else if ((frame->r_ctl == NVME_FC_R_CTL_CMD_REQ) &&
 		   (frame->type == NVME_FC_TYPE_FC_EXCHANGE)) {
 
-		SPDK_TRACELOG(SPDK_TRACE_BCM_FC_NVME, "Process IO NVME frame\n");
-		rc = spdk_nvmf_fc_handle_nvme_rqst(hwqp, frame, buff_idx, buffer, plen);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "Process IO NVME frame\n");
+		rc = nvmf_fc_handle_nvme_rqst(hwqp, frame, buff_idx, buffer, plen);
 	} else {
 
 		SPDK_ERRLOG("%s Unknown frame received. Dropping\n", __func__);
@@ -1155,7 +1382,7 @@ spdk_nvmf_fc_process_frame(struct fc_hwqp *hwqp, uint32_t buff_idx, fc_frame_hdr
 }
 
 static int
-bcm_process_rqpair(struct fc_hwqp *hwqp, fc_eventq_t *cq, uint8_t *cqe)
+nvmf_fc_process_rqpair(struct spdk_nvmf_bcm_fc_hwqp *hwqp, fc_eventq_t *cq, uint8_t *cqe)
 {
 	int rc = -1, rq_index = 0;
 	uint16_t rq_id = 0;
@@ -1169,25 +1396,25 @@ bcm_process_rqpair(struct fc_hwqp *hwqp, fc_eventq_t *cq, uint8_t *cqe)
 	assert(cq);
 	assert(cqe);
 
-	rq_status = bcm_rqe_rqid_and_index(cqe, &rq_id, &rq_index);
+	rq_status = nvmf_fc_rqe_rqid_and_index(cqe, &rq_id, &rq_index);
 	if (0 != rq_status) {
 		switch (rq_status) {
 		case BCM_FC_ASYNC_RQ_BUF_LEN_EXCEEDED:
 		case BCM_FC_ASYNC_RQ_DMA_FAILURE:
 			if (rq_index < 0 || rq_index >= hwqp->queues.rq_hdr.q.max_entries) {
-				SPDK_TRACELOG(SPDK_TRACE_BCM_FC_NVME,
+				SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
 					      "%s: status=%#x: rq_id lookup failed for id=%#x\n",
 					      __func__, rq_status, rq_id);
 				hwqp->counters.rq_buf_len_err++;
 				break;
 			}
 
-			buff_idx = bcm_rqpair_get_buffer_id(hwqp, rq_index);
+			buff_idx = nvmf_fc_rqpair_get_buffer_id(hwqp, rq_index);
 			goto buffer_release;
 
 		case BCM_FC_ASYNC_RQ_INSUFF_BUF_NEEDED:
 		case BCM_FC_ASYNC_RQ_INSUFF_BUF_FRM_DISC:
-			SPDK_TRACELOG(SPDK_TRACE_BCM_FC_NVME,
+			SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
 				      "%s: Warning: RCQE status=%#x, \n",
 				      __func__, rq_status);
 			hwqp->counters.rq_status_err++;
@@ -1201,7 +1428,7 @@ bcm_process_rqpair(struct fc_hwqp *hwqp, fc_eventq_t *cq, uint8_t *cqe)
 
 	/* Make sure rq_index is in range */
 	if (rq_index >= hwqp->queues.rq_hdr.q.max_entries) {
-		SPDK_TRACELOG(SPDK_TRACE_BCM_FC_NVME,
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
 			      "%s: Error: rq index out of range for RQ%d\n",
 			      __func__, rq_id);
 		hwqp->counters.rq_index_err++;
@@ -1209,26 +1436,26 @@ bcm_process_rqpair(struct fc_hwqp *hwqp, fc_eventq_t *cq, uint8_t *cqe)
 	}
 
 	/* Process NVME frame */
-	buff_idx = bcm_rqpair_get_buffer_id(hwqp, rq_index);
-	frame = bcm_rqpair_get_frame_header(hwqp, rq_index);
-	payload_buffer = bcm_rqpair_get_frame_buffer(hwqp, rq_index);
+	buff_idx = nvmf_fc_rqpair_get_buffer_id(hwqp, rq_index);
+	frame = nvmf_fc_rqpair_get_frame_header(hwqp, rq_index);
+	payload_buffer = nvmf_fc_rqpair_get_frame_buffer(hwqp, rq_index);
 
-	rc = spdk_nvmf_fc_process_frame(hwqp, buff_idx, frame, payload_buffer,
-					rcqe->payload_data_placement_length);
+	rc = nvmf_fc_process_frame(hwqp, buff_idx, frame, payload_buffer,
+				   rcqe->payload_data_placement_length);
 	if (!rc) {
 		return 0;
 	}
 
 buffer_release:
 	/* Return buffer to chip */
-	bcm_rqpair_buffer_release(hwqp, buff_idx);
+	nvmf_fc_rqpair_buffer_release(hwqp, buff_idx);
 	return rc;
 }
 
 static int
-bcm_process_cq_entry(struct fc_hwqp *hwqp, struct fc_eventq *cq)
+nvmf_fc_process_cq_entry(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_eventq *cq)
 {
-	int rc = 0;
+	int rc = 0, budget = cq->q.processed_limit;
 	uint8_t	cqe[sizeof(cqe_t)];
 	uint16_t rid = UINT16_MAX;
 	uint32_t n_processed = 0;
@@ -1237,10 +1464,11 @@ bcm_process_cq_entry(struct fc_hwqp *hwqp, struct fc_eventq *cq)
 	assert(hwqp);
 	assert(cq);
 
-	while (!bcm_read_queue_entry(&cq->q, &cqe[0])) {
+	while (!nvmf_fc_read_queue_entry(&cq->q, &cqe[0])) {
 		n_processed++;
+		budget --;
 
-		rc = bcm_parse_cq_entry(cq, cqe, &ctype, &rid);
+		rc = nvmf_fc_parse_cq_entry(cq, cqe, &ctype, &rid);
 		/*
 		 * The sign of status is significant. If status is:
 		 * == 0 : call completed correctly and the CQE indicated success
@@ -1248,25 +1476,26 @@ bcm_process_cq_entry(struct fc_hwqp *hwqp, struct fc_eventq *cq)
 		 *  < 0 : call failed and no information is available about the CQE
 		 */
 		if (rc < 0) {
-			if (rc == -2) {
+			if ((rc == -2) && budget) {
 				/* Entry was consumed */
 				continue;
 			}
 			break;
 		}
 
+
 		switch ((int)ctype) {
 		case BCM_FC_QENTRY_WQ:
-			bcm_process_wqe_completion(hwqp, rid, rc, cqe);
+			nvmf_fc_process_wqe_completion(hwqp, rid, rc, cqe);
 			break;
 		case BCM_FC_QENTRY_WQ_RELEASE:
 			SPDK_WARNLOG("%s: WQE Release not implemented.\n", __func__);
 			break;
 		case BCM_FC_QENTRY_RQ:
-			bcm_process_rqpair(hwqp, cq, cqe);
+			nvmf_fc_process_rqpair(hwqp, cq, cqe);
 			break;
 		case BCM_FC_QENTRY_XABT:
-			bcm_nvmf_del_xri_pending(hwqp, rid);
+			nvmf_fc_nvmf_del_xri_pending(hwqp, rid);
 			break;
 		default:
 			SPDK_WARNLOG("%s: unhandled ctype=%#x rid=%#x\n",
@@ -1276,23 +1505,24 @@ bcm_process_cq_entry(struct fc_hwqp *hwqp, struct fc_eventq *cq)
 		}
 
 		if (n_processed >= (cq->q.posted_limit)) {
-			bcm_notify_queue(&cq->q, FALSE, n_processed);
+			nvmf_fc_bcm_notify_queue(&cq->q, false, n_processed);
 			n_processed = 0;
 		}
 
-		if (hwqp->state == SPDK_FC_HWQP_OFFLINE)
+		if (!budget || (hwqp->state == SPDK_FC_HWQP_OFFLINE)) {
 			break;
+		}
 	}
 
-	bcm_notify_queue(&cq->q, cq->auto_arm_flag, n_processed);
+	nvmf_fc_bcm_notify_queue(&cq->q, cq->auto_arm_flag, n_processed);
 
 	return rc;
 }
 
 void
-bcm_process_queues(struct fc_hwqp *hwqp)
+spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 {
-	int rc = 0;
+	int rc = 0, budget = 0;
 	uint32_t n_processed = 0;
 	uint8_t eqe[sizeof(eqe_t)] = { 0 };
 	uint16_t cq_id;
@@ -1301,53 +1531,63 @@ bcm_process_queues(struct fc_hwqp *hwqp)
 	assert(hwqp);
 	eq = &hwqp->queues.eq;
 
-	while (!bcm_read_queue_entry(&eq->q, &eqe[0])) {
-		n_processed++;
+	budget = eq->q.processed_limit;
 
-		rc = bcm_parse_eq_entry((struct eqe *)eqe, &cq_id);
+	while (!nvmf_fc_read_queue_entry(&eq->q, &eqe[0])) {
+		n_processed++;
+		budget --;
+
+		rc = nvmf_fc_parse_eq_entry((struct eqe *)eqe, &cq_id);
 		if (spdk_likely(rc))  {
 			if (rc > 0) {
 				/* EQ is full.  Process all CQs */
-				bcm_process_cq_entry(hwqp, &hwqp->queues.cq_wq);
-				bcm_process_cq_entry(hwqp, &hwqp->queues.cq_rq);
-				continue;
+				nvmf_fc_process_cq_entry(hwqp, &hwqp->queues.cq_wq);
+				nvmf_fc_process_cq_entry(hwqp, &hwqp->queues.cq_rq);
 			} else {
 				break;
 			}
 		} else {
 			if (cq_id == hwqp->queues.cq_wq.q.qid) {
-				bcm_process_cq_entry(hwqp, &hwqp->queues.cq_wq);
+				nvmf_fc_process_cq_entry(hwqp, &hwqp->queues.cq_wq);
+				/*
+				 * There might be some buffers/xri freed.
+				 * First give chance for pending frames
+				 */
+				spdk_nvmf_bcm_fc_process_pending_req(hwqp);
+
 			} else if (cq_id == hwqp->queues.cq_rq.q.qid) {
-				bcm_process_cq_entry(hwqp, &hwqp->queues.cq_rq);
+				nvmf_fc_process_cq_entry(hwqp, &hwqp->queues.cq_rq);
 			} else {
 				SPDK_ERRLOG("%s bad CQ_ID %#06x\n", __func__, cq_id);
 				hwqp->counters.invalid_cq_id++;
 			}
-
-			if (n_processed >= (eq->q.posted_limit)) {
-				bcm_notify_queue(&eq->q, FALSE, n_processed);
-				n_processed = 0;
-			}
 		}
 
-		if (hwqp->state == SPDK_FC_HWQP_OFFLINE)
+		if (n_processed >= (eq->q.posted_limit)) {
+			nvmf_fc_bcm_notify_queue(&eq->q, false, n_processed);
+			n_processed = 0;
+		}
+
+		if (!budget || (hwqp->state == SPDK_FC_HWQP_OFFLINE)) {
 			break;
+		}
 	}
 
-	bcm_notify_queue(&eq->q, eq->auto_arm_flag, n_processed);
+	nvmf_fc_bcm_notify_queue(&eq->q, eq->auto_arm_flag, n_processed);
+
 	return;
 }
 
 int
-bcm_nvmf_fc_xmt_ls_rsp(struct spdk_nvmf_fc_nport *tgtport,
-		       struct nvmf_fc_ls_rqst *ls_rqst)
+spdk_nvmf_bcm_fc_xmt_ls_rsp(struct spdk_nvmf_bcm_fc_nport *tgtport,
+			    struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst)
 {
 	uint8_t wqe[128] = { 0 };
 	bcm_xmit_sequence64_wqe_t *xmit = (bcm_xmit_sequence64_wqe_t *)wqe;
-	struct fc_hwqp *hwqp = NULL;
+	struct spdk_nvmf_bcm_fc_hwqp *hwqp = NULL;
 	int rc = -1;
 
-	xmit->xbl = TRUE;
+	xmit->xbl = true;
 	xmit->bde.bde_type = BCM_BDE_TYPE_BDE_64;
 	xmit->bde.buffer_length = ls_rqst->rsp_len;
 	xmit->bde.u.data.buffer_address_low  = PTR_TO_ADDR32_LO(ls_rqst->rspbuf.phys);
@@ -1363,7 +1603,7 @@ bcm_nvmf_fc_xmt_ls_rsp(struct spdk_nvmf_fc_nport *tgtport,
 
 	xmit->dif 	= 0;
 	xmit->pu 	= 0;
-	xmit->abort_tag  = 0;
+	xmit->abort_tag = 0;
 	xmit->bs 	= 0;
 
 	xmit->df_ctl	= 0;
@@ -1383,21 +1623,22 @@ bcm_nvmf_fc_xmt_ls_rsp(struct spdk_nvmf_fc_nport *tgtport,
 	xmit->len_loc 	= 2;
 	xmit->cq_id 	= 0xFFFF;
 
-	hwqp = (struct fc_hwqp *)ls_rqst->private_data;
+	hwqp = (struct spdk_nvmf_bcm_fc_hwqp *)ls_rqst->private_data;
 
-	rc = bcm_post_wqe(hwqp, (uint8_t *)xmit, TRUE, bcm_ls_cmpl_cb, ls_rqst);
+	rc = nvmf_fc_post_wqe(hwqp, (uint8_t *)xmit, true, nvmf_fc_ls_rsp_cmpl_cb, ls_rqst);
 
 	return rc;
 }
 
-static int
-bcm_nvmf_fc_fill_sgl(struct spdk_nvmf_fc_request *fc_req)
+static uint32_t
+nvmf_fc_fill_sgl(struct spdk_nvmf_bcm_fc_request *fc_req)
 {
-	int offset = 0, i;
+	int i;
+	uint32_t offset = 0;
 	uint64_t iov_phys;
 	bcm_sge_t *sge = NULL;
-	struct nvmf_fc_rq_buf_nvme_cmd *req_buf = NULL;
-	struct fc_hwqp *hwqp = fc_req->hwqp;
+	struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd *req_buf = NULL;
+	struct spdk_nvmf_bcm_fc_hwqp *hwqp = fc_req->hwqp;
 
 	assert((fc_req->req.iovcnt) <= BCM_MAX_IOVECS);
 	assert(fc_req->req.iovcnt != 0);
@@ -1405,25 +1646,26 @@ bcm_nvmf_fc_fill_sgl(struct spdk_nvmf_fc_request *fc_req)
 	/* Use RQ buffer for SGL */
 	req_buf = hwqp->queues.rq_payload.buffer[fc_req->buf_index].virt;
 	sge = &req_buf->sge[0];
-	memset(sge, 0, (sizeof(bcm_sge_t) * (MAX_NUM_OF_IOVECTORS + 2)));
+
+	memset(sge, 0, (sizeof(bcm_sge_t) * BCM_MAX_IOVECS));
 
 	if (fc_req->req.xfer == SPDK_NVME_DATA_HOST_TO_CONTROLLER) { /* Write */
 		uint64_t xfer_rdy_phys;
-		struct nvme_xfer_rdy_iu *xfer_rdy_iu;
+		struct spdk_nvmf_fc_xfer_rdy_iu *xfer_rdy_iu;
 
 		/* 1st SGE is tranfer ready buffer */
 		xfer_rdy_iu = hwqp->queues.rq_payload.buffer[fc_req->buf_index].virt +
-			      offsetof(struct nvmf_fc_rq_buf_nvme_cmd, xfer_rdy);
+			      offsetof(struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd, xfer_rdy);
 		xfer_rdy_iu->relative_offset = 0;
 		to_be32(&xfer_rdy_iu->burst_len, fc_req->req.length);
 
 		xfer_rdy_phys = hwqp->queues.rq_payload.buffer[fc_req->buf_index].phys +
-				offsetof(struct nvmf_fc_rq_buf_nvme_cmd, xfer_rdy);
+				offsetof(struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd, xfer_rdy);
 
 		sge->sge_type = BCM_SGE_TYPE_DATA;
 		sge->buffer_address_low  = PTR_TO_ADDR32_LO(xfer_rdy_phys);
 		sge->buffer_address_high = PTR_TO_ADDR32_HI(xfer_rdy_phys);
-		sge->buffer_length = sizeof(struct nvme_xfer_rdy_iu);
+		sge->buffer_length = sizeof(struct spdk_nvmf_fc_xfer_rdy_iu);
 		sge++;
 
 	} else if (fc_req->req.xfer == SPDK_NVME_DATA_CONTROLLER_TO_HOST) { /* read */
@@ -1431,7 +1673,7 @@ bcm_nvmf_fc_fill_sgl(struct spdk_nvmf_fc_request *fc_req)
 		sge->sge_type = BCM_SGE_TYPE_SKIP;
 		sge++;
 	} else {
-		return -1;
+		return 0;
 	}
 
 	/* 2nd SGE is skip. */
@@ -1449,33 +1691,33 @@ bcm_nvmf_fc_fill_sgl(struct spdk_nvmf_fc_request *fc_req)
 
 		if (i == (fc_req->req.iovcnt - 1)) {
 			/* last */
-			sge->last = TRUE;
+			sge->last = true;
 		} else {
 			sge++;
 		}
 	}
-	return 0;
+	return offset;
 }
 
 int
-bcm_nvmf_fc_send_data(struct spdk_nvmf_fc_request *fc_req)
+spdk_nvmf_bcm_fc_send_data(struct spdk_nvmf_bcm_fc_request *fc_req)
 {
 	int rc = 0;
 	uint8_t wqe[128] = { 0 };
+	uint32_t xfer_len = 0;
 	bcm_fcp_tsend64_wqe_t *tsend = (bcm_fcp_tsend64_wqe_t *)wqe;
-	struct fc_hwqp *hwqp = fc_req->hwqp;
+	struct spdk_nvmf_bcm_fc_hwqp *hwqp = fc_req->hwqp;
 	struct spdk_nvmf_request *req = &fc_req->req;
 	struct spdk_nvmf_conn 	*conn = req->conn;
-	struct spdk_nvmf_fc_conn *fc_conn = bcm_get_fc_conn(conn);
-	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
+	struct spdk_nvmf_bcm_fc_conn *fc_conn = nvmf_fc_get_conn(conn);
 
-	tsend->xbl = TRUE;
+	tsend->xbl = true;
 	if (fc_req->req.iovcnt == 1) {
 		/* Data is a single physical address, use a BDE */
 		uint64_t bde_phys;
 
 		bde_phys = spdk_vtophys(fc_req->req.iov[0].iov_base);
-		tsend->dbde = TRUE;
+		tsend->dbde = true;
 		tsend->bde.bde_type = BCM_BDE_TYPE_BDE_64;
 		tsend->bde.buffer_length = fc_req->req.length;
 
@@ -1485,13 +1727,13 @@ bcm_nvmf_fc_send_data(struct spdk_nvmf_fc_request *fc_req)
 	} else {
 		uint64_t sgl_phys;
 
-		rc = bcm_nvmf_fc_fill_sgl(fc_req);
-		if (rc) {
+		xfer_len = nvmf_fc_fill_sgl(fc_req);
+		if (!xfer_len) {
 			return -1;
 		}
 
 		sgl_phys = hwqp->queues.rq_payload.buffer[fc_req->buf_index].phys +
-			   offsetof(struct nvmf_fc_rq_buf_nvme_cmd, sge);
+			   offsetof(struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd, sge);
 
 		tsend->bde.bde_type = BCM_BDE_TYPE_BLP;
 		tsend->bde.buffer_length = fc_req->req.length;
@@ -1502,20 +1744,14 @@ bcm_nvmf_fc_send_data(struct spdk_nvmf_fc_request *fc_req)
 	tsend->relative_offset = 0;
 	tsend->xri_tag = fc_req->xri->xri;
 	tsend->rpi = fc_req->rpi;
-	tsend->pu = TRUE;
+	tsend->pu = true;
 
-	/* For non fabric and when we dont reach ersp ratio, use auto resp. */
-	if (((fc_conn->rsp_count + 1) % fc_conn->esrp_ratio) &&
-	    (cmd->opc != SPDK_NVME_OPC_FABRIC)) {
+	if (!nvmf_fc_send_ersp_required(fc_req, (fc_conn->rsp_count + 1),
+					xfer_len)) {
 		fc_conn->rsp_count++;
-		tsend->ar = TRUE;
-
-		/* Advance our sq_head pointer */
-		if (fc_conn->conn.sq_head == fc_conn->conn.sq_head_max) {
-			fc_conn->conn.sq_head = 0;
-		} else {
-			fc_conn->conn.sq_head++;
-		}
+		nvmf_fc_advance_conn_sqhead(conn);
+		tsend->ar = true;
+		spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_READ_RSP);
 	}
 
 	tsend->command = BCM_WQE_FCP_TSEND64;
@@ -1529,34 +1765,29 @@ bcm_nvmf_fc_send_data(struct spdk_nvmf_fc_request *fc_req)
 	tsend->cq_id = 0xFFFF;
 	tsend->fcp_data_transmit_length = fc_req->req.length;
 
-	rc = bcm_post_wqe(hwqp, (uint8_t *)tsend, TRUE, bcm_io_cmpl_cb, fc_req);
+	rc = nvmf_fc_post_wqe(hwqp, (uint8_t *)tsend, true, nvmf_fc_io_cmpl_cb, fc_req);
 	if (!rc) {
-		if (tsend->ar) {
-			fc_req->rsp_sent = TRUE;
-		}
-		fc_req->xri_activated = TRUE;
-	} else {
-		assert(false);
+		fc_req->xri_activated = true;
 	}
 
 	return rc;
 }
 
 int
-bcm_nvmf_fc_recv_data(struct spdk_nvmf_fc_request *fc_req)
+nvmf_fc_recv_data(struct spdk_nvmf_bcm_fc_request *fc_req)
 {
 	int rc = 0;
 	uint8_t wqe[128] = { 0 };
 	bcm_fcp_treceive64_wqe_t *trecv = (bcm_fcp_treceive64_wqe_t *)wqe;
-	struct fc_hwqp *hwqp = fc_req->hwqp;
+	struct spdk_nvmf_bcm_fc_hwqp *hwqp = fc_req->hwqp;
 
-	trecv->xbl = TRUE;
+	trecv->xbl = true;
 	if (fc_req->req.iovcnt == 1) {
 		/* Data is a single physical address, use a BDE */
 		uint64_t bde_phys;
 
 		bde_phys = spdk_vtophys(fc_req->req.iov[0].iov_base);
-		trecv->dbde = TRUE;
+		trecv->dbde = true;
 		trecv->bde.bde_type = BCM_BDE_TYPE_BDE_64;
 		trecv->bde.buffer_length = fc_req->req.length;
 		trecv->bde.u.data.buffer_address_low = PTR_TO_ADDR32_LO(bde_phys);
@@ -1564,13 +1795,12 @@ bcm_nvmf_fc_recv_data(struct spdk_nvmf_fc_request *fc_req)
 	} else {
 		uint64_t sgl_phys;
 
-		rc = bcm_nvmf_fc_fill_sgl(fc_req);
-		if (rc) {
+		if (!nvmf_fc_fill_sgl(fc_req)) {
 			return -1;
 		}
 
 		sgl_phys = hwqp->queues.rq_payload.buffer[fc_req->buf_index].phys +
-			   offsetof(struct nvmf_fc_rq_buf_nvme_cmd, sge);
+			   offsetof(struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd, sge);
 
 		trecv->bde.bde_type = BCM_BDE_TYPE_BLP;
 		trecv->bde.buffer_length = fc_req->req.length;
@@ -1581,8 +1811,8 @@ bcm_nvmf_fc_recv_data(struct spdk_nvmf_fc_request *fc_req)
 	trecv->relative_offset = 0;
 	trecv->xri_tag = fc_req->xri->xri;
 	trecv->context_tag = fc_req->rpi;
-	trecv->pu = TRUE;
-	trecv->ar = FALSE;
+	trecv->pu = true;
+	trecv->ar = false;
 
 	trecv->command = BCM_WQE_FCP_TRECEIVE64;
 	trecv->class = BCM_ELS_REQUEST64_CLASS_3;
@@ -1597,31 +1827,26 @@ bcm_nvmf_fc_recv_data(struct spdk_nvmf_fc_request *fc_req)
 	trecv->cq_id = 0xFFFF;
 	trecv->fcp_data_receive_length = fc_req->req.length;
 
-	rc = bcm_post_wqe(hwqp, (uint8_t *)trecv, TRUE, bcm_io_cmpl_cb, fc_req);
-	spdk_trace_record(TRACE_FC_WRITE_POST_SGL, fc_req->poller_lcore, 0, (uint64_t)(&fc_req->req), 0);
-	fc_req->req.req_write_trace[NVMF_FC_WRITE_POST_SGL] = spdk_get_ticks();
+	rc = nvmf_fc_post_wqe(hwqp, (uint8_t *)trecv, true, nvmf_fc_io_cmpl_cb, fc_req);
 	if (!rc) {
-		fc_req->xri_activated = TRUE;
-	} else {
-		assert(false);
+		fc_req->xri_activated = true;
 	}
 
 	return rc;
 }
 
 static int
-bcm_nvmf_fc_xmt_rsp(struct spdk_nvmf_fc_request *fc_req, uint8_t *ersp_buf, uint32_t ersp_len)
+nvmf_fc_xmt_rsp(struct spdk_nvmf_bcm_fc_request *fc_req, uint8_t *ersp_buf, uint32_t ersp_len)
 {
 	int rc = 0;
 	uint8_t wqe[128] = { 0 };
 	bcm_fcp_trsp64_wqe_t *trsp = (bcm_fcp_trsp64_wqe_t *)wqe;
-	struct fc_hwqp *hwqp = fc_req->hwqp;
+	struct spdk_nvmf_bcm_fc_hwqp *hwqp = fc_req->hwqp;
 
 	if (!ersp_buf) {
 		/* Auto-Gen all zeroes in IU 12-byte payload */
-		trsp->ag = TRUE;
+		trsp->ag = true;
 	} else {
-		trsp->ag = TRUE;
 		trsp->wqes = 1;
 		trsp->irsp = 1;
 		trsp->fcp_response_length = ersp_len;
@@ -1630,7 +1855,7 @@ bcm_nvmf_fc_xmt_rsp(struct spdk_nvmf_fc_request *fc_req, uint8_t *ersp_buf, uint
 	}
 
 	if (fc_req->xri_activated) {
-		trsp->xc = TRUE;
+		trsp->xc = true;
 	}
 
 	trsp->command = BCM_WQE_FCP_TRSP64;
@@ -1643,54 +1868,36 @@ bcm_nvmf_fc_xmt_rsp(struct spdk_nvmf_fc_request *fc_req, uint8_t *ersp_buf, uint
 	trsp->cmd_type = BCM_CMD_FCP_TRSP64_WQE;
 	trsp->nvme = 1;
 
-	rc = bcm_post_wqe(hwqp, (uint8_t *)trsp, TRUE, bcm_io_cmpl_cb, fc_req);
+	rc = nvmf_fc_post_wqe(hwqp, (uint8_t *)trsp, true, nvmf_fc_io_cmpl_cb, fc_req);
 	if (!rc) {
-		fc_req->rsp_sent = TRUE;
-		fc_req->xri_activated = TRUE;
+		fc_req->xri_activated = true;
 	}
 
 	return rc;
 }
 
 int
-bcm_nvmf_fc_handle_rsp(struct spdk_nvmf_fc_request *fc_req)
+spdk_nvmf_bcm_fc_handle_rsp(struct spdk_nvmf_bcm_fc_request *fc_req)
 {
 	int rc = 0;
 	struct spdk_nvmf_request *req = &fc_req->req;
 	struct spdk_nvmf_conn 	*conn = req->conn;
-	struct spdk_nvmf_fc_conn *fc_conn = bcm_get_fc_conn(conn);
-	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
+	struct spdk_nvmf_bcm_fc_conn *fc_conn = nvmf_fc_get_conn(conn);
 	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
-	uint16_t status = *((uint16_t *)&rsp->status);
 	uint16_t ersp_len = 0;
 
-	rsp->sqhd = conn->sq_head;
-
-	/* Advance our sq_head pointer */
-	if (conn->sq_head == conn->sq_head_max) {
-		conn->sq_head = 0;
-	} else {
-		conn->sq_head++;
-	}
+	/* set sq head value in resp */
+	rsp->sqhd = nvmf_fc_advance_conn_sqhead(conn);
 
 	/* Increment connection responses */
 	fc_conn->rsp_count++;
 
-	/*
-	 * Check if we need to send rsp or ERSP
-	 * 1) For every N responses where N == ersp_ratio
-	 * 2) Fabric commands.
-	 * 3) Completion status failed or Completion dw0 or dw1 valid.
-	 * 4) SQ == 90% full. TODO
-	 * 5) CMD is fused. TODO
-	 * 6) Transfer length not equal to CMD IU length
-	 */
-	if (!(fc_conn->rsp_count % fc_conn->esrp_ratio) ||
-	    (cmd->opc == SPDK_NVME_OPC_FABRIC) ||
-	    (status & 0xFFFE) || rsp->cdw0 || rsp->rsvd1 ||
-	    (req->length != fc_req->transfered_len)) {
+	if (nvmf_fc_send_ersp_required(fc_req, fc_conn->rsp_count,
+				       fc_req->transfered_len)) {
+
 		/* Fill ERSP Len */
-		to_be16(&ersp_len, (sizeof(struct nvme_ersp_iu) / sizeof(uint32_t)));
+		to_be16(&ersp_len, (sizeof(struct spdk_nvmf_fc_ersp_iu) /
+				    sizeof(uint32_t)));
 		fc_req->ersp.ersp_len = ersp_len;
 
 		/* Fill RSN */
@@ -1700,27 +1907,27 @@ bcm_nvmf_fc_handle_rsp(struct spdk_nvmf_fc_request *fc_req)
 		/* Fill transfer length */
 		to_be32(&fc_req->ersp.transferred_data_len, fc_req->transfered_len);
 
-		SPDK_TRACELOG(SPDK_TRACE_BCM_FC_NVME, "Posting ERSP.\n");
-		rc = bcm_nvmf_fc_xmt_rsp(fc_req, (uint8_t *)&fc_req->ersp,
-					 sizeof(struct nvme_ersp_iu));
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "Posting ERSP.\n");
+		rc = nvmf_fc_xmt_rsp(fc_req, (uint8_t *)&fc_req->ersp,
+				     sizeof(struct spdk_nvmf_fc_ersp_iu));
 	} else {
-		SPDK_TRACELOG(SPDK_TRACE_BCM_FC_NVME, "Posting RSP.\n");
-		rc = bcm_nvmf_fc_xmt_rsp(fc_req, NULL, 0);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "Posting RSP.\n");
+		rc = nvmf_fc_xmt_rsp(fc_req, NULL, 0);
 	}
 
 	return rc;
 }
 
 int
-bcm_nvmf_fc_issue_abort(struct fc_hwqp *hwqp, fc_xri_t *xri, bool send_abts,
-			bcm_fc_caller_cb cb, void *cb_args)
+spdk_nvmf_bcm_fc_issue_abort(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
+			     struct spdk_nvmf_bcm_fc_xri *xri, bool send_abts,
+			     spdk_nvmf_bcm_fc_caller_cb cb, void *cb_args)
 {
 	uint8_t wqe[128] = { 0 };
 	bcm_abort_wqe_t *abort = (bcm_abort_wqe_t *)wqe;
 	fc_caller_ctx_t *ctx = NULL;
 	int rc = -1;
 
-	/* XXX this is a problem. We need to remove the dependency on malloc in the Abort path. XXX */
 	ctx = spdk_malloc(sizeof(fc_caller_ctx_t));
 	if (!ctx) {
 		goto done;
@@ -1733,12 +1940,12 @@ bcm_nvmf_fc_issue_abort(struct fc_hwqp *hwqp, fc_xri_t *xri, bool send_abts,
 	abort->ia = send_abts ? 0 : 1;
 	abort->ir = 1; /* Supress ABTS retries. */
 	abort->command = BCM_WQE_ABORT;
-	abort->qosd = TRUE;
+	abort->qosd = true;
 	abort->cq_id = UINT16_MAX;
 	abort->cmd_type = BCM_CMD_ABORT_WQE;
 	abort->t_tag = xri->xri;
 
-	rc = bcm_post_wqe(hwqp, (uint8_t *)abort, TRUE, bcm_abort_cmpl_cb, ctx);
+	rc = nvmf_fc_post_wqe(hwqp, (uint8_t *)abort, true, nvmf_fc_abort_cmpl_cb, ctx);
 done:
 	if (rc && ctx) {
 		spdk_free(ctx);
@@ -1747,13 +1954,166 @@ done:
 	return rc;
 }
 
-/* TODO: Removed #if 0 when being called - currently causes compile warning */
-#if 0
+int
+spdk_nvmf_bcm_fc_xmt_bls_rsp(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
+			     uint16_t ox_id, uint16_t rx_id,
+			     uint16_t rpi, bool rjt, uint8_t rjt_exp,
+			     spdk_nvmf_bcm_fc_caller_cb cb, void *cb_args)
+{
+	uint8_t wqe[128] = { 0 };
+	bcm_xmit_bls_rsp_wqe_t *bls = (bcm_xmit_bls_rsp_wqe_t *)wqe;
+	int rc = -1;
+	fc_caller_ctx_t *ctx = NULL;
+	struct spdk_nvmf_bcm_fc_xri *xri = NULL;
+
+	xri = spdk_nvmf_bcm_fc_get_xri(hwqp);
+	if (!xri) {
+		goto done;
+	}
+
+	ctx = spdk_malloc(sizeof(fc_caller_ctx_t));
+	if (!ctx) {
+		goto done;
+	}
+	ctx->ctx = xri;
+	ctx->cb = cb;
+	ctx->cb_args = cb_args;
+
+	if (rjt) {
+		bls->payload_word0 = ((uint32_t)BCM_BLS_REJECT_CODE_UNABLE_TO_PERFORM << 16) |
+				     ((uint32_t)rjt_exp << 8);
+		bls->ar = true;
+	} else {
+		bls->high_seq_cnt = UINT16_MAX;
+	}
+
+	bls->ox_id       = ox_id;
+	bls->rx_id       = rx_id;
+	bls->ct          = BCM_ELS_REQUEST64_CONTEXT_RPI;
+	bls->context_tag = rpi;
+	bls->xri_tag     = xri->xri;
+	bls->class       = BCM_ELS_REQUEST64_CLASS_3;
+	bls->command     = BCM_WQE_XMIT_BLS_RSP;
+	bls->qosd        = true;
+	bls->cq_id       = UINT16_MAX;
+	bls->cmd_type    = BCM_CMD_XMIT_BLS_RSP64_WQE;
+
+	rc = nvmf_fc_post_wqe(hwqp, (uint8_t *)bls, true, nvmf_fc_bls_cmpl_cb, ctx);
+done:
+	if (rc && ctx) {
+		spdk_free(ctx);
+	}
+
+	if (rc && xri) {
+		spdk_nvmf_bcm_fc_put_xri(hwqp, xri);
+	}
+
+	return rc;
+}
+
+int
+spdk_nvmf_bcm_fc_xmt_srsr_req(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
+			      struct spdk_nvmf_bcm_fc_send_srsr *srsr,
+			      spdk_nvmf_bcm_fc_caller_cb cb, void *cb_args)
+{
+	uint8_t wqe[128] = { 0 };
+	int rc = -1;
+	bcm_gen_request64_wqe_t *gen = (bcm_gen_request64_wqe_t *)wqe;
+	fc_caller_ctx_t *ctx = NULL;
+	struct spdk_nvmf_bcm_fc_xri *xri = NULL;
+	bcm_sge_t *sge = NULL;
+
+	if (!srsr) {
+		goto done;
+	}
+
+	/* Make sure caller allocated space for two sges. */
+	if (srsr->sgl.len != (2 * sizeof(bcm_sge_t))) {
+		goto done;
+	}
+	sge = srsr->sgl.virt;
+	memset(sge, 0, (sizeof(bcm_sge_t) * 2));
+
+	xri = spdk_nvmf_bcm_fc_get_xri(hwqp);
+	if (!xri) {
+		/* Might be we should reserve some XRI for this */
+		goto done;
+	}
+
+	ctx = spdk_malloc(sizeof(fc_caller_ctx_t));
+	if (!ctx) {
+		goto done;
+	}
+	ctx->ctx = xri;
+	ctx->cb = cb;
+	ctx->cb_args = cb_args;
+
+	/* Fill SGL */
+	sge->buffer_address_high = PTR_TO_ADDR32_HI(srsr->rqst.phys);
+	sge->buffer_address_low  = PTR_TO_ADDR32_LO(srsr->rqst.phys);
+	sge->sge_type = BCM_SGE_TYPE_DATA;
+	sge->buffer_length = srsr->rqst.len;
+	sge ++;
+
+	sge->buffer_address_high = PTR_TO_ADDR32_HI(srsr->rsp.phys);
+	sge->buffer_address_low  = PTR_TO_ADDR32_LO(srsr->rsp.phys);
+	sge->sge_type = BCM_SGE_TYPE_DATA;
+	sge->buffer_length = srsr->rsp.len;
+	sge->last = true;
+
+	/* Fill WQE contents */
+	gen->xbl = true;
+	gen->bde.bde_type = BCM_BDE_TYPE_BLP;
+	gen->bde.buffer_length = 2 * sizeof(bcm_sge_t);
+	gen->bde.u.data.buffer_address_low  = PTR_TO_ADDR32_LO(srsr->sgl.phys);
+	gen->bde.u.data.buffer_address_high = PTR_TO_ADDR32_HI(srsr->sgl.phys);
+
+	gen->request_payload_length = srsr->rqst.len;
+	gen->max_response_payload_length = srsr->rsp.len;
+	gen->df_ctl	 = 0;
+	gen->type	 = NVME_FC_TYPE_NVMF_DATA;
+	gen->r_ctl	 = NVME_FC_R_CTL_LS_REQUEST;
+	gen->xri_tag	 = xri->xri;
+	gen->ct		 = BCM_ELS_REQUEST64_CONTEXT_RPI;
+	gen->context_tag = srsr->rpi;
+	gen->class	 = BCM_ELS_REQUEST64_CLASS_3;
+	gen->command	 = BCM_WQE_GEN_REQUEST64;
+	gen->timer	 = 30;
+	gen->iod	 = BCM_ELS_REQUEST64_DIR_READ;
+	gen->qosd	 = true;
+	gen->cmd_type	 = BCM_CMD_GEN_REQUEST64_WQE;
+	gen->cq_id	 = 0xffff;
+
+	rc = nvmf_fc_post_wqe(hwqp, (uint8_t *)gen, true, nvmf_fc_srsr_cmpl_cb,
+			      ctx);
+done:
+	if (rc && ctx) {
+		spdk_free(ctx);
+	}
+
+	if (rc && xri) {
+		spdk_nvmf_bcm_fc_put_xri(hwqp, xri);
+	}
+
+	return rc;
+}
+
+#ifdef UNSOL_ABTS_SUPPORT
+static void
+nvmf_fc_default_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
+{
+	if (status) {
+		SPDK_ERRLOG("Generic WQE Compl(%d) error\n", status);
+	}
+}
+
 static int
-bcm_nvmf_fc_unsol_abort(struct fc_hwqp *hwqp, uint32_t s_id, uint32_t d_id, uint16_t ox_id)
+spdk_nvmf_bcm_fc_unsol_abort(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t s_id, uint32_t d_id,
+			     uint16_t ox_id)
 
 {
-	uint8_t wqe[128] = { 0 }, *p_hdr;
+	uint8_t wqe[128] = { 0 };
+	uint32_t *p_hdr;
 	int rc = -1;
 	bcm_send_frame_wqe_t *sf = (bcm_send_frame_wqe_t *)wqe;
 	fc_frame_hdr_le_t hdr;
@@ -1774,13 +2134,13 @@ bcm_nvmf_fc_unsol_abort(struct fc_hwqp *hwqp, uint32_t s_id, uint32_t d_id, uint
 	hdr.parameter	 = 0;
 
 	/* Assign a SEQID. */
-	hdr.seq_id	 = hwqp->send_frame_seqid;
+	hdr.seq_id = hwqp->send_frame_seqid;
 	hwqp->send_frame_seqid ++;
 
-	p_hdr = (uint8_t *)&hdr;
+	p_hdr = (uint32_t *)&hdr;
 
 	/* WQE */
-	sf->dbde = FALSE;
+	sf->dbde = false;
 
 	sf->fc_header_0_1[0] = p_hdr[0];
 	sf->fc_header_0_1[1] = p_hdr[1];
@@ -1806,63 +2166,8 @@ bcm_nvmf_fc_unsol_abort(struct fc_hwqp *hwqp, uint32_t s_id, uint32_t d_id, uint
 	sf->cmd_type	 = BCM_CMD_SEND_FRAME_WQE;
 	sf->cq_id	 = 0xffff;
 
-	rc = bcm_post_wqe(hwqp, (uint8_t *)sf, TRUE, bcm_default_cmpl_cb, NULL);
+	rc = nvmf_fc_post_wqe(hwqp, (uint8_t *)sf, true, nvmf_fc_default_cmpl_cb, NULL);
 
 	return rc;
 }
 #endif
-
-int
-bcm_nvmf_fc_xmt_bls_rsp(struct fc_hwqp *hwqp, uint16_t ox_id, uint16_t rx_id,
-			uint16_t rpi, bool rjt, uint8_t rjt_exp, bcm_fc_caller_cb cb, void *cb_args)
-{
-	uint8_t wqe[128] = { 0 };
-	bcm_xmit_bls_rsp_wqe_t *bls = (bcm_xmit_bls_rsp_wqe_t *)wqe;
-	int rc = -1;
-	fc_caller_ctx_t *ctx = NULL;
-	fc_xri_t *xri = NULL;
-
-	xri = spdk_nvmf_fc_get_xri(hwqp);
-	if (!xri) {
-		goto done;
-	}
-
-	ctx = spdk_malloc(sizeof(fc_caller_ctx_t));
-	if (!ctx) {
-		goto done;
-	}
-	ctx->ctx = xri;
-	ctx->cb = cb;
-	ctx->cb_args = cb_args;
-
-	if (rjt) {
-		bls->payload_word0 = ((uint32_t)BCM_BLS_REJECT_CODE_UNABLE_TO_PERFORM << 16) |
-				     ((uint32_t)rjt_exp << 8);
-		bls->ar = TRUE;
-	} else {
-		bls->high_seq_cnt = UINT16_MAX;
-	}
-
-	bls->ox_id       = ox_id;
-	bls->rx_id       = rx_id;
-	bls->ct          = BCM_ELS_REQUEST64_CONTEXT_RPI;
-	bls->context_tag = rpi;
-	bls->xri_tag     = xri->xri;
-	bls->class       = BCM_ELS_REQUEST64_CLASS_3;
-	bls->command     = BCM_WQE_XMIT_BLS_RSP;
-	bls->qosd        = TRUE;
-	bls->cq_id       = UINT16_MAX;
-	bls->cmd_type    = BCM_CMD_XMIT_BLS_RSP64_WQE;
-
-	rc = bcm_post_wqe(hwqp, (uint8_t *)bls, TRUE, bcm_bls_cmpl_cb, ctx);
-done:
-	if (rc && ctx) {
-		spdk_free(ctx);
-	}
-
-	if (rc && xri) {
-		spdk_nvmf_fc_put_xri(hwqp, xri);
-	}
-
-	return rc;
-}

@@ -43,6 +43,42 @@
 
 
 SPDK_LOG_REGISTER_TRACE_FLAG("nvmf", SPDK_TRACE_NVMF)
+
+struct spdk_event *
+spdk_event_allocate(uint32_t lcore, spdk_event_fn fn, void *arg1, void *arg2)
+{
+	struct spdk_event *event = malloc(sizeof(struct spdk_event));
+
+	if (event == NULL) {
+		return NULL;
+	}
+
+	event->lcore = lcore;
+	event->fn = fn;
+	event->arg1 = arg1;
+	event->arg2 = arg2;
+
+	return event;
+}
+
+void
+spdk_event_call(struct spdk_event *event)
+{
+	if (event) {
+		if (event->fn) {
+			event->fn(event->arg1, event->arg2);
+		}
+		free(event);
+	}
+}
+
+unsigned
+spdk_env_get_master_lcore(void)
+{
+	return 0;
+
+}
+
 int
 spdk_nvmf_session_get_features_number_of_queues(struct spdk_nvmf_request *req)
 {
@@ -120,11 +156,11 @@ struct spdk_bdev_io *spdk_bdev_unmap(struct spdk_bdev *bdev, struct spdk_io_chan
 	return NULL;
 }
 
-struct spdk_nvmf_fc_request *
-get_fc_req(struct spdk_nvmf_request *req)
-{
-	return NULL;
-}
+//struct spdk_nvmf_fc_request *
+//get_fc_req(struct spdk_nvmf_request *req)
+//{
+//	return NULL;
+//}
 
 void
 spdk_trace_record(uint16_t tpoint_id, uint16_t poller_id, uint32_t size, uint64_t object_id,

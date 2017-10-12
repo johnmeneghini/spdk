@@ -44,7 +44,7 @@
 #include "spdk/queue.h"
 #include "spdk/scsi_spec.h"
 
-#define SPDK_BDEV_SMALL_RBUF_MAX_SIZE 8192
+#define SPDK_BDEV_SMALL_RBUF_MAX_SIZE 4096
 #define SPDK_BDEV_LARGE_RBUF_MAX_SIZE (64 * 1024)
 
 #define SPDK_BDEV_MAX_NAME_LENGTH		16
@@ -371,7 +371,6 @@ int spdk_bdev_read_fini(struct spdk_bdev_io *bdev_io, struct iovec *iov, int32_t
 int spdk_bdev_write_init(struct spdk_bdev *bdev, int32_t length, struct iovec *iov,
 			 int32_t *iovcnt, void **iovctx);
 int spdk_bdev_write_fini(struct spdk_bdev_io *bdev_io, struct iovec *iov, int32_t iovcnt);
-
 
 /**
  * Get the status of bdev_io as an NVMe status code.

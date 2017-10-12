@@ -283,7 +283,7 @@ spdk_fc_api_subsystem_init(void);
 bool
 spdk_fc_api_subsystem_exit(void);
 
-struct spdk_nvmf_fc_ops;
-void spdk_nvmf_fc_register_ops(struct spdk_nvmf_fc_ops *);
+struct spdk_nvmf_bcm_fc_master_ops;
+void spdk_nvmf_fc_register_ops(struct spdk_nvmf_bcm_fc_master_ops *);
 
 #endif // __SPDK_FC_TGT_API_H__

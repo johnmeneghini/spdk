@@ -37,10 +37,10 @@
 #include "ocs_tgt_api.h"
 #include "fc_adm_api.h"
 
-static struct spdk_nvmf_fc_ops *g_nvmf_fc_ops = NULL;
+static struct spdk_nvmf_bcm_fc_master_ops *g_nvmf_fc_ops = NULL;
 
 void
-spdk_nvmf_fc_register_ops(struct spdk_nvmf_fc_ops *ops)
+spdk_nvmf_fc_register_ops(struct spdk_nvmf_bcm_fc_master_ops *ops)
 {
 	g_nvmf_fc_ops = ops;
 }
@@ -221,7 +221,7 @@ static void
 ocs_cb_nport_create(uint8_t port_handle, spdk_fc_event_t event_type, 
 	void *ctx, spdk_err_t err)
 {
-	spdk_nport_create_args_t *args = ctx;
+	spdk_nvmf_bcm_fc_nport_create_args_t *args = ctx;
 
 	if (err) {
 		ocs_log_err(NULL, "%s: ocs%d nport create failed.\n",
@@ -246,10 +246,11 @@ int
 ocs_nvme_nport_create(ocs_sport_t *sport)
 {
 	ocs_t *ocs = sport->ocs;
-	spdk_nport_create_args_t *args;
+	spdk_nvmf_bcm_fc_nport_create_args_t *args;
 	spdk_err_t rc;
 
-	args = ocs_malloc(NULL, sizeof(spdk_nport_create_args_t), OCS_M_ZERO);
+	args = ocs_malloc(NULL, sizeof(spdk_nvmf_bcm_fc_nport_create_args_t),
+					  OCS_M_ZERO);
 	if (!args) {
 		goto err;
 	}
@@ -288,7 +289,7 @@ ocs_hw_port_cleanup(ocs_t *ocs)
 {
 	if (ocs && ocs->tgt_ocs.args) {
 		int i;
-		spdk_hw_port_init_args_t *args = ocs->tgt_ocs.args;
+		spdk_nvmf_bcm_fc_hw_port_init_args_t *args = ocs->tgt_ocs.args;
 
 		ocs_free_nvme_buffers(args->ls_queue.wq.buffer);
 		ocs_free_nvme_buffers(args->ls_queue.rq_hdr.buffer);
@@ -309,7 +310,7 @@ static void
 ocs_cb_hw_port_create(uint8_t port_handle, spdk_fc_event_t event_type,
 	void *ctx, spdk_err_t err)
 {
-	spdk_hw_port_init_args_t *args = ctx;
+	spdk_nvmf_bcm_fc_hw_port_init_args_t *args = ctx;
 	ocs_t *ocs = NULL;
 
 	if (err) {
@@ -339,12 +340,12 @@ ocs_nvme_hw_port_create(ocs_t *ocs)
 {
 	int i;
 	ocs_hal_t *hal = &ocs->hal;
-	spdk_hw_port_init_args_t *args;
+	spdk_nvmf_bcm_fc_hw_port_init_args_t *args;
 	spdk_err_t rc;
 
 	ocs->tgt_ocs.args = NULL;
 
-	args = ocs_malloc(NULL, sizeof(spdk_hw_port_init_args_t), OCS_M_ZERO);
+	args = ocs_malloc(NULL, sizeof(spdk_nvmf_bcm_fc_hw_port_init_args_t), OCS_M_ZERO);
 	if (!args) {
 		goto error;
 	}
@@ -466,7 +467,7 @@ ocs_cb_hw_port_online(uint8_t port_handle, spdk_fc_event_t event_type,
 	void *in, spdk_err_t err)
 {
 	struct port_cb_ctx *ctx = in;
-	spdk_hw_port_online_args_t *args = ctx->args;
+	spdk_nvmf_bcm_fc_hw_port_online_args_t *args = ctx->args;
 
 	if (err) {
 		ocs_log_err(NULL, "%s: ocs%d online failed.\n",
@@ -490,11 +491,12 @@ int
 ocs_nvme_process_hw_port_online(ocs_sport_t *sport)
 {
 	ocs_t *ocs = sport->ocs;
-	spdk_hw_port_online_args_t *args;
+	spdk_nvmf_bcm_fc_hw_port_online_args_t *args;
 	spdk_err_t rc;
 	struct port_cb_ctx *ctx = NULL;
 
-	args = ocs_malloc(NULL, sizeof(spdk_hw_port_online_args_t), OCS_M_ZERO);
+	args = ocs_malloc(NULL, sizeof(spdk_nvmf_bcm_fc_hw_port_online_args_t),
+					  OCS_M_ZERO);
 	if (!args) {
 		goto err;
 	}
@@ -532,7 +534,7 @@ static void
 ocs_cb_hw_port_offline(uint8_t port_handle, spdk_fc_event_t event_type, 
 	void *ctx, spdk_err_t err)
 {
-	spdk_hw_port_offline_args_t *args = ctx;
+	spdk_nvmf_bcm_fc_hw_port_offline_args_t *args = ctx;
 
 	if (err) {
 		ocs_log_err(NULL, "%s: ocs%d offline failed.\n",
@@ -549,10 +551,11 @@ int
 ocs_nvme_process_hw_port_offline(ocs_sport_t *sport)
 {
 	ocs_t *ocs = sport->ocs;
-	spdk_hw_port_offline_args_t *args;
+	spdk_nvmf_bcm_fc_hw_port_offline_args_t *args;
 	spdk_err_t rc;
 
-	args = ocs_malloc(NULL, sizeof(spdk_hw_port_offline_args_t), OCS_M_ZERO);
+	args = ocs_malloc(NULL, sizeof(spdk_nvmf_bcm_fc_hw_port_offline_args_t),
+					  OCS_M_ZERO);
 	if (!args) {
 		goto err;
 	}
@@ -587,10 +590,10 @@ ocs_cb_abts_cb(uint8_t port_handle, spdk_fc_event_t event_type,
 int
 ocs_nvme_process_abts(uint16_t oxid, uint16_t rxid, uint32_t rpi)
 {
-	spdk_abts_args_t *args;
+	spdk_nvmf_bcm_fc_abts_args_t *args;
 	spdk_err_t rc;
 
-	args = ocs_malloc(NULL, sizeof(spdk_abts_args_t), OCS_M_ZERO);
+	args = ocs_malloc(NULL, sizeof(spdk_nvmf_bcm_fc_abts_args_t), OCS_M_ZERO);
 	if (!args) {
 		goto err;
 	}
@@ -648,7 +651,7 @@ static void
 ocs_cb_prli(void *arg1, void *arg2)
 {
 	struct prl_cb_ctx *ctx = arg1;
-	spdk_hw_i_t_add_args_t *args = ctx->args;
+	spdk_nvmf_bcm_fc_hw_i_t_add_args_t *args = ctx->args;
 
 	if (!ctx->err) {
 		ocs_log_info(NULL, "%s: ocs%d NVME PRLI accepted.\n",
@@ -669,7 +672,7 @@ int
 ocs_nvme_process_prli(ocs_io_t *io, uint16_t ox_id)
 {
 	ocs_node_t *node;
-	spdk_hw_i_t_add_args_t  *args = NULL;
+	spdk_nvmf_bcm_fc_hw_i_t_add_args_t  *args = NULL;
 	struct prl_cb_ctx *ctx = NULL;
 	spdk_err_t rc;
 
@@ -677,7 +680,8 @@ ocs_nvme_process_prli(ocs_io_t *io, uint16_t ox_id)
 		goto err;
 	}
 
-	args = ocs_malloc(NULL, sizeof(spdk_hw_i_t_add_args_t), OCS_M_ZERO);
+	args = ocs_malloc(NULL, sizeof(spdk_nvmf_bcm_fc_hw_i_t_add_args_t),
+					  OCS_M_ZERO);
 	if (!args) {
 		goto err;
 	}
@@ -743,7 +747,7 @@ int
 ocs_nvme_process_prlo(ocs_io_t *io, uint16_t ox_id)
 {
 	ocs_node_t *node;
-	spdk_hw_i_t_delete_args_t *args = NULL;
+	spdk_nvmf_bcm_fc_hw_i_t_delete_args_t *args = NULL;
 	struct prl_cb_ctx *ctx = NULL;
 	spdk_err_t rc;
 
@@ -751,7 +755,8 @@ ocs_nvme_process_prlo(ocs_io_t *io, uint16_t ox_id)
 		goto err;
 	}
 
-	args = ocs_malloc(NULL, sizeof(spdk_hw_i_t_delete_args_t), OCS_M_ZERO);
+	args = ocs_malloc(NULL, sizeof(spdk_nvmf_bcm_fc_hw_i_t_delete_args_t),
+					  OCS_M_ZERO);
 	if (!args) {
 		goto err;
 	}
