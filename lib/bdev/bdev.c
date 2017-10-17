@@ -895,7 +895,7 @@ spdk_bdev_io_complete_nvme_status(struct spdk_bdev_io *bdev_io, int sct, int sc)
 }
 
 void
-spdk_bdev_io_get_nvme_status(const struct spdk_bdev_io *bdev_io, int *sct, int *sc)
+spdk_bdev_io_get_nvme_status(const struct spdk_bdev_io *bdev_io, int *sct, int *sc, int *dnr)
 {
 	assert(sct != NULL);
 	assert(sc != NULL);
@@ -903,6 +903,7 @@ spdk_bdev_io_get_nvme_status(const struct spdk_bdev_io *bdev_io, int *sct, int *
 	if (bdev_io->status == SPDK_BDEV_IO_STATUS_NVME_ERROR) {
 		*sct = bdev_io->error.nvme.sct;
 		*sc = bdev_io->error.nvme.sc;
+		*dnr = bdev_io->error.nvme.dnr;
 	} else if (bdev_io->status == SPDK_BDEV_IO_STATUS_SUCCESS) {
 		*sct = SPDK_NVME_SCT_GENERIC;
 		*sc = SPDK_NVME_SC_SUCCESS;
