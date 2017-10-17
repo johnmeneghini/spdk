@@ -351,6 +351,8 @@ struct spdk_bdev_io {
 			int sct;
 			/** NVMe status code */
 			int sc;
+			/** NVMe do not retry bit */
+			int dnr;
 		} nvme;
 		/** Only valid when status is SPDK_BDEV_IO_STATUS_SCSI_ERROR */
 		struct {

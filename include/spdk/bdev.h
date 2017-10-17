@@ -482,7 +482,7 @@ int spdk_bdev_write_fini(struct spdk_bdev_io *bdev_io, struct iovec *iov, int32_
  * \param sct Status Code Type return value, as defined by the NVMe specification.
  * \param sc Status Code return value, as defined by the NVMe specification.
  */
-void spdk_bdev_io_get_nvme_status(const struct spdk_bdev_io *bdev_io, int *sct, int *sc);
+void spdk_bdev_io_get_nvme_status(const struct spdk_bdev_io *bdev_io, int *sct, int *sc, int *dnr);
 
 /**
  * Get the status of bdev_io as a SCSI status code.

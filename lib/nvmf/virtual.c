@@ -144,15 +144,16 @@ nvmf_virtual_ctrlr_complete_cmd(struct spdk_bdev_io *bdev_io, bool success,
 	struct spdk_nvmf_request 	*req = cb_arg;
 	struct spdk_nvme_cpl 		*response = &req->rsp->nvme_cpl;
 	struct spdk_nvme_cmd            *cmd = &req->cmd->nvme_cmd;
-	int				sc, sct;
+	int				sc, sct, dnr;
 
 	if (cmd->opc == SPDK_NVME_OPC_DATASET_MANAGEMENT) {
 		free(req->unmap_bdesc);
 	}
 
-	spdk_bdev_io_get_nvme_status(bdev_io, &sc, &sct);
+	spdk_bdev_io_get_nvme_status(bdev_io, &sc, &sct, &dnr);
 	response->status.sc = sc;
 	response->status.sct = sct;
+	response->status.dnr = dnr;
 
 
 	/*
