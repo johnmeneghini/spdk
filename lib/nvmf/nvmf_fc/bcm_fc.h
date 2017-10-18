@@ -84,6 +84,7 @@ enum spdk_nvmf_bcm_fc_service_parameters {
 typedef enum spdk_fc_port_state_e {
 	SPDK_FC_PORT_OFFLINE = 0,
 	SPDK_FC_PORT_ONLINE = 1,
+	SPDK_FC_PORT_QUIESCED = 2,
 } spdk_fc_port_state_t;
 
 typedef enum spdk_fc_hwqp_state_e {
@@ -397,6 +398,7 @@ struct spdk_nvmf_bcm_fc_poller_api_del_connection_args {
 };
 
 struct spdk_nvmf_bcm_fc_poller_api_quiesce_queue_args {
+	void   *ctx;
 	struct spdk_nvmf_bcm_fc_hwqp *hwqp;
 	struct spdk_nvmf_bcm_fc_poller_api_cb_info cb_info;
 };
