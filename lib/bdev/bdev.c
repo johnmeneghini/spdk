@@ -43,7 +43,6 @@
 #include "spdk/queue.h"
 #include "spdk/nvme_spec.h"
 #include "spdk/scsi_spec.h"
-#include "nvmf/request.h"
 
 #include "spdk_internal/bdev.h"
 #include "spdk_internal/log.h"
@@ -559,8 +558,6 @@ spdk_bdev_put_io(struct spdk_bdev_io *bdev_io)
 		spdk_bdev_io_put_buf(bdev_io);
 	}
 
-	/* scrub the pointer before putting it back into the pool */
-	memset(bdev_io, 0, sizeof(*bdev_io));
 	spdk_mempool_put(g_bdev_mgr.bdev_io_pool, (void *)bdev_io);
 }
 
@@ -903,8 +900,6 @@ spdk_bdev_writev(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	struct spdk_bdev *bdev = desc->bdev;
 	struct spdk_bdev_io *bdev_io;
 	struct spdk_bdev_channel *channel = spdk_io_channel_get_ctx(ch);
-	struct spdk_nvmf_request *req = (struct spdk_nvmf_request *) cb_arg;
-
 	int rc;
 
 	if (!desc->write) {
@@ -928,10 +923,6 @@ spdk_bdev_writev(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	bdev_io->u.write.len = len;
 	bdev_io->u.write.offset = offset;
 	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb);
-
-	if (req->iovctx) {
-		bdev_io->caller_ctx = req->iovctx;
-	}
 
 	rc = spdk_bdev_io_submit(bdev_io);
 	if (rc < 0) {
@@ -1720,18 +1711,26 @@ int
 spdk_bdev_read_init(struct spdk_bdev *bdev, int32_t length, struct iovec *iov,
 		    int32_t *iovcnt)
 {
+	int rc = 0;
+
 	if (bdev->fn_table->init_read) {
-		return bdev->fn_table->init_read(length, iov, iovcnt);
+		rc = bdev->fn_table->init_read(length, iov, iovcnt);
 	} else {
-		return spdk_bdev_get_buff(iov, iovcnt, length);
+		rc = spdk_bdev_get_buff(iov, iovcnt, length);
 	}
+
+	if (rc) {
+		/* In case of failure reset iovcnt */
+		*iovcnt = 0;
+	}
+	return rc;
 }
 
 int
-spdk_bdev_read_fini(struct spdk_bdev_io *bdev_io, struct iovec *iov, int32_t iovcnt)
+spdk_bdev_read_fini(struct spdk_bdev_io *bdev_io, struct iovec *iov, int32_t iovcnt, void *iovctx)
 {
 	if (bdev_io->bdev->fn_table->fini_read) {
-		return bdev_io->bdev->fn_table->fini_read(iov, iovcnt, bdev_io->caller_ctx);
+		return bdev_io->bdev->fn_table->fini_read(iov, iovcnt, iovctx);
 	} else {
 		return spdk_bdev_put_buff(bdev_io, iov, iovcnt);
 	}
@@ -1741,18 +1740,26 @@ int
 spdk_bdev_write_init(struct spdk_bdev *bdev, int32_t length, struct iovec *iov, int32_t *iovcnt,
 		     void **iovctx)
 {
+	int rc = 0;
+
 	if (bdev->fn_table->init_write) {
-		return bdev->fn_table->init_write(length, iov, iovcnt, iovctx);
+		rc = bdev->fn_table->init_write(length, iov, iovcnt, iovctx);
 	} else {
-		return spdk_bdev_get_buff(iov, iovcnt, length);
+		rc = spdk_bdev_get_buff(iov, iovcnt, length);
 	}
+
+	if (rc) {
+		/* In case of failure reset iovcnt */
+		*iovcnt = 0;
+	}
+	return rc;
 }
 
 int
-spdk_bdev_write_fini(struct spdk_bdev_io *bdev_io, struct iovec *iov, int32_t iovcnt)
+spdk_bdev_write_fini(struct spdk_bdev_io *bdev_io, struct iovec *iov, int32_t iovcnt, void *iovctx)
 {
 	if (bdev_io->bdev->fn_table->fini_write) {
-		return bdev_io->bdev->fn_table->fini_write(iov, iovcnt, bdev_io->caller_ctx);
+		return bdev_io->bdev->fn_table->fini_write(iov, iovcnt, iovctx);
 	} else {
 		return spdk_bdev_put_buff(bdev_io, iov, iovcnt);
 	}

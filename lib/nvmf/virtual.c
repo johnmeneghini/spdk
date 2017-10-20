@@ -721,21 +721,28 @@ nvmf_virtual_ctrlr_process_io_cleanup(struct spdk_nvmf_request *req)
 		return;
 	}
 
+	/* Cleanup any buffers allocated by bdev. */
 	switch (cmd->opc) {
 	case SPDK_NVME_OPC_READ:
-		if (req->bdev_io) {
-			spdk_bdev_read_fini(req->bdev_io, req->iov, req->iovcnt);
-			spdk_bdev_free_io(req->bdev_io);
+		if (req->iovcnt) {
+			spdk_bdev_read_fini(req->bdev_io, req->iov, req->iovcnt, &req->iovctx);
 		}
 		break;
 	case SPDK_NVME_OPC_WRITE:
-		if (req->bdev_io) {
-			spdk_bdev_write_fini(req->bdev_io, req->iov, req->iovcnt);
-			spdk_bdev_free_io(req->bdev_io);
+		if (req->iovcnt) {
+			spdk_bdev_write_fini(req->bdev_io, req->iov, req->iovcnt, &req->iovctx);
 		}
 	default:
-		break; // Do nothing.
+		break; /* Do nothing. */
 	}
+
+	if (req->bdev_io) {
+		spdk_bdev_free_io(req->bdev_io);
+	}
+
+	req->iovcnt = 0;
+	req->iovctx = NULL;
+	req->bdev_io = NULL;
 	return;
 }
 
