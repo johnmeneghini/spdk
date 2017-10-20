@@ -118,7 +118,9 @@ typedef struct spdk_nvmf_bcm_fc_hw_port_reset_args spdk_nvmf_bcm_fc_hw_port_rese
  */
 struct spdk_nvmf_bcm_fc_nport_create_args {
 	uint8_t                     port_handle;
-	uint32_t                    nport_handle;
+	uint16_t                    nport_handle;
+	struct spdk_uuid   	    container_uuid; /* UUID of the nports container */
+	struct spdk_uuid   	    nport_uuid;     /* Unique UUID for the nport */
 	uint32_t                    d_id;
 	struct spdk_nvmf_bcm_fc_wwn fc_nodename;
 	struct spdk_nvmf_bcm_fc_wwn fc_portname;
@@ -170,6 +172,7 @@ typedef struct spdk_nvmf_bcm_fc_hw_i_t_add_args spdk_nvmf_bcm_fc_hw_i_t_add_args
 struct spdk_nvmf_bcm_fc_hw_i_t_delete_args {
 	uint8_t  port_handle;
 	uint32_t nport_handle;
+	uint16_t itn_handle;    // Only used by FC driver; unused in SPDK
 	uint32_t rpi;
 	uint32_t s_id;
 	void    *cb_ctx;
@@ -244,6 +247,34 @@ struct spdk_nvmf_bcm_fc_nport_del_cb_data {
 };
 
 typedef struct spdk_nvmf_bcm_fc_nport_del_cb_data spdk_nvmf_fc_nport_del_cb_data_t;
+
+/**
+ * \brief  The callback structure for it-delete
+ */
+struct spdk_nvmf_bcm_fc_i_t_del_cb_data {
+	struct spdk_nvmf_bcm_fc_nport            *nport;
+	struct spdk_nvmf_bcm_fc_remote_port_info *rport;
+	uint8_t                                   port_handle;
+	spdk_nvmf_bcm_fc_callback                 fc_cb_func;
+	void                                     *fc_cb_ctx;
+};
+
+typedef struct spdk_nvmf_bmc_fc_i_t_del_cb_data
+	spdk_nvmf_bcm_fc_i_t_del_cb_data_t;
+
+
+typedef void (*spdk_nvmf_bcm_fc_i_t_delete_assoc_cb_fn)(void *arg,
+		uint32_t err);
+/**
+ * \brief  The callback structure for the it-delete-assoc callback
+ */
+struct spdk_nvmf_bcm_fc_i_t_del_assoc_cb_data {
+	struct spdk_nvmf_bcm_fc_nport            *nport;
+	struct spdk_nvmf_bcm_fc_remote_port_info *rport;
+	uint8_t                                    port_handle;
+	spdk_nvmf_bcm_fc_i_t_delete_assoc_cb_fn    cb_func;
+	void                                      *cb_ctx;
+};
 
 /**
  * \brief	.
