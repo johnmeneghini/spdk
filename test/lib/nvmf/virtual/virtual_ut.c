@@ -226,7 +226,7 @@ spdk_bdev_read_init(struct spdk_bdev *bdev, int32_t length, struct iovec *iov,
 }
 
 int
-spdk_bdev_read_fini(struct spdk_bdev_io *bdev_io, struct iovec *iov, int32_t iovcnt)
+spdk_bdev_read_fini(struct spdk_bdev *bdev, struct iovec *iov, int32_t iovcnt, void *iovctx)
 {
 	return 0;
 }
@@ -239,7 +239,7 @@ spdk_bdev_write_init(struct spdk_bdev *bdev, int32_t length, struct iovec *iov, 
 }
 
 int
-spdk_bdev_write_fini(struct spdk_bdev_io *bdev_io, struct iovec *iov, int32_t iovcnt)
+spdk_bdev_write_fini(struct spdk_bdev *bdev, struct iovec *iov, int32_t iovcnt, void *iovctx)
 {
 	return 0;
 }
