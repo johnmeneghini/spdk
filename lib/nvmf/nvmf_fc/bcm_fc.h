@@ -292,6 +292,9 @@ struct spdk_nvmf_bcm_fc_request {
 	TAILQ_HEAD(, fc_caller_ctx) abort_cbs;
 };
 
+SPDK_STATIC_ASSERT(!offsetof(struct spdk_nvmf_bcm_fc_request, req),
+		   "FC request and NVMF request address doesnt match.");
+
 /*
  * NVMF FC Session
  */

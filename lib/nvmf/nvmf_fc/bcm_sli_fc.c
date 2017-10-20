@@ -196,13 +196,13 @@ nvmf_fc_rqpair_get_frame_buffer(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint16_t rqi
 int
 spdk_nvmf_bcm_fc_create_req_mempool(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 {
-	char *name = NULL;
+	char name[48];
 	static int unique_number = 0;
 
 	unique_number++;
 
 	/* Name should be unique, otherwise API fails. */
-	name = spdk_sprintf_alloc("NVMF_FC_REQ_POOL:%d", unique_number);
+	snprintf(name, sizeof(name), "NVMF_FC_REQ_POOL:%d", unique_number);
 	hwqp->fc_request_pool = spdk_mempool_create(name,
 				hwqp->queues.rq_hdr.num_buffers,
 				sizeof(struct spdk_nvmf_bcm_fc_request),
