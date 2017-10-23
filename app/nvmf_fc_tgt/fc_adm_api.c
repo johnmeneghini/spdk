@@ -32,7 +32,6 @@
  */
 
 #include "fc_adm_api.h"
-//#include "nvmf_tgt.h"
 #include <nvmf/transport.h>
 #include <nvmf/nvmf_internal.h>
 #include <spdk/trace.h>
@@ -44,6 +43,8 @@
 #ifndef DEV_VERIFY
 #define DEV_VERIFY assert
 #endif
+
+#define SPDK_NVMF_FC_LOG_STR_SIZE 255
 
 static void nvmf_fc_hw_port_init(void *arg1, void *arg2);
 static void nvmf_fc_hw_port_online(void *arg1, void *arg2);
@@ -75,6 +76,8 @@ nvmf_fc_tgt_get_next_lcore(uint32_t prev_core)
 
 	return UINT32_MAX;
 }
+
+/* ******************* PRIVATE HELPER FUNCTIONS - BEGIN ************** */
 
 /*
  * Re-initialize the FC-Port after an offline event.
@@ -157,17 +160,14 @@ nvmf_fc_tgt_hw_port_data_init(struct spdk_nvmf_bcm_fc_port *fc_port,
 	 * differentiate a free ring from an empty ring
 	 */
 	snprintf(poolname, sizeof(poolname), "xri_ring:%d", args->port_handle);
-	fc_port->xri_ring = spdk_ring_create(poolname, poweroftwo,
-					     SPDK_ENV_SOCKET_ID_ANY, 0);
+	fc_port->xri_ring = spdk_ring_create(poolname, poweroftwo, SPDK_ENV_SOCKET_ID_ANY, 0);
 	if (!fc_port->xri_ring) {
-		SPDK_ERRLOG("XRI ring alloc failed for port = %d\n",
-			    args->port_handle);
+		SPDK_ERRLOG("XRI ring alloc failed for port = %d\n", args->port_handle);
 		err = SPDK_ERR_NOMEM;
 		goto err;
 	}
 
-	ring_xri = spdk_calloc(fc_port->xri_count,
-			       sizeof(struct spdk_nvmf_bcm_fc_xri));
+	ring_xri = spdk_calloc(fc_port->xri_count, sizeof(struct spdk_nvmf_bcm_fc_xri));
 	if (!ring_xri) {
 		SPDK_ERRLOG("XRI ring buffer alloc failed\n");
 		err = SPDK_ERR_NOMEM;
@@ -183,12 +183,10 @@ nvmf_fc_tgt_hw_port_data_init(struct spdk_nvmf_bcm_fc_port *fc_port,
 	     fc_port->xri_count; count++) {
 		ring_xri_ptr->xri = fc_port->xri_base + count;
 
-		/* Since we created the ring with NO flags, this means it is
-		 * mp-mc safe */
+		/* Since we created the ring with NO flags, this means it is mp-mc safe */
 		rc = spdk_ring_enqueue(fc_port->xri_ring, (void *)ring_xri_ptr);
 		if (rc != 0) {
-			SPDK_ERRLOG("XRI ring buffer enqueue failed at count: %d\n",
-				    count);
+			SPDK_ERRLOG("XRI ring buffer enqueue failed at count: %d\n", count);
 			err = SPDK_ERR_INTERNAL;
 			goto err;
 		}
@@ -264,9 +262,7 @@ nvmf_fc_tgt_hw_port_offline_nport_delete(struct spdk_nvmf_bcm_fc_port *fc_port)
 	/* Mark the nport states to be zombie, if they exist */
 	if (fc_port && !TAILQ_EMPTY(&fc_port->nport_list)) {
 		TAILQ_FOREACH(nport, &fc_port->nport_list, link) {
-			(void)
-			spdk_nvmf_bcm_fc_nport_set_state(nport,
-							 SPDK_NVMF_BCM_FC_OBJECT_ZOMBIE);
+			(void)spdk_nvmf_bcm_fc_nport_set_state(nport, SPDK_NVMF_BCM_FC_OBJECT_ZOMBIE);
 		}
 	}
 }
@@ -315,8 +311,7 @@ nvmf_fc_tgt_nport_remove_listen_addr(struct spdk_nvmf_bcm_fc_nport *nport)
 static void
 nvmf_fc_tgt_i_t_delete_cb(void *args, uint32_t err)
 {
-	struct spdk_nvmf_bcm_fc_i_t_del_cb_data *cb_data =
-		(struct spdk_nvmf_bcm_fc_i_t_del_cb_data *) args;
+	struct spdk_nvmf_bcm_fc_i_t_del_cb_data  *cb_data     = args;
 	struct spdk_nvmf_bcm_fc_nport            *nport       = cb_data->nport;
 	struct spdk_nvmf_bcm_fc_remote_port_info *rport       = cb_data->rport;
 	spdk_nvmf_bcm_fc_callback                 cb_func     = cb_data->fc_cb_func;
@@ -327,6 +322,7 @@ nvmf_fc_tgt_i_t_delete_cb(void *args, uint32_t err)
 	uint32_t                                  assoc_count = rport->assoc_count;
 	uint32_t                                  nport_hdl   = nport->nport_hdl;
 	uint32_t                                  d_id        = nport->d_id;
+	char                                      log_str[SPDK_NVMF_FC_LOG_STR_SIZE];
 
 	/*
 	 * Assert on any delete failure.
@@ -338,26 +334,20 @@ nvmf_fc_tgt_i_t_delete_cb(void *args, uint32_t err)
 
 	/* TODO: Execute callbacks from callback vector */
 	if (cb_func != NULL) {
-		(void)cb_func(port_handle, SPDK_FC_IT_DELETE,
-			      cb_data->fc_cb_ctx, spdk_err);
+		(void)cb_func(port_handle, SPDK_FC_IT_DELETE, cb_data->fc_cb_ctx, spdk_err);
 	}
 
 out:
 	if (cb_data) {
 		spdk_free(cb_data);
 	}
-
+	sprintf(log_str, "IT delete assoc_cb on nport %d done, port_handle:%d s_id:%d d_id:%d rpi:%d "
+		"rport_assoc_count:%d rc = %d.\n",
+		nport_hdl, port_handle, s_id, d_id, rpi, assoc_count, err);
 	if (err != SPDK_SUCCESS) {
-		SPDK_ERRLOG("IT delete assoc_cb on nport %d done, port_handle:%d "
-			    "s_id:%d d_id:%d rpi:%d rport_assoc_count:%d rc = %d.\n",
-			    nport_hdl, port_handle, s_id, d_id, rpi,
-			    assoc_count, err);
+		SPDK_ERRLOG("%s", log_str);
 	} else {
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM,
-			      "IT delete assoc_cb on nport %d done, port_handle:%d "
-			      "s_id:%d d_id:%d rpi:%d rport_assoc_count:%d rc = %d.\n",
-			      nport_hdl, port_handle, s_id, d_id, rpi,
-			      assoc_count, err);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "%s", log_str);
 	}
 }
 
@@ -373,6 +363,7 @@ nvmf_fc_tgt_i_t_delete_assoc_cb(void *args, uint32_t err)
 	uint32_t                                       assoc_count = rport->assoc_count;
 	uint32_t                                       nport_hdl   = nport->nport_hdl;
 	uint32_t                                       d_id        = nport->d_id;
+	char                                       log_str[SPDK_NVMF_FC_LOG_STR_SIZE];
 
 	/*
 	 * Assert on any association delete failure. We continue to delete other
@@ -394,33 +385,30 @@ nvmf_fc_tgt_i_t_delete_assoc_cb(void *args, uint32_t err)
 	 */
 	if (nport && (0 == rport->assoc_count)) {
 		/* Remove the rport from the remote port list. */
-		if (spdk_nvmf_bcm_fc_nport_remove_rem_port(nport, rport) !=
-		    SPDK_SUCCESS) {
+		if (spdk_nvmf_bcm_fc_nport_remove_rem_port(nport, rport) != SPDK_SUCCESS) {
 			SPDK_ERRLOG("Error while removing rport from list.\n");
 			DEV_VERIFY(!"Error while removing rport from list.");
 		}
-		spdk_free(rport);
 
 		/* TODO: Execute callbacks from callback vector */
 		if (cb_func != NULL) {
 			/*
 			 * Callback function is provided by the caller
-			 * of nvmf_tgt_fc_i_t_delete_assoc().
+			 * of nvmf_fc_tgt_i_t_delete_assoc().
 			 */
 			(void)cb_func(cb_data->cb_ctx, SPDK_SUCCESS);
 		}
+		spdk_free(rport);
 		spdk_free(args);
 	}
 
+	sprintf(log_str, "IT delete assoc_cb on nport %d done, \
+s_id:%d d_id:%d rpi:%d rport_assoc_count:%d rc = %d.\n",
+		nport_hdl, s_id, d_id, rpi, assoc_count, err);
 	if (err != SPDK_SUCCESS) {
-		SPDK_ERRLOG("IT delete assoc_cb on nport %d done,  s_id:%d "
-			    "d_id:%d rpi:%d rport_assoc_count:%d rc = %d.\n",
-			    nport_hdl, s_id, d_id, rpi, assoc_count, err);
+		SPDK_ERRLOG("%s", log_str);
 	} else {
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM,
-			      "IT delete assoc_cb on nport %d done,  s_id:%d "
-			      "d_id:%d rpi:%d rport_assoc_count:%d rc = %d.\n",
-			      nport_hdl, s_id, d_id, rpi, assoc_count, err);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "%s", log_str);
 	}
 }
 
@@ -433,24 +421,23 @@ nvmf_fc_tgt_i_t_delete_assoc(struct spdk_nvmf_bcm_fc_nport *nport,
 			     spdk_nvmf_bcm_fc_i_t_delete_assoc_cb_fn cb_func,
 			     void *cb_ctx)
 {
-	spdk_err_t err = SPDK_SUCCESS;
-	struct spdk_nvmf_bcm_fc_association *assoc = NULL;
-	int assoc_err = 0;
-	uint32_t num_assoc = 0;
-	uint32_t num_assoc_del_scheduled = 0;
-	struct spdk_nvmf_bcm_fc_i_t_del_assoc_cb_data *cb_data = NULL;
-	uint8_t port_hdl = nport->port_hdl;
-	uint32_t s_id = rport->s_id;
-	uint32_t rpi = rport->rpi;
-	uint32_t assoc_count = rport->assoc_count;
+	spdk_err_t                                 err                     = SPDK_SUCCESS;
+	struct spdk_nvmf_bcm_fc_association       *assoc                   = NULL;
+	int                                        assoc_err               = 0;
+	uint32_t                                   num_assoc               = 0;
+	uint32_t                                   num_assoc_del_scheduled = 0;
+	struct spdk_nvmf_bcm_fc_i_t_del_assoc_cb_data *cb_data             = NULL;
+	uint8_t                                    port_hdl                = nport->port_hdl;
+	uint32_t                                   s_id                    = rport->s_id;
+	uint32_t                                   rpi                     = rport->rpi;
+	uint32_t                                   assoc_count             = rport->assoc_count;
+	char                                       log_str[SPDK_NVMF_FC_LOG_STR_SIZE];
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM,
-		      "IT delete associations on nport:%d begin.\n",
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "IT delete associations on nport:%d begin.\n",
 		      nport->nport_hdl);
 
-	if (spdk_nvmf_bcm_fc_rport_set_state(rport,
-					     SPDK_NVMF_BCM_FC_OBJECT_TO_BE_DELETED)
-	    != SPDK_SUCCESS) {
+	if (spdk_nvmf_bcm_fc_rport_set_state(rport, SPDK_NVMF_BCM_FC_OBJECT_TO_BE_DELETED) !=
+	    SPDK_SUCCESS) {
 		DEV_VERIFY(!"Err while setting rport state");
 		goto out;
 	}
@@ -459,11 +446,9 @@ nvmf_fc_tgt_i_t_delete_assoc(struct spdk_nvmf_bcm_fc_nport *nport,
 	 * Allocate memory for callback data.
 	 * This memory will be freed by the callback function.
 	 */
-	cb_data = spdk_malloc(sizeof(struct
-				     spdk_nvmf_bcm_fc_i_t_del_assoc_cb_data));
+	cb_data = spdk_malloc(sizeof(struct spdk_nvmf_bcm_fc_i_t_del_assoc_cb_data));
 	if (NULL == cb_data) {
-		SPDK_ERRLOG("Failed to allocate memory for cb_data on nport:%d.\n",
-			    nport->nport_hdl);
+		SPDK_ERRLOG("Failed to allocate memory for cb_data on nport:%d.\n", nport->nport_hdl);
 		err = SPDK_ERR_NOMEM;
 		goto out;
 	}
@@ -481,17 +466,17 @@ nvmf_fc_tgt_i_t_delete_assoc(struct spdk_nvmf_bcm_fc_nport *nport,
 		num_assoc++;
 		if (assoc->s_id == s_id) {
 			assoc_err = spdk_nvmf_bcm_fc_delete_association(nport,
-					assoc->assoc_id, false, false,
-					nvmf_fc_tgt_i_t_delete_assoc_cb,
-					cb_data);
+					assoc->assoc_id,
+					true /* send discon */,
+					false /* send abts */,
+					nvmf_fc_tgt_i_t_delete_assoc_cb, cb_data);
 			if (SPDK_SUCCESS != assoc_err) {
 				/*
 				 * Mark this association as zombie.
 				 */
 				err = SPDK_ERR_INTERNAL;
 				DEV_VERIFY(!"Error while deleting association");
-				(void)spdk_nvmf_bcm_fc_assoc_set_state(assoc,
-								       SPDK_NVMF_BCM_FC_OBJECT_ZOMBIE);
+				(void)spdk_nvmf_bcm_fc_assoc_set_state(assoc, SPDK_NVMF_BCM_FC_OBJECT_ZOMBIE);
 			} else {
 				num_assoc_del_scheduled++;
 			}
@@ -509,19 +494,13 @@ out:
 		nvmf_fc_tgt_i_t_delete_assoc_cb(cb_data, SPDK_SUCCESS);
 	}
 
+	sprintf(log_str, "IT delete associations on nport:%d end. "
+		"s_id:%d rpi:%d assoc_count:%d assoc:%d assoc_del_scheduled:%d rc:%d.\n",
+		port_hdl, s_id, rpi, assoc_count, num_assoc, num_assoc_del_scheduled, err);
 	if (err == SPDK_SUCCESS) {
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM,
-			      "IT delete associations on nport:%d end."
-			      "s_id:%d rpi:%d assoc_count:%d assoc:%d "
-			      "assoc_del_scheduled:%d rc:%d.\n",
-			      port_hdl, s_id, rpi, assoc_count, num_assoc,
-			      num_assoc_del_scheduled, err);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "%s", log_str);
 	} else {
-		SPDK_ERRLOG("IT delete associations on nport:%d end."
-			    "s_id:%d rpi:%d assoc_count:%d assoc:%d "
-			    "assoc_del_scheduled:%d rc:%d.\n",
-			    port_hdl, s_id, rpi, assoc_count, num_assoc,
-			    num_assoc_del_scheduled, err);
+		SPDK_ERRLOG("%s", log_str);
 	}
 }
 
@@ -546,8 +525,7 @@ spdk_nvmf_bcm_fc_master_enqueue_event(spdk_fc_event_t event_type, void *args,
 	spdk_err_t         err   = SPDK_SUCCESS;
 	struct spdk_event *event = NULL;
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "Enqueue event %d.\n",
-		      event_type);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "Enqueue event %d.\n", event_type);
 
 	if (event_type >= SPDK_FC_EVENT_MAX) {
 		SPDK_ERRLOG("Invalid spdk_fc_event_t %d.\n", event_type);
@@ -563,26 +541,21 @@ spdk_nvmf_bcm_fc_master_enqueue_event(spdk_fc_event_t event_type, void *args,
 
 	switch (event_type) {
 	case SPDK_FC_HW_PORT_INIT:
-		event = spdk_event_allocate(spdk_env_get_master_lcore(),
-					    nvmf_fc_hw_port_init, args, cb_func);
+		event = spdk_event_allocate(spdk_env_get_master_lcore(), nvmf_fc_hw_port_init, args, cb_func);
 		if (event == NULL) {
 			err = SPDK_ERR_NOMEM;
 		}
 		break;
 
 	case SPDK_FC_HW_PORT_ONLINE:
-		event = spdk_event_allocate(spdk_env_get_master_lcore(),
-					    nvmf_fc_hw_port_online, args,
-					    cb_func);
+		event = spdk_event_allocate(spdk_env_get_master_lcore(), nvmf_fc_hw_port_online, args, cb_func);
 		if (event == NULL) {
 			err = SPDK_ERR_NOMEM;
 		}
 		break;
 
 	case SPDK_FC_HW_PORT_OFFLINE:
-		event = spdk_event_allocate(spdk_env_get_master_lcore(),
-					    nvmf_fc_hw_port_offline, args,
-					    cb_func);
+		event = spdk_event_allocate(spdk_env_get_master_lcore(), nvmf_fc_hw_port_offline, args, cb_func);
 		if (event == NULL) {
 			err = SPDK_ERR_NOMEM;
 		}
@@ -592,42 +565,35 @@ spdk_nvmf_bcm_fc_master_enqueue_event(spdk_fc_event_t event_type, void *args,
 		break;
 
 	case SPDK_FC_NPORT_CREATE:
-		event = spdk_event_allocate(spdk_env_get_master_lcore(),
-					    nvmf_fc_nport_create, args,
-					    cb_func);
+		event = spdk_event_allocate(spdk_env_get_master_lcore(), nvmf_fc_nport_create, args, cb_func);
 		if (event == NULL) {
 			err = SPDK_ERR_NOMEM;
 		}
 		break;
 
 	case SPDK_FC_NPORT_DELETE:
-		event = spdk_event_allocate(spdk_env_get_master_lcore(),
-					    nvmf_fc_nport_delete, args,
-					    cb_func);
+		event = spdk_event_allocate(spdk_env_get_master_lcore(), nvmf_fc_nport_delete, args, cb_func);
 		if (event == NULL) {
 			err = SPDK_ERR_NOMEM;
 		}
 		break;
 
 	case SPDK_FC_IT_ADD:
-		event = spdk_event_allocate(spdk_env_get_master_lcore(),
-					    nvmf_fc_i_t_add, args, cb_func);
+		event = spdk_event_allocate(spdk_env_get_master_lcore(), nvmf_fc_i_t_add, args, cb_func);
 		if (event == NULL) {
 			err = SPDK_ERR_NOMEM;
 		}
 		break;
 
 	case SPDK_FC_IT_DELETE:
-		event = spdk_event_allocate(spdk_env_get_master_lcore(),
-					    nvmf_fc_i_t_delete, args, cb_func);
+		event = spdk_event_allocate(spdk_env_get_master_lcore(), nvmf_fc_i_t_delete, args, cb_func);
 		if (event == NULL) {
 			err = SPDK_ERR_NOMEM;
 		}
 		break;
 
 	case SPDK_FC_ABTS_RECV:
-		event = spdk_event_allocate(spdk_env_get_master_lcore(),
-					    nvmf_fc_abts_recv, args, cb_func);
+		event = spdk_event_allocate(spdk_env_get_master_lcore(), nvmf_fc_abts_recv, args, cb_func);
 		if (event == NULL) {
 			err = SPDK_ERR_NOMEM;
 		}
@@ -651,12 +617,9 @@ spdk_nvmf_bcm_fc_master_enqueue_event(spdk_fc_event_t event_type, void *args,
 done:
 
 	if (err == SPDK_SUCCESS) {
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM,
-			      "Enqueue event %d done successfully \n",
-			      event_type);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "Enqueue event %d done successfully \n", event_type);
 	} else {
-		SPDK_ERRLOG("Enqueue event %d failed, rc = %d\n",
-			    event_type, err);
+		SPDK_ERRLOG("Enqueue event %d failed, rc = %d\n", event_type, err);
 	}
 
 	if (event) {
@@ -694,8 +657,7 @@ nvmf_fc_hw_port_init(void *arg1, void *arg2)
 	 */
 	fc_port = spdk_malloc(sizeof(struct spdk_nvmf_bcm_fc_port));
 	if (fc_port == NULL) {
-		SPDK_ERRLOG("Failed to allocate memory for fc_port %d.\n",
-			    args->port_handle);
+		SPDK_ERRLOG("Failed to allocate memory for fc_port %d.\n", args->port_handle);
 		err = SPDK_ERR_NOMEM;
 		goto err;
 	}
@@ -706,8 +668,7 @@ nvmf_fc_hw_port_init(void *arg1, void *arg2)
 	err = nvmf_fc_tgt_hw_port_data_init(fc_port, args);
 
 	if (err != SPDK_SUCCESS) {
-		SPDK_ERRLOG("Data initialization failed for fc_port %d.\n",
-			    args->port_handle);
+		SPDK_ERRLOG("Data initialization failed for fc_port %d.\n", args->port_handle);
 		DEV_VERIFY(!"Data initialization failed for fc_port");
 		goto err;
 	}
@@ -742,12 +703,10 @@ err:
 		spdk_free(fc_port);
 	}
 	if (cb_func != NULL) {
-		(void)cb_func(args->port_handle, SPDK_FC_HW_PORT_INIT,
-			      args->cb_ctx, err);
+		(void)cb_func(args->port_handle, SPDK_FC_HW_PORT_INIT, args->cb_ctx, err);
 	}
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM,
-		      "HW port %d initialize done, rc = %d.\n",
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "HW port %d initialize done, rc = %d.\n",
 		      args->port_handle, err);
 }
 
@@ -774,8 +733,7 @@ nvmf_fc_hw_port_online(void *arg1, void *arg2)
 		 */
 		err = spdk_nvmf_bcm_fc_port_set_online(fc_port);
 		if (err != SPDK_SUCCESS) {
-			SPDK_ERRLOG("Hw port %d online failed. rc = %d\n",
-				    fc_port->port_hdl, err);
+			SPDK_ERRLOG("Hw port %d online failed. rc = %d\n", fc_port->port_hdl, err);
 			DEV_VERIFY(!"Hw port online failed");
 			goto out;
 		}
@@ -783,7 +741,7 @@ nvmf_fc_hw_port_online(void *arg1, void *arg2)
 		/*
 		 * 3. Register a poller function to poll the LS queue.
 		 */
-		hwqp                       = &fc_port->ls_queue;
+		hwqp = &fc_port->ls_queue;
 		(void)spdk_nvmf_bcm_fc_hwqp_port_set_online(hwqp);
 		spdk_nvmf_bcm_fc_add_poller(hwqp);
 
@@ -792,25 +750,22 @@ nvmf_fc_hw_port_online(void *arg1, void *arg2)
 		 *    hwqp poller for each.
 		 */
 		for (i = 0; i < (int)fc_port->max_io_queues; i++) {
-			hwqp          = &fc_port->io_queues[i];
+			hwqp = &fc_port->io_queues[i];
 			(void)spdk_nvmf_bcm_fc_hwqp_port_set_online(hwqp);
 			spdk_nvmf_bcm_fc_add_poller(hwqp);
 		}
 	} else {
-		SPDK_ERRLOG("Unable to find the SPDK FC port %d\n",
-			    args->port_handle);
+		SPDK_ERRLOG("Unable to find the SPDK FC port %d\n", args->port_handle);
 		err = SPDK_ERR_INVALID_ARGS;
 	}
 
 out:
 	if (cb_func != NULL) {
-		(void)cb_func(args->port_handle, SPDK_FC_HW_PORT_ONLINE,
-			      args->cb_ctx, err);
+		(void)cb_func(args->port_handle, SPDK_FC_HW_PORT_ONLINE, args->cb_ctx, err);
 	}
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM,
-		      "HW port %d online done, rc = %d.\n",
-		      args->port_handle, err);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "HW port %d online done, rc = %d.\n", args->port_handle,
+		      err);
 }
 
 /*
@@ -819,13 +774,12 @@ out:
 static void
 nvmf_fc_hw_port_offline(void *arg1, void *arg2)
 {
-	struct spdk_nvmf_bcm_fc_port              *fc_port = NULL;
-	struct spdk_nvmf_bcm_fc_hwqp              *hwqp    = NULL;
-	spdk_nvmf_bcm_fc_hw_port_offline_args_t   *args    =
-		(spdk_nvmf_bcm_fc_hw_port_offline_args_t *)arg1;
-	spdk_nvmf_bcm_fc_callback                  cb_func = (spdk_nvmf_bcm_fc_callback)arg2;
-	int                                        i       = 0;
-	spdk_err_t                                 err     = SPDK_SUCCESS;
+	struct spdk_nvmf_bcm_fc_port *fc_port = NULL;
+	struct spdk_nvmf_bcm_fc_hwqp *hwqp    = NULL;
+	spdk_nvmf_bcm_fc_hw_port_offline_args_t *args    = (spdk_nvmf_bcm_fc_hw_port_offline_args_t *)arg1;
+	spdk_nvmf_bcm_fc_callback     cb_func = (spdk_nvmf_bcm_fc_callback)arg2;
+	int                           i       = 0;
+	spdk_err_t                    err     = SPDK_SUCCESS;
 
 	/*
 	 * 1. Get the fc port using the port handle.
@@ -837,8 +791,7 @@ nvmf_fc_hw_port_offline(void *arg1, void *arg2)
 		 */
 		err = spdk_nvmf_bcm_fc_port_set_offline(fc_port);
 		if (err != SPDK_SUCCESS) {
-			SPDK_ERRLOG("Hw port %d offline failed. rc = %d\n",
-				    fc_port->port_hdl, err);
+			SPDK_ERRLOG("Hw port %d offline failed. rc = %d\n", fc_port->port_hdl, err);
 			DEV_VERIFY(0 != "HW port offline failed");
 			goto out;
 		}
@@ -866,18 +819,16 @@ nvmf_fc_hw_port_offline(void *arg1, void *arg2)
 		 */
 		nvmf_fc_tgt_hw_port_offline_nport_delete(fc_port);
 	} else {
-		SPDK_ERRLOG("Unable to find the SPDK FC port %d\n",
-			    args->port_handle);
+		SPDK_ERRLOG("Unable to find the SPDK FC port %d\n", args->port_handle);
 		err = SPDK_ERR_INVALID_ARGS;
 	}
 out:
 	if (cb_func != NULL) {
-		(void)cb_func(args->port_handle, SPDK_FC_HW_PORT_OFFLINE,
-			      args->cb_ctx, err);
+		(void)cb_func(args->port_handle, SPDK_FC_HW_PORT_OFFLINE, args->cb_ctx, err);
 	}
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "HW port %d offline done, rc = %d.\n",
-		      args->port_handle, err);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "HW port %d offline done, rc = %d.\n", args->port_handle,
+		      err);
 }
 
 /*
@@ -907,8 +858,8 @@ nvmf_fc_nport_create(void *arg1, void *arg2)
 	 */
 	nport = spdk_nvmf_bcm_fc_nport_get(args->port_handle, args->nport_handle);
 	if (nport != NULL) {
-		SPDK_ERRLOG("Duplicate SPDK FC nport %d exists for FC port:%d.\n",
-			    args->nport_handle, args->port_handle);
+		SPDK_ERRLOG("Duplicate SPDK FC nport %d exists for FC port:%d.\n", args->nport_handle,
+			    args->port_handle);
 		err = SPDK_ERR_INVALID_ARGS;
 		goto out;
 	}
@@ -952,13 +903,11 @@ out:
 	}
 
 	if (cb_func != NULL) {
-		(void)cb_func(args->port_handle, SPDK_FC_NPORT_CREATE,
-			      args->cb_ctx, err);
+		(void)cb_func(args->port_handle, SPDK_FC_NPORT_CREATE, args->cb_ctx, err);
 	}
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM,
-		      "FC nport %d create done, rc = %d.\n",
-		      args->port_handle, err);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "FC nport %d create done, rc = %d.\n", args->port_handle,
+		      err);
 }
 
 static void
@@ -1009,8 +958,7 @@ nvmf_fc_tgt_delete_nport_cb(uint8_t port_handle, spdk_fc_event_t event_type,
 
 		/* TODO: Execute callbacks from callback vector */
 		if (cb_func != NULL) {
-			(void)cb_func(cb_data->port_handle, SPDK_FC_NPORT_DELETE,
-				      cb_data->fc_cb_ctx, spdk_err);
+			(void)cb_func(cb_data->port_handle, SPDK_FC_NPORT_DELETE, cb_data->fc_cb_ctx, spdk_err);
 		}
 		spdk_free(cb_data);
 	}
@@ -1042,8 +990,8 @@ nvmf_fc_nport_delete(void *arg1, void *arg2)
 	 */
 	nport = spdk_nvmf_bcm_fc_nport_get(args->port_handle, args->nport_handle);
 	if (nport == NULL) {
-		SPDK_ERRLOG("Unable to find the SPDK FC nport %d for FC Port: %d.\n",
-			    args->nport_handle, args->port_handle);
+		SPDK_ERRLOG("Unable to find the SPDK FC nport %d for FC Port: %d.\n", args->nport_handle,
+			    args->port_handle);
 		err = SPDK_ERR_INVALID_ARGS;
 		goto out;
 	}
@@ -1053,8 +1001,7 @@ nvmf_fc_nport_delete(void *arg1, void *arg2)
 	 */
 	cb_data = spdk_malloc(sizeof(struct spdk_nvmf_bcm_fc_nport_del_cb_data));
 	if (NULL == cb_data) {
-		SPDK_ERRLOG("Failed to allocate memory for cb_data %d.\n",
-			    args->nport_handle);
+		SPDK_ERRLOG("Failed to allocate memory for cb_data %d.\n", args->nport_handle);
 		err = SPDK_ERR_NOMEM;
 		goto out;
 	}
@@ -1063,8 +1010,7 @@ nvmf_fc_nport_delete(void *arg1, void *arg2)
 	 * 3. Begin nport tear down
 	 */
 	if (nport->nport_state == SPDK_NVMF_BCM_FC_OBJECT_CREATED) {
-		err = spdk_nvmf_bcm_fc_nport_set_state(nport,
-						       SPDK_NVMF_BCM_FC_OBJECT_TO_BE_DELETED);
+		err = spdk_nvmf_bcm_fc_nport_set_state(nport, SPDK_NVMF_BCM_FC_OBJECT_TO_BE_DELETED);
 	} else if (nport->nport_state == SPDK_NVMF_BCM_FC_OBJECT_TO_BE_DELETED) {
 		/*
 		 * Deletion of this nport already in progress. Register callback
@@ -1105,26 +1051,21 @@ nvmf_fc_nport_delete(void *arg1, void *arg2)
 	 */
 	if (spdk_nvmf_bcm_fc_nport_is_rport_empty(nport)) {
 		/* No rports to delete. Complete the nport deletion. */
-		nvmf_fc_tgt_delete_nport_cb(nport->port_hdl,
-					    SPDK_FC_NPORT_DELETE, cb_data,
-					    SPDK_SUCCESS);
+		nvmf_fc_tgt_delete_nport_cb(nport->port_hdl, SPDK_FC_NPORT_DELETE, cb_data, SPDK_SUCCESS);
 		goto out;
 	}
 
 	TAILQ_FOREACH(rem_port, &nport->rem_port_list, link) {
 		rport_cnt++;
-		it_del_args = spdk_malloc(
-				      sizeof(spdk_nvmf_bcm_fc_hw_i_t_delete_args_t));
+		it_del_args               = spdk_malloc(sizeof(spdk_nvmf_bcm_fc_hw_i_t_delete_args_t));
 		it_del_args->port_handle  = nport->port_hdl;
 		it_del_args->nport_handle = nport->nport_hdl;
 		it_del_args->cb_ctx       = (void *)cb_data;
 		it_del_args->rpi          = rem_port->rpi;
 		it_del_args->s_id         = rem_port->s_id;
 
-		spdk_evt = spdk_event_allocate(spdk_env_get_master_lcore(),
-					       nvmf_fc_i_t_delete,
-					       (void *)it_del_args,
-					       nvmf_fc_tgt_delete_nport_cb);
+		spdk_evt = spdk_event_allocate(spdk_env_get_master_lcore(), nvmf_fc_i_t_delete,
+					       (void *)it_del_args, nvmf_fc_tgt_delete_nport_cb);
 		if (spdk_evt == NULL) {
 			err = SPDK_ERR_NOMEM;
 			SPDK_ERRLOG("SPDK_FC_IT_DELETE failed for rport with "
@@ -1148,8 +1089,7 @@ out:
 			spdk_free(cb_data);
 		}
 		if (cb_func != NULL) {
-			(void)cb_func(args->port_handle, SPDK_FC_NPORT_DELETE,
-				      args->cb_ctx, err);
+			(void)cb_func(args->port_handle, SPDK_FC_NPORT_DELETE, args->cb_ctx, err);
 		}
 	} else {
 		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM,
@@ -1176,8 +1116,7 @@ nvmf_fc_i_t_add(void *arg1, void *arg2)
 	 */
 	nport = spdk_nvmf_bcm_fc_nport_get(args->port_handle, args->nport_handle);
 	if (nport == NULL) {
-		SPDK_ERRLOG("Unable to find the SPDK FC nport %d\n",
-			    args->nport_handle);
+		SPDK_ERRLOG("Unable to find the SPDK FC nport %d\n", args->nport_handle);
 		err = SPDK_ERR_INVALID_ARGS;
 		goto out;
 	}
@@ -1213,7 +1152,9 @@ nvmf_fc_i_t_add(void *arg1, void *arg2)
 	/*
 	 * 5. Add remote port to nport
 	 */
-	(void)spdk_nvmf_bcm_fc_nport_add_rem_port(nport, rport);
+	if (spdk_nvmf_bcm_fc_nport_add_rem_port(nport, rport) != SPDK_SUCCESS) {
+		DEV_VERIFY(!"Error while adding rport to list");
+	};
 
 	/*
 	 * TODO: 6. Do we validate the initiators service parameters?
@@ -1252,20 +1193,19 @@ nvmf_fc_i_t_delete(void *arg1, void *arg2)
 	struct spdk_nvmf_bcm_fc_i_t_del_cb_data  *cb_data    = NULL;
 	struct spdk_nvmf_bcm_fc_remote_port_info *rport_iter = NULL;
 	struct spdk_nvmf_bcm_fc_remote_port_info *rport      = NULL;
-	uint32_t                                   num_rport = 0;
+	uint32_t                                  num_rport  = 0;
+	char                                      log_str[SPDK_NVMF_FC_LOG_STR_SIZE];
 
 	args    = (spdk_nvmf_bcm_fc_hw_i_t_delete_args_t *)arg1;
 	cb_func = (spdk_nvmf_bcm_fc_callback)arg2;
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "IT delete on nport:%d begin.\n",
-		      args->nport_handle);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "IT delete on nport:%d begin.\n", args->nport_handle);
 
 	/*
 	 * Make sure the nport port exists. If it does not, error out.
 	 */
 	nport = spdk_nvmf_bcm_fc_nport_get(args->port_handle, args->nport_handle);
 	if (nport == NULL) {
-		SPDK_ERRLOG("Unable to find the SPDK FC nport:%d\n",
-			    args->nport_handle);
+		SPDK_ERRLOG("Unable to find the SPDK FC nport:%d\n", args->nport_handle);
 		rc = SPDK_ERR_INVALID_ARGS;
 		goto out;
 	}
@@ -1300,8 +1240,7 @@ nvmf_fc_i_t_delete(void *arg1, void *arg2)
 	 */
 	cb_data = spdk_malloc(sizeof(struct spdk_nvmf_bcm_fc_i_t_del_cb_data));
 	if (NULL == cb_data) {
-		SPDK_ERRLOG("Failed to allocate memory for cb_data for "
-			    "nport:%d.\n", args->nport_handle);
+		SPDK_ERRLOG("Failed to allocate memory for cb_data for nport:%d.\n", args->nport_handle);
 		rc = SPDK_ERR_NOMEM;
 		goto out;
 	}
@@ -1314,7 +1253,7 @@ nvmf_fc_i_t_delete(void *arg1, void *arg2)
 
 	/*
 	 * We have successfully found a rport to delete. Call
-	 * nvmf_tgt_fc_i_t_delete_assoc(), which will perform further
+	 * nvmf_fc_tgt_i_t_delete_assoc(), which will perform further
 	 * IT-delete processing as well as free the cb_data.
 	 */
 	nvmf_fc_tgt_i_t_delete_assoc(nport, rport, nvmf_fc_tgt_i_t_delete_cb,
@@ -1326,22 +1265,20 @@ out:
 		 * We have entered here because either we encountered an
 		 * error, or we did not find a rport to delete.
 		 * As a result, we will not call the function
-		 * nvmf_tgt_fc_i_t_delete_assoc() for further IT-delete
+		 * nvmf_fc_tgt_i_t_delete_assoc() for further IT-delete
 		 * processing. Therefore, execute the callback function now.
 		 */
 		if (cb_func != NULL) {
-			(void)cb_func(args->port_handle, SPDK_FC_IT_DELETE,
-				      args->cb_ctx, rc);
+			(void)cb_func(args->port_handle, SPDK_FC_IT_DELETE, args->cb_ctx, rc);
 		}
 	}
 
+	sprintf(log_str, "IT delete on nport:%d end. num_rport:%d rc = %d.\n",
+		args->nport_handle, num_rport, rc);
 	if (rc != SPDK_SUCCESS) {
-		SPDK_ERRLOG("IT delete on nport:%d end. num_rport:%d rc = %d.\n",
-			    args->nport_handle, num_rport, rc);
+		SPDK_ERRLOG("%s", log_str);
 	} else {
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM,
-			      "IT delete on nport:%d end. num_rport:%d rc = %d.\n",
-			      args->nport_handle, num_rport, rc);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "%s", log_str);
 	}
 }
 
@@ -1361,8 +1298,7 @@ nvmf_fc_abts_recv(void *arg1, void *arg2)
 	 */
 	nport = spdk_nvmf_bcm_fc_nport_get(args->port_handle, args->nport_handle);
 	if (nport == NULL) {
-		SPDK_ERRLOG("Unable to find the SPDK FC nport %d\n",
-			    args->nport_handle);
+		SPDK_ERRLOG("Unable to find the SPDK FC nport %d\n", args->nport_handle);
 		err = SPDK_ERR_INVALID_ARGS;
 		goto out;
 	}
@@ -1370,20 +1306,21 @@ nvmf_fc_abts_recv(void *arg1, void *arg2)
 	/*
 	 * 2. Pass the received ABTS-LS to the library for handling.
 	 */
-	spdk_nvmf_bcm_fc_handle_abts_frame(nport, args->rpi, args->oxid,
-					   args->rxid);
+	spdk_nvmf_bcm_fc_handle_abts_frame(nport, args->rpi, args->oxid, args->rxid);
 
 out:
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "FC ABTS received. RPI:%d, oxid:%d, rxid:%d\n", args->rpi,
+		      args->oxid, args->rxid);
 	if (cb_func != NULL) {
 		/*
 		 * Passing pointer to the args struct as the first argument.
 		 * The cb_func should handle this appropriately.
 		 */
 		(void)cb_func(args->port_handle, SPDK_FC_ABTS_RECV, args, err);
+	} else {
+		/* No callback set, free the args */
+		spdk_free(args);
 	}
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM,
-		      "FC ABTS received. RPI:%d, Oxid:%d, rxid:%d\n",
-		      args->rpi, args->oxid, args->rxid);
 }
 
 SPDK_LOG_REGISTER_TRACE_FLAG("nvmf_bcm_fc_adm", SPDK_TRACE_NVMF_BCM_FC_ADM);

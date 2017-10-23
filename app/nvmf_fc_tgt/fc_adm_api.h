@@ -259,12 +259,11 @@ struct spdk_nvmf_bcm_fc_i_t_del_cb_data {
 	void                                     *fc_cb_ctx;
 };
 
-typedef struct spdk_nvmf_bmc_fc_i_t_del_cb_data
-	spdk_nvmf_bcm_fc_i_t_del_cb_data_t;
+typedef struct spdk_nvmf_bmc_fc_i_t_del_cb_data spdk_nvmf_bcm_fc_i_t_del_cb_data_t;
 
 
-typedef void (*spdk_nvmf_bcm_fc_i_t_delete_assoc_cb_fn)(void *arg,
-		uint32_t err);
+typedef void (*spdk_nvmf_bcm_fc_i_t_delete_assoc_cb_fn)(void *arg, uint32_t err);
+
 /**
  * \brief  The callback structure for the it-delete-assoc callback
  */
