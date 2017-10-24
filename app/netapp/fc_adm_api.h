@@ -65,132 +65,152 @@ typedef enum {
 } spdk_fc_event_t;
 
 /**
- * \struct fct_hw_port_create_args_t
+ * \struct spdk_nvmf_bcm_fc_hw_port_init_args
  *
  * \brief  Arguemnts for HW port init event.
  */
-typedef struct {
+struct spdk_nvmf_bcm_fc_hw_port_init_args {
 	uint8_t                           port_handle;
 	uint32_t                          xri_base;
 	uint32_t                          xri_count;
 	struct spdk_nvmf_bcm_fc_hw_queues ls_queue;
 	uint32_t                          io_queue_cnt;
 	struct spdk_nvmf_bcm_fc_hw_queues io_queues[NVMF_FC_MAX_IO_QUEUES];
-	void *                            cb_ctx;
-} spdk_hw_port_init_args_t;
+	void                             *cb_ctx;
+};
+
+typedef struct spdk_nvmf_bcm_fc_hw_port_init_args spdk_nvmf_bcm_fc_hw_port_init_args_t;
 
 /**
- * \struct fct_hw_port_online_args_t
+ * \struct spdk_nvmf_bcm_fc_hw_port_online_args
  *
  * \brief  Arguemnts for HW port online event.
  */
-typedef struct {
+struct spdk_nvmf_bcm_fc_hw_port_online_args {
 	uint8_t port_handle;
-	void *  cb_ctx;
-} spdk_hw_port_online_args_t;
+	void   *cb_ctx;
+};
+
+typedef struct spdk_nvmf_bcm_fc_hw_port_online_args spdk_nvmf_bcm_fc_hw_port_online_args_t;
 
 /**
- * \struct fct_hw_port_offline_args_t
+ * \struct spdk_nvmf_bcm_fc_hw_port_offline_args
  *
  * \brief  Arguemnts for HW port offline event.
  */
-typedef struct {
+struct spdk_nvmf_bcm_fc_hw_port_offline_args {
 	uint8_t port_handle;
-	void *  cb_ctx;
-} spdk_hw_port_offline_args_t;
+	void   *cb_ctx;
+};
+
+typedef struct spdk_nvmf_bcm_fc_hw_port_offline_args spdk_nvmf_bcm_fc_hw_port_offline_args_t;
 
 /**
- * \struct fct_hw_port_reset_args_t
+ * \struct spdk_nvmf_bcm_fc_hw_port_reset_args
  *
  * \brief  Arguemnts for HW port reset event.
  */
-typedef struct {
+struct spdk_nvmf_bcm_fc_hw_port_reset_args {
 	uint8_t port_handle;
-	void *  cb_ctx;
-} spdk_hw_port_reset_args_t;
+	void   *cb_ctx;
+};
+
+typedef struct spdk_nvmf_bcm_fc_hw_port_reset_args spdk_nvmf_bcm_fc_hw_port_reset_args_t;
 
 /**
- * \struct fct_nport_add_args_t
+ * \struct spdk_nvmf_bcm_fc_nport_create_args
  *
  * \brief  Arguemnts for n-port add event.
  */
-typedef struct {
+struct spdk_nvmf_bcm_fc_nport_create_args {
 	uint8_t                     port_handle;
 	uint16_t                    nport_handle;
-	struct spdk_uuid            container_uuid; /* UUID of the nports container */
-	struct spdk_uuid            nport_uuid;     /* Unique UUID for the nport */
+	struct spdk_uuid   	    container_uuid; /* UUID of the nports container */
+	struct spdk_uuid   	    nport_uuid;     /* Unique UUID for the nport */
 	uint32_t                    d_id;
 	struct spdk_nvmf_bcm_fc_wwn fc_nodename;
 	struct spdk_nvmf_bcm_fc_wwn fc_portname;
 	uint32_t                    subsys_id; /* Subsystemid */
-	void *                      cb_ctx;
-} spdk_nport_create_args_t;
+	void                       *cb_ctx;
+};
+
+typedef struct spdk_nvmf_bcm_fc_nport_create_args spdk_nvmf_bcm_fc_nport_create_args_t;
 
 /**
- * \struct fct_nport_delete_args_t
+ * \struct spdk_nvmf_bcm_fc_nport_delete_args
  *
  * \brief  Arguemnts for n-port delete event.
  */
-typedef struct {
+struct spdk_nvmf_bcm_fc_nport_delete_args {
 	uint8_t  port_handle;
 	uint32_t nport_handle;
 	uint32_t subsys_id; /* Subsystemid */
-	void *   cb_ctx;
-} spdk_nport_delete_args_t;
+	void    *cb_ctx;
+};
+
+typedef struct spdk_nvmf_bcm_fc_nport_delete_args spdk_nvmf_bcm_fc_nport_delete_args_t;
 
 /**
- * \struct spdk_hw_i_t_add_args_t
+ * \struct spdk_nvmf_bcm_fc_hw_i_t_add_args
  *
  * \brief  Arguemnts for I_T add event.
  */
-typedef struct {
-	uint8_t                     port_handle;
-	uint32_t                    nport_handle;
-	uint16_t                    itn_handle;
-	uint32_t                    rpi;
-	uint32_t                    s_id;
-	uint32_t                    initiator_prli_info;
-	uint32_t                    target_prli_info; /* populated by the SPDK master */
-	struct spdk_nvmf_bcm_fc_wwn fc_nodename;
-	struct spdk_nvmf_bcm_fc_wwn fc_portname;
-	void *                      cb_ctx;
-} spdk_hw_i_t_add_args_t;
+struct spdk_nvmf_bcm_fc_hw_i_t_add_args {
+	uint8_t                      port_handle;
+	uint32_t                     nport_handle;
+	uint16_t                     itn_handle;
+	uint32_t                     rpi;
+	uint32_t                     s_id;
+	uint32_t                     initiator_prli_info;
+	uint32_t                     target_prli_info; /* populated by the SPDK master */
+	struct spdk_nvmf_bcm_fc_wwn  fc_nodename;
+	struct spdk_nvmf_bcm_fc_wwn  fc_portname;
+	void                        *cb_ctx;
+};
+
+typedef struct spdk_nvmf_bcm_fc_hw_i_t_add_args spdk_nvmf_bcm_fc_hw_i_t_add_args_t;
 
 /**
- * \struct spdk_hw_i_t_delete_args_t
+ * \struct spdk_nvmf_bcm_fc_hw_i_t_delete_args
  *
  * \brief  Arguemnts for I_T delete event.
  */
-typedef struct {
+struct spdk_nvmf_bcm_fc_hw_i_t_delete_args {
 	uint8_t  port_handle;
 	uint32_t nport_handle;
 	uint16_t itn_handle;    // Only used by FC driver; unused in SPDK
 	uint32_t rpi;
 	uint32_t s_id;
-	void *   cb_ctx;
-} spdk_hw_i_t_delete_args_t;
+	void    *cb_ctx;
+};
+
+typedef struct spdk_nvmf_bcm_fc_hw_i_t_delete_args spdk_nvmf_bcm_fc_hw_i_t_delete_args_t;
 
 /**
- * \struct fct_abts_args_t
+ * \struct spdk_nvmf_bcm_fc_abts_args
  *
  * \brief  Arguemnts for ABTS  event.
  */
-typedef struct {
+struct spdk_nvmf_bcm_fc_abts_args {
 	uint8_t  port_handle;
 	uint32_t nport_handle;
 	uint32_t rpi;
 	uint16_t oxid, rxid;
-	void *   cb_ctx;
-} spdk_abts_args_t;
+	void    *cb_ctx;
+};
+
+typedef struct spdk_nvmf_bcm_fc_abts_args spdk_nvmf_bcm_fc_abts_args_t;
 
 /**
- * \struct fct_link_break_args_t
+ * \struct spdk_nvmf_bcm_fc_link_break_args
  *
  * \brief  Arguemnts for link break event.
  */
-typedef struct {
+struct spdk_nvmf_bcm_fc_link_break_args {
 	uint8_t port_handle;
-} spdk_link_break_args_t;
+};
+
+typedef struct spdk_nvmf_bcm_fc_link_break_args spdk_nvmf_bcm_fc_link_break_args_t;
 
 /**
  * \struct spdk_hw_port_dump_args_t
@@ -201,45 +221,67 @@ typedef struct {
 	uint8_t    port_handle;
 	char       reason[SPDK_FC_HW_DUMP_REASON_STR_MAX_SIZE];
 	uint32_t **dump_buf;
-	void *     cb_ctx;
+	void      *cb_ctx;
 } spdk_hw_port_dump_args_t;
 
 /**
- * \struct fct_unrecoverable_error_args_t
+ * \struct spdk_nvmf_bcm_fc_unrecoverable_error_args
  *
  * \brief  Arguemnts for unrecoverable error event
  */
-typedef struct {
-} spdk_unrecoverable_error_event_args_t;
+struct spdk_nvmf_bcm_fc_unrecoverable_error_event_args {
+};
+
+typedef struct spdk_nvmf_bcm_fc_unrecoverable_error_event_args
+	spdk_nvmf_bcm_fc_unrecoverable_error_event_args_t;
 
 /**
  * \brief Pointer to the callback function to the FCT driver.
  */
-typedef void (*fc_callback)(uint8_t port_handle, spdk_fc_event_t event_type, void *arg,
-                            spdk_err_t err);
+typedef void (*spdk_nvmf_bcm_fc_callback)(uint8_t port_handle,
+		spdk_fc_event_t event_type,
+		void *arg, spdk_err_t err);
 
 /**
- * \struct spdk_nvmf_fc_nport_del_cb_data
+ * \struct spdk_nvmf_bcm_fc_nport_del_cb_data
  *
  * \brief  The callback structure for nport-delete
  */
-typedef struct spdk_nvmf_fc_nport_del_cb_data {
+struct spdk_nvmf_bcm_fc_nport_del_cb_data {
 	struct spdk_nvmf_bcm_fc_nport *nport;
-	uint8_t                        port_handle;
-	fc_callback                    fc_cb_func;
-	void *                         fc_cb_ctx;
-} spdk_nvmf_fc_nport_del_cb_data_t;
+	uint8_t                    port_handle;
+	spdk_nvmf_bcm_fc_callback  fc_cb_func;
+	void                      *fc_cb_ctx;
+};
+
+typedef struct spdk_nvmf_bcm_fc_nport_del_cb_data spdk_nvmf_fc_nport_del_cb_data_t;
 
 /**
  * \brief  The callback structure for it-delete
  */
-typedef struct spdk_nvmf_fc_i_t_del_cb_data {
-	struct spdk_nvmf_bcm_fc_nport *           nport;
+struct spdk_nvmf_bcm_fc_i_t_del_cb_data {
+	struct spdk_nvmf_bcm_fc_nport            *nport;
 	struct spdk_nvmf_bcm_fc_remote_port_info *rport;
 	uint8_t                                   port_handle;
-	fc_callback                               fc_cb_func;
-	void *                                    fc_cb_ctx;
-} spdk_nvmf_fc_i_t_del_cb_data_t;
+	spdk_nvmf_bcm_fc_callback                 fc_cb_func;
+	void                                     *fc_cb_ctx;
+};
+
+typedef struct spdk_nvmf_bmc_fc_i_t_del_cb_data spdk_nvmf_bcm_fc_i_t_del_cb_data_t;
+
+
+typedef void (*spdk_nvmf_bcm_fc_i_t_delete_assoc_cb_fn)(void *arg, uint32_t err);
+
+/**
+ * \brief  The callback structure for the it-delete-assoc callback
+ */
+struct spdk_nvmf_bcm_fc_i_t_del_assoc_cb_data {
+	struct spdk_nvmf_bcm_fc_nport            *nport;
+	struct spdk_nvmf_bcm_fc_remote_port_info *rport;
+	uint8_t                                    port_handle;
+	spdk_nvmf_bcm_fc_i_t_delete_assoc_cb_fn    cb_func;
+	void                                      *cb_ctx;
+};
 
 /**
  * \brief	.
@@ -251,20 +293,26 @@ typedef struct spdk_nvmf_fc_i_t_del_cb_data {
  * \param[in] cb_func - Callback function into fc driver
  * \return - Error code.
  */
-spdk_err_t spdk_master_enqueue_event(spdk_fc_event_t event_type, void *args, fc_callback cb_func);
+spdk_err_t
+spdk_nvmf_bcm_fc_master_enqueue_event(spdk_fc_event_t event_type,
+				      void *args,
+				      spdk_nvmf_bcm_fc_callback cb_func);
 
 /**
- * \struct      spdk_fc_ops_t
+ * \struct spdk_nvmf_bcm_fc_master_ops
  *
  * \brief       Operations provided by the SPDK master.
  *              The driver uses this function table to call into SPDK
  */
-typedef struct spdk_fc_ops {
+struct spdk_nvmf_bcm_fc_master_ops {
 	/*
 	 * This function is called to enqueue an event in the masters event queue.
 	 */
-	spdk_err_t (*enqueue_event)(spdk_fc_event_t event_type, void *args, fc_callback cb_func);
+	spdk_err_t (*enqueue_event)(spdk_fc_event_t event_type, void *args,
+				    spdk_nvmf_bcm_fc_callback cb_func);
 
-} spdk_fc_ops_t;
+};
+
+typedef struct spdk_nvmf_bcm_fc_master_ops spdk_fc_ops_t;
 
 #endif
