@@ -439,6 +439,24 @@ nvmf_fc_find_nport_from_sid(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t s_id, u
 	return rc;
 }
 
+static spdk_err_t
+nvmf_fc_find_rport_from_sid(uint32_t s_id,
+			    struct spdk_nvmf_bcm_fc_nport *tgtport,
+			    struct spdk_nvmf_bcm_fc_remote_port_info **rport)
+{
+	int rc = SPDK_ERR_INTERNAL;
+	struct spdk_nvmf_bcm_fc_remote_port_info *rem_port = NULL;
+
+	TAILQ_FOREACH(rem_port, &tgtport->rem_port_list, link) {
+		if (rem_port->s_id == s_id) {
+			*rport = rem_port;
+			rc = SPDK_SUCCESS;
+			break;
+		}
+	}
+	return rc;
+}
+
 static void
 nvmf_fc_bcm_notify_queue(bcm_sli_queue_t *q, bool arm_queue, uint16_t num_entries)
 {
@@ -1318,6 +1336,7 @@ nvmf_fc_process_frame(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t buff_idx, fc_
 	uint32_t s_id, d_id;
 	uint16_t rpi;
 	struct spdk_nvmf_bcm_fc_nport *nport;
+	struct spdk_nvmf_bcm_fc_remote_port_info *rport = NULL;
 	struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst;
 
 	s_id = (uint32_t)frame->s_id;
@@ -1331,6 +1350,12 @@ nvmf_fc_process_frame(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t buff_idx, fc_
 	if (rc) {
 		SPDK_ERRLOG("%s Nport not found. Dropping\n", __func__);
 		hwqp->counters.nport_invalid++;
+		return rc;
+	}
+
+	rc = nvmf_fc_find_rport_from_sid(s_id, nport, &rport);
+	if (rc != SPDK_SUCCESS) {
+		SPDK_ERRLOG("%s Remote port not found. Dropping\n", __func__);
 		return rc;
 	}
 
@@ -1364,7 +1389,7 @@ nvmf_fc_process_frame(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t buff_idx, fc_
 		ls_rqst->xri = spdk_nvmf_bcm_fc_get_xri(hwqp);
 
 		/* Handle the request to LS module */
-		spdk_nvmf_bcm_fc_handle_ls_rqst(nport, ls_rqst);
+		spdk_nvmf_bcm_fc_handle_ls_rqst(s_id, nport, rport, ls_rqst);
 
 	} else if ((frame->r_ctl == NVME_FC_R_CTL_CMD_REQ) &&
 		   (frame->type == NVME_FC_TYPE_FC_EXCHANGE)) {
