@@ -269,7 +269,9 @@ static bool g_spdk_nvmf_bcm_fc_xmt_srsr_req = false;
 
 
 static void
-run_create_assoc_test(struct spdk_nvmf_bcm_fc_nport *tgtport)
+run_create_assoc_test(
+	struct spdk_nvmf_bcm_fc_nport *tgtport,
+	struct spdk_nvmf_bcm_fc_remote_port_info *rport)
 {
 	struct spdk_nvmf_bcm_fc_ls_rqst ls_rqst;
 	struct nvmf_fc_ls_cr_assoc_rqst ca_rqst;
@@ -295,12 +297,13 @@ run_create_assoc_test(struct spdk_nvmf_bcm_fc_nport *tgtport)
 	ls_rqst.rpi = 5000;
 	ls_rqst.private_data = NULL;
 
-	spdk_nvmf_bcm_fc_handle_ls_rqst(tgtport, &ls_rqst);
+	spdk_nvmf_bcm_fc_handle_ls_rqst(0, tgtport, rport, &ls_rqst);
 }
 
 
 static void
 run_create_conn_test(struct spdk_nvmf_bcm_fc_nport *tgtport,
+		     struct spdk_nvmf_bcm_fc_remote_port_info *rport,
 		     uint64_t assoc_id)
 {
 	struct spdk_nvmf_bcm_fc_ls_rqst ls_rqst;
@@ -337,11 +340,12 @@ run_create_conn_test(struct spdk_nvmf_bcm_fc_nport *tgtport,
 	ls_rqst.rpi = 5000;
 	ls_rqst.private_data = NULL;
 
-	spdk_nvmf_bcm_fc_handle_ls_rqst(tgtport, &ls_rqst);
+	spdk_nvmf_bcm_fc_handle_ls_rqst(0, tgtport, rport, &ls_rqst);
 }
 
 static void
 run_disconn_test(struct spdk_nvmf_bcm_fc_nport *tgtport,
+		 struct spdk_nvmf_bcm_fc_remote_port_info *rport,
 		 uint64_t assoc_id)
 {
 	struct spdk_nvmf_bcm_fc_ls_rqst ls_rqst;
@@ -376,7 +380,7 @@ run_disconn_test(struct spdk_nvmf_bcm_fc_nport *tgtport,
 	ls_rqst.rpi = 5000;
 	ls_rqst.private_data = NULL;
 
-	spdk_nvmf_bcm_fc_handle_ls_rqst(tgtport, &ls_rqst);
+	spdk_nvmf_bcm_fc_handle_ls_rqst(0, tgtport, rport, &ls_rqst);
 }
 
 static void
@@ -387,6 +391,7 @@ disconnect_assoc_cb(void *cb_data, uint32_t err)
 
 static void
 run_direct_disconn_test(struct spdk_nvmf_bcm_fc_nport *tgtport,
+			struct spdk_nvmf_bcm_fc_remote_port_info *rport,
 			uint64_t assoc_id, bool send_disconn, bool send_abts)
 {
 	int ret;
@@ -556,6 +561,8 @@ handle_conn_bad_assoc_rsp(struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst)
 
 static struct spdk_nvmf_bcm_fc_port fcport;
 static struct spdk_nvmf_bcm_fc_nport tgtport;
+static struct spdk_nvmf_bcm_fc_remote_port_info rport;
+
 static uint64_t assoc_id[1024];
 struct spdk_nvmf_tgt g_nvmf_tgt;
 
@@ -597,17 +604,17 @@ create_assoc_test(void)
 {
 	/* main test driver */
 	g_test_run_type = TEST_RUN_TYPE_CREATE_ASSOC;
-	run_create_assoc_test(&tgtport);
+	run_create_assoc_test(&tgtport, &rport);
 
 	if (g_last_rslt == 0) {
 		g_test_run_type = TEST_RUN_TYPE_CREATE_CONN;
 		/* create connections until we get too many connections error */
 		while (g_last_rslt == 0)
-			run_create_conn_test(&tgtport, g_curr_assoc_id);
+			run_create_conn_test(&tgtport, &rport, g_curr_assoc_id);
 
 		/* disconnect the association */
 		g_test_run_type = TEST_RUN_TYPE_DISCONNECT;
-		run_disconn_test(&tgtport, g_curr_assoc_id);
+		run_disconn_test(&tgtport, &rport, g_curr_assoc_id);
 		g_create_conn_test_cnt = 0;
 	}
 }
@@ -617,7 +624,7 @@ invalid_connection_test(void)
 {
 	/* run test to create connection to invalid association */
 	g_test_run_type = TEST_RUN_TYPE_CONN_BAD_ASSOC;
-	run_create_conn_test(&tgtport, g_curr_assoc_id);
+	run_create_conn_test(&tgtport, &rport, g_curr_assoc_id);
 }
 
 static void
@@ -629,14 +636,14 @@ create_max_assoc_conns_test(void)
 	g_last_rslt = 0;
 	for (i = 0; i < g_nvmf_tgt.max_associations && g_last_rslt == 0; i++) {
 		g_test_run_type = TEST_RUN_TYPE_CREATE_ASSOC;
-		run_create_assoc_test(&tgtport);
+		run_create_assoc_test(&tgtport, &rport);
 		if (g_last_rslt == 0) {
 			int j;
 			assoc_id[i] = g_curr_assoc_id;
 			g_test_run_type = TEST_RUN_TYPE_CREATE_CONN;
 			for (j = 1; j < g_nvmf_tgt.max_queues_per_session; j++) {
 				if (g_last_rslt == 0) {
-					run_create_conn_test(&tgtport, g_curr_assoc_id);
+					run_create_conn_test(&tgtport, &rport, g_curr_assoc_id);
 				}
 			}
 		}
@@ -652,19 +659,19 @@ direct_delete_assoc_test(void)
 		/* remove associations by calling delete directly */
 		i = 0;
 		g_test_run_type = TEST_RUN_TYPE_DIR_DISCONN_CALL;
-		run_direct_disconn_test(&tgtport, from_be64(&assoc_id[i++]),
+		run_direct_disconn_test(&tgtport, &rport, from_be64(&assoc_id[i++]),
 					false, false);
-		run_direct_disconn_test(&tgtport, from_be64(&assoc_id[i++]),
+		run_direct_disconn_test(&tgtport, &rport, from_be64(&assoc_id[i++]),
 					true, false);
-		run_direct_disconn_test(&tgtport, from_be64(&assoc_id[i++]),
+		run_direct_disconn_test(&tgtport, &rport, from_be64(&assoc_id[i++]),
 					false, true);
-		run_direct_disconn_test(&tgtport, from_be64(&assoc_id[i++]),
+		run_direct_disconn_test(&tgtport, &rport, from_be64(&assoc_id[i++]),
 					true, true);
 
 		/* remove any remaining associations */
 		g_test_run_type = TEST_RUN_TYPE_DISCONNECT;
 		for (; i < g_nvmf_tgt.max_associations; i++) {
-			run_disconn_test(&tgtport, assoc_id[i]);
+			run_disconn_test(&tgtport, &rport, assoc_id[i]);
 		}
 	}
 }

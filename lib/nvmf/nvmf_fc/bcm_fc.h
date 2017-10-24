@@ -435,6 +435,7 @@ struct spdk_nvmf_bcm_fc_association {
 	uint64_t assoc_id;
 	uint32_t s_id;
 	struct spdk_nvmf_bcm_fc_nport *tgtport;
+	struct spdk_nvmf_bcm_fc_remote_port_info *rport;
 	struct spdk_nvmf_subsystem *subsystem;
 	struct spdk_nvmf_bcm_fc_session *fc_session;
 	spdk_nvmf_bcm_fc_object_state_t assoc_state;
@@ -516,7 +517,9 @@ int spdk_nvmf_bcm_fc_delete_association(struct spdk_nvmf_bcm_fc_nport *tgtport,
 					uint64_t assoc_id, bool send_disconn, bool send_abts,
 					spdk_nvmf_fc_del_assoc_cb del_assoc_cb,
 					void *cb_data);
-void spdk_nvmf_bcm_fc_handle_ls_rqst(struct spdk_nvmf_bcm_fc_nport *tgtport,
+void spdk_nvmf_bcm_fc_handle_ls_rqst(uint32_t s_id,
+				     struct spdk_nvmf_bcm_fc_nport *tgtport,
+				     struct spdk_nvmf_bcm_fc_remote_port_info *rport,
 				     struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst);
 
 int spdk_nvmf_bcm_fc_xmt_ls_rsp(struct spdk_nvmf_bcm_fc_nport *tgtport,

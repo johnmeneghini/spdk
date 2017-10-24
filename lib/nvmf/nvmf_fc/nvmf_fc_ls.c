@@ -298,7 +298,9 @@ nvmf_fc_association_fini(struct spdk_nvmf_bcm_fc_association *assoc)
 }
 
 static struct spdk_nvmf_bcm_fc_association *
-nvmf_fc_ls_new_association(struct spdk_nvmf_bcm_fc_nport *tgtport,
+nvmf_fc_ls_new_association(uint32_t s_id,
+			   struct spdk_nvmf_bcm_fc_nport *tgtport,
+			   struct spdk_nvmf_bcm_fc_remote_port_info *rport,
 			   struct nvmf_fc_lsdesc_cr_assoc_cmd *a_cmd,
 			   struct spdk_nvmf_subsystem *subsys, uint16_t rpi)
 {
@@ -308,12 +310,20 @@ nvmf_fc_ls_new_association(struct spdk_nvmf_bcm_fc_nport *tgtport,
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\n");
 
+	assert(rport);
+	if (!rport) {
+		SPDK_ERRLOG("rport is null.\n");
+		return NULL;
+	}
+
 	if (assoc) {
 		/* initialize association
 		 * IMPORTANT: do not do a memset on association to clear it!
 		 * Some of the association fields are static */
 		assoc->assoc_id = 0;
+		assoc->s_id = s_id;
 		assoc->tgtport = tgtport;
+		assoc->rport = rport;
 		assoc->subsystem = subsys;
 		assoc->fc_session = 0;
 		assoc->assoc_state = SPDK_NVMF_BCM_FC_OBJECT_CREATED;
@@ -328,6 +338,7 @@ nvmf_fc_ls_new_association(struct spdk_nvmf_bcm_fc_nport *tgtport,
 		/* add association to target port's association list */
 		TAILQ_INSERT_TAIL(&tgtport->fc_associations, assoc, link);
 		tgtport->assoc_count++;
+		rport->assoc_count++;
 	} else {
 		SPDK_ERRLOG("out of associations\n");
 	}
@@ -666,6 +677,7 @@ nvmf_fc_del_next_conn(union nvmf_fc_ls_op_ctx *opd)
 			      assoc->assoc_id, assoc->conn_count);
 		TAILQ_REMOVE(&tgtport->fc_associations, assoc, link);
 		tgtport->assoc_count--;
+		assoc->rport->assoc_count--;
 
 		nvmf_fc_check_and_send_disconnect(assoc);
 
@@ -795,7 +807,9 @@ nvmf_fc_ls_disconnect_assoc(struct spdk_nvmf_bcm_fc_nport *tgtport,
 /* LS Reqeust Handler Functions */
 
 static void
-nvmf_fc_ls_create_association(struct spdk_nvmf_bcm_fc_nport *tgtport,
+nvmf_fc_ls_create_association(uint32_t s_id,
+			      struct spdk_nvmf_bcm_fc_nport *tgtport,
+			      struct spdk_nvmf_bcm_fc_remote_port_info *rport,
 			      struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst)
 {
 	struct nvmf_fc_ls_cr_assoc_rqst *rqst =
@@ -863,7 +877,7 @@ nvmf_fc_ls_create_association(struct spdk_nvmf_bcm_fc_nport *tgtport,
 		ec = FCNVME_RJT_EXP_SQ_SIZE;
 	} else {
 		/* new association w/ admin queue */
-		assoc = nvmf_fc_ls_new_association(tgtport,
+		assoc = nvmf_fc_ls_new_association(s_id, tgtport, rport,
 						   &rqst->assoc_cmd,
 						   subsys,
 						   ls_rqst->rpi);
@@ -1204,7 +1218,9 @@ spdk_nvmf_bcm_fc_ls_fini(void)
 }
 
 void
-spdk_nvmf_bcm_fc_handle_ls_rqst(struct spdk_nvmf_bcm_fc_nport *tgtport,
+spdk_nvmf_bcm_fc_handle_ls_rqst(uint32_t s_id,
+				struct spdk_nvmf_bcm_fc_nport *tgtport,
+				struct spdk_nvmf_bcm_fc_remote_port_info *rport,
 				struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst)
 {
 	struct nvmf_fc_ls_rqst_w0 *w0 =
@@ -1215,7 +1231,7 @@ spdk_nvmf_bcm_fc_handle_ls_rqst(struct spdk_nvmf_bcm_fc_nport *tgtport,
 
 	switch (w0->ls_cmd) {
 	case FCNVME_LS_CREATE_ASSOCIATION:
-		nvmf_fc_ls_create_association(tgtport, ls_rqst);
+		nvmf_fc_ls_create_association(s_id, tgtport, rport, ls_rqst);
 		break;
 	case FCNVME_LS_CREATE_CONNECTION:
 		nvmf_fc_ls_create_connection(tgtport, ls_rqst);
