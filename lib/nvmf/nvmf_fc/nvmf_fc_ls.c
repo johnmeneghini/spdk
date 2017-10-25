@@ -92,7 +92,8 @@ enum {
 	VERR_CONN_TOO_MANY = 29,
 	VERR_SUBNQN = 30,
 	VERR_HOSTNQN = 31,
-	VERR_SQSIZE = 32
+	VERR_SQSIZE = 32,
+	VERR_NO_RPORT = 33
 };
 
 static char *validation_errors[] = {
@@ -129,6 +130,7 @@ static char *validation_errors[] = {
 	"Invalid subnqn or subsystem not found",
 	"Invalid hostnqn or subsystem doesn't allow host",
 	"SQ size = 0 or too big"
+	"No Remote Port"
 };
 
 /* Poller API structures (arguments and callback data */
@@ -806,10 +808,27 @@ nvmf_fc_ls_disconnect_assoc(struct spdk_nvmf_bcm_fc_nport *tgtport,
 /* **************************** */
 /* LS Reqeust Handler Functions */
 
+static spdk_err_t
+nvmf_fc_ls_find_rport_from_sid(uint32_t s_id,
+			       struct spdk_nvmf_bcm_fc_nport *tgtport,
+			       struct spdk_nvmf_bcm_fc_remote_port_info **rport)
+{
+	int rc = SPDK_ERR_INTERNAL;
+	struct spdk_nvmf_bcm_fc_remote_port_info *rem_port = NULL;
+
+	TAILQ_FOREACH(rem_port, &tgtport->rem_port_list, link) {
+		if (rem_port->s_id == s_id) {
+			*rport = rem_port;
+			rc = SPDK_SUCCESS;
+			break;
+		}
+	}
+	return rc;
+}
+
 static void
 nvmf_fc_ls_create_association(uint32_t s_id,
 			      struct spdk_nvmf_bcm_fc_nport *tgtport,
-			      struct spdk_nvmf_bcm_fc_remote_port_info *rport,
 			      struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst)
 {
 	struct nvmf_fc_ls_cr_assoc_rqst *rqst =
@@ -819,9 +838,11 @@ nvmf_fc_ls_create_association(uint32_t s_id,
 	struct spdk_nvmf_bcm_fc_association *assoc;
 	struct spdk_nvmf_bcm_fc_conn *fc_conn;
 	struct spdk_nvmf_subsystem *subsys = NULL;
+	struct spdk_nvmf_bcm_fc_remote_port_info *rport = NULL;
 	int errmsg_ind = 0;
 	uint8_t rc = FCNVME_RJT_RC_NONE;
 	uint8_t ec = FCNVME_RJT_EXP_NONE;
+	spdk_err_t err;
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
 		      "LS_CA: ls_rqst_len=%d, desc_list_len=%d, cmd_len=%d, sq_size=%d\n",
@@ -877,24 +898,32 @@ nvmf_fc_ls_create_association(uint32_t s_id,
 		ec = FCNVME_RJT_EXP_SQ_SIZE;
 	} else {
 		/* new association w/ admin queue */
-		assoc = nvmf_fc_ls_new_association(s_id, tgtport, rport,
-						   &rqst->assoc_cmd,
-						   subsys,
-						   ls_rqst->rpi);
-		if (!assoc) {
-			errmsg_ind = VERR_ASSOC_ALLOC_FAIL;
+		err = nvmf_fc_ls_find_rport_from_sid(s_id, tgtport, &rport);
+		if (err != SPDK_SUCCESS) {
+			SPDK_ERRLOG("Remote port not found.\n");
+			errmsg_ind = VERR_NO_RPORT;
 			rc = FCNVME_RJT_RC_INSUFF_RES;
 			ec = FCNVME_RJT_EXP_INSUF_RES;
-		} else { // alloc admin q (i.e. connection)
-			fc_conn = nvmf_fc_ls_new_connection(assoc,
-							    CONN_TYPE_AQ, 0,
-							    from_be16(&rqst->assoc_cmd.sqsize),
-							    from_be16(&rqst->assoc_cmd.ersp_ratio),
-							    ls_rqst->rpi);
-			if (!fc_conn) {
-				errmsg_ind = VERR_CONN_ALLOC_FAIL;
+		} else {
+			assoc = nvmf_fc_ls_new_association(s_id, tgtport, rport,
+							   &rqst->assoc_cmd,
+							   subsys,
+							   ls_rqst->rpi);
+			if (!assoc) {
+				errmsg_ind = VERR_ASSOC_ALLOC_FAIL;
 				rc = FCNVME_RJT_RC_INSUFF_RES;
 				ec = FCNVME_RJT_EXP_INSUF_RES;
+			} else { // alloc admin q (i.e. connection)
+				fc_conn = nvmf_fc_ls_new_connection(assoc,
+								    CONN_TYPE_AQ, 0,
+								    from_be16(&rqst->assoc_cmd.sqsize),
+								    from_be16(&rqst->assoc_cmd.ersp_ratio),
+								    ls_rqst->rpi);
+				if (!fc_conn) {
+					errmsg_ind = VERR_CONN_ALLOC_FAIL;
+					rc = FCNVME_RJT_RC_INSUFF_RES;
+					ec = FCNVME_RJT_EXP_INSUF_RES;
+				}
 			}
 		}
 	}
@@ -1220,7 +1249,6 @@ spdk_nvmf_bcm_fc_ls_fini(void)
 void
 spdk_nvmf_bcm_fc_handle_ls_rqst(uint32_t s_id,
 				struct spdk_nvmf_bcm_fc_nport *tgtport,
-				struct spdk_nvmf_bcm_fc_remote_port_info *rport,
 				struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst)
 {
 	struct nvmf_fc_ls_rqst_w0 *w0 =
@@ -1231,7 +1259,7 @@ spdk_nvmf_bcm_fc_handle_ls_rqst(uint32_t s_id,
 
 	switch (w0->ls_cmd) {
 	case FCNVME_LS_CREATE_ASSOCIATION:
-		nvmf_fc_ls_create_association(s_id, tgtport, rport, ls_rqst);
+		nvmf_fc_ls_create_association(s_id, tgtport, ls_rqst);
 		break;
 	case FCNVME_LS_CREATE_CONNECTION:
 		nvmf_fc_ls_create_connection(tgtport, ls_rqst);
