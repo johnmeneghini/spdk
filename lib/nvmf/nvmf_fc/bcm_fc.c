@@ -573,10 +573,16 @@ static struct spdk_nvmf_session *
 nvmf_fc_session_init(void)
 {
 	struct spdk_nvmf_bcm_fc_session *fc_sess;
+	struct spdk_nvmf_session *nvmf_fc_sess = NULL;
 
 	fc_sess = spdk_calloc(1, sizeof(struct spdk_nvmf_bcm_fc_session));
 
-	return (fc_sess ? &fc_sess->session : NULL);
+	if (fc_sess) {
+		nvmf_fc_sess = &fc_sess->session;
+		nvmf_fc_sess->transport = &spdk_nvmf_transport_bcm_fc;
+	}
+
+	return nvmf_fc_sess;
 }
 
 static void
