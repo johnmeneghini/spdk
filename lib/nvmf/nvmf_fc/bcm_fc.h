@@ -519,7 +519,6 @@ int spdk_nvmf_bcm_fc_delete_association(struct spdk_nvmf_bcm_fc_nport *tgtport,
 					void *cb_data);
 void spdk_nvmf_bcm_fc_handle_ls_rqst(uint32_t s_id,
 				     struct spdk_nvmf_bcm_fc_nport *tgtport,
-				     struct spdk_nvmf_bcm_fc_remote_port_info *rport,
 				     struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst);
 
 int spdk_nvmf_bcm_fc_xmt_ls_rsp(struct spdk_nvmf_bcm_fc_nport *tgtport,
