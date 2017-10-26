@@ -213,16 +213,18 @@ struct spdk_nvmf_bcm_fc_link_break_args {
 typedef struct spdk_nvmf_bcm_fc_link_break_args spdk_nvmf_bcm_fc_link_break_args_t;
 
 /**
- * \struct spdk_hw_port_dump_args_t
+ * \struct spdk_nvmf_bcm_fc_hw_port_dump_args
  *
  * \brief  Arguments for port dump event.
  */
-typedef struct {
+struct spdk_nvmf_bcm_fc_hw_port_dump_args {
 	uint8_t    port_handle;
 	char       reason[SPDK_FC_HW_DUMP_REASON_STR_MAX_SIZE];
 	uint32_t **dump_buf;
 	void      *cb_ctx;
-} spdk_hw_port_dump_args_t;
+};
+
+typedef struct spdk_nvmf_bcm_fc_hw_port_dump_args spdk_nvmf_bcm_fc_hw_port_dump_args_t;
 
 /**
  * \struct spdk_nvmf_bcm_fc_unrecoverable_error_args
@@ -314,5 +316,47 @@ struct spdk_nvmf_bcm_fc_master_ops {
 };
 
 typedef struct spdk_nvmf_bcm_fc_master_ops spdk_fc_ops_t;
+
+/*
+ * Call back function pointer for HW port quiesce.
+ */
+typedef void (*spdk_nvmf_bcm_fc_hw_port_quiesce_cb_fn)(void *ctx, spdk_err_t err);
+
+/**
+ * \struct spdk_nvmf_bcm_fc_hw_port_quiesce_ctx
+ *
+ * \brief Context structure for quiescing a hardware port
+ */
+struct spdk_nvmf_bcm_fc_hw_port_quiesce_ctx {
+	int                quiesce_count;
+	void              *ctx;
+	spdk_nvmf_bcm_fc_hw_port_quiesce_cb_fn cb_func;
+};
+
+typedef struct spdk_nvmf_bcm_fc_hw_port_quiesce_ctx spdk_nvmf_bcm_fc_hw_port_quiesce_ctx_t;
+
+/**
+ * \struct spdk_nvmf_bcm_fc_hw_port_dump_ctx
+ *
+ * \brief Context structure for dumping a hardware port
+ */
+struct spdk_nvmf_bcm_fc_hw_port_dump_ctx {
+	void       *dump_args;
+	spdk_nvmf_bcm_fc_callback dump_cb_func;
+};
+
+typedef struct spdk_nvmf_bcm_fc_hw_port_dump_ctx spdk_nvmf_bcm_fc_hw_port_dump_ctx_t;
+
+/**
+ * \struct spdk_nvmf_bcm_fc_hw_port_dump_ctx
+ *
+ * \brief info structure for dumping a queue
+ */
+struct spdk_nvmf_bcm_fc_queue_dump_info {
+	char *buffer;
+	int   offset;
+};
+
+typedef struct spdk_nvmf_bcm_fc_queue_dump_info spdk_nvmf_bcm_fc_queue_dump_info_t;
 
 #endif

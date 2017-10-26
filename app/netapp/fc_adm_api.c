@@ -35,27 +35,6 @@ static void nvmf_fc_hw_port_quiesce_dump_cb(void *ctx, spdk_err_t err);
 /* ******************* PRIVATE HELPER FUNCTIONS - BEGIN ************** */
 
 /*
- * Call back function pointer for HW port quiesce.
- */
-typedef void (*hw_port_quiesce_cb)(void *ctx, spdk_err_t err);
-
-typedef struct nvmf_tgt_fc_hw_port_quiesce_ctx {
-	int                quiesce_count;
-	void              *ctx;
-	hw_port_quiesce_cb cb_func;
-} nvmf_tgt_fc_hw_port_quiesce_ctx_t;
-
-typedef struct spdk_fc_hw_port_dump_ctx {
-	void       *dump_args;
-	spdk_nvmf_bcm_fc_callback dump_cb_func;
-} spdk_fc_hw_port_dump_ctx_t;
-
-typedef struct spdk_fc_queue_dump_info {
-	char *buffer;
-	int   offset;
-} spdk_fc_queue_dump_info_t;
-
-/*
  * Re-initialize the FC-Port after an offline event.
  * Only the queue information needs to be populated. XRI, lcore and other hwqp information remains
  * unchanged after the first initialization.
@@ -500,7 +479,7 @@ static void
 nvmf_tgt_fc_queue_quiesce_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
 {
 	struct spdk_nvmf_bcm_fc_poller_api_quiesce_queue_args *quiesce_api_data = NULL;
-	nvmf_tgt_fc_hw_port_quiesce_ctx_t                     *port_quiesce_ctx = NULL;
+	spdk_nvmf_bcm_fc_hw_port_quiesce_ctx_t                     *port_quiesce_ctx = NULL;
 	struct spdk_nvmf_bcm_fc_hwqp                          *hwqp             = NULL;
 	struct spdk_nvmf_bcm_fc_port                          *fc_port          = NULL;
 	spdk_err_t                                             err              = SPDK_SUCCESS;
@@ -508,8 +487,8 @@ nvmf_tgt_fc_queue_quiesce_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t re
 	quiesce_api_data           = (struct spdk_nvmf_bcm_fc_poller_api_quiesce_queue_args *)cb_data;
 	hwqp                       = quiesce_api_data->hwqp;
 	fc_port                    = hwqp->fc_port;
-	port_quiesce_ctx           = (nvmf_tgt_fc_hw_port_quiesce_ctx_t *)quiesce_api_data->ctx;
-	hw_port_quiesce_cb cb_func = port_quiesce_ctx->cb_func;
+	port_quiesce_ctx           = (spdk_nvmf_bcm_fc_hw_port_quiesce_ctx_t *)quiesce_api_data->ctx;
+	spdk_nvmf_bcm_fc_hw_port_quiesce_cb_fn cb_func = port_quiesce_ctx->cb_func;
 
 	/*
 	 * Decrement the callback/quiesced queue count.
@@ -579,9 +558,9 @@ nvmf_tgt_fc_hw_queue_quiesce(struct spdk_nvmf_bcm_fc_hwqp *fc_hwqp, void *ctx,
  */
 static spdk_err_t
 nvmf_tgt_fc_hw_port_quiesce(struct spdk_nvmf_bcm_fc_port *fc_port, void *ctx,
-			    hw_port_quiesce_cb cb_func)
+			    spdk_nvmf_bcm_fc_hw_port_quiesce_cb_fn cb_func)
 {
-	struct nvmf_tgt_fc_hw_port_quiesce_ctx *port_quiesce_ctx = NULL;
+	struct spdk_nvmf_bcm_fc_hw_port_quiesce_ctx *port_quiesce_ctx = NULL;
 	int                                     i                = 0;
 	spdk_err_t                              err              = SPDK_SUCCESS;
 
@@ -597,8 +576,8 @@ nvmf_tgt_fc_hw_port_quiesce(struct spdk_nvmf_bcm_fc_port *fc_port, void *ctx,
 		goto fail;
 	}
 
-	port_quiesce_ctx = spdk_calloc(1, sizeof(nvmf_tgt_fc_hw_port_quiesce_ctx_t));
-	bzero(port_quiesce_ctx, sizeof(nvmf_tgt_fc_hw_port_quiesce_ctx_t));
+	port_quiesce_ctx = spdk_calloc(1, sizeof(spdk_nvmf_bcm_fc_hw_port_quiesce_ctx_t));
+	bzero(port_quiesce_ctx, sizeof(spdk_nvmf_bcm_fc_hw_port_quiesce_ctx_t));
 	port_quiesce_ctx->quiesce_count = 0;
 	port_quiesce_ctx->ctx           = ctx;
 	port_quiesce_ctx->cb_func       = cb_func;
@@ -640,7 +619,7 @@ fail:
  * Print content to a text buffer.
  */
 static void
-nvmf_tgt_fc_dump_buf_print(spdk_fc_queue_dump_info_t *dump_info, char *fmt, ...)
+nvmf_tgt_fc_dump_buf_print(spdk_nvmf_bcm_fc_queue_dump_info_t *dump_info, char *fmt, ...)
 {
 	va_list ap;
 	int32_t avail;
@@ -667,7 +646,8 @@ nvmf_tgt_fc_dump_buf_print(spdk_fc_queue_dump_info_t *dump_info, char *fmt, ...)
  * Dump queue entry
  */
 static void
-nvmf_tgt_fc_dump_buffer(spdk_fc_queue_dump_info_t *dump_info, const char *name, void *buffer,
+nvmf_tgt_fc_dump_buffer(spdk_nvmf_bcm_fc_queue_dump_info_t *dump_info, const char *name,
+			void *buffer,
 			uint32_t size)
 {
 	uint32_t *dword;
@@ -702,7 +682,7 @@ nvmf_tgt_fc_dump_buffer(spdk_fc_queue_dump_info_t *dump_info, const char *name, 
  * Dump queue entries.
  */
 static void
-nvmf_tgt_fc_dump_queue_entries(spdk_fc_queue_dump_info_t *dump_info, bcm_sli_queue_t *q)
+nvmf_tgt_fc_dump_queue_entries(spdk_nvmf_bcm_fc_queue_dump_info_t *dump_info, bcm_sli_queue_t *q)
 {
 #define NVMF_TGT_FC_QDUMP_RADIUS 1
 	char     name[64];
@@ -739,7 +719,8 @@ nvmf_tgt_fc_dump_queue_entries(spdk_fc_queue_dump_info_t *dump_info, bcm_sli_que
  * Dump the contents of Event Q.
  */
 static void
-nvmf_tgt_fc_dump_sli_queue(spdk_fc_queue_dump_info_t *dump_info, char *name, bcm_sli_queue_t *q)
+nvmf_tgt_fc_dump_sli_queue(spdk_nvmf_bcm_fc_queue_dump_info_t *dump_info, char *name,
+			   bcm_sli_queue_t *q)
 {
 	nvmf_tgt_fc_dump_buf_print(dump_info,
 				   "\nname:%s, head:%" PRIu16 ", tail:%" PRIu16 ", used:%" PRIu16 ", "
@@ -756,7 +737,7 @@ nvmf_tgt_fc_dump_sli_queue(spdk_fc_queue_dump_info_t *dump_info, char *name, bcm
  * Dump the contents of Event Q.
  */
 static void
-nvmf_tgt_fc_dump_eventq(spdk_fc_queue_dump_info_t *dump_info, char *name, fc_eventq_t *eq)
+nvmf_tgt_fc_dump_eventq(spdk_nvmf_bcm_fc_queue_dump_info_t *dump_info, char *name, fc_eventq_t *eq)
 {
 	nvmf_tgt_fc_dump_sli_queue(dump_info, name, &eq->q);
 }
@@ -765,7 +746,7 @@ nvmf_tgt_fc_dump_eventq(spdk_fc_queue_dump_info_t *dump_info, char *name, fc_eve
  * Dump the contents of Work Q.
  */
 static void
-nvmf_tgt_fc_dump_wrkq(spdk_fc_queue_dump_info_t *dump_info, char *name, fc_wrkq_t *wq)
+nvmf_tgt_fc_dump_wrkq(spdk_nvmf_bcm_fc_queue_dump_info_t *dump_info, char *name, fc_wrkq_t *wq)
 {
 	nvmf_tgt_fc_dump_sli_queue(dump_info, name, &wq->q);
 }
@@ -774,7 +755,7 @@ nvmf_tgt_fc_dump_wrkq(spdk_fc_queue_dump_info_t *dump_info, char *name, fc_wrkq_
  * Dump the contents of recv Q.
  */
 static void
-nvmf_tgt_fc_dump_rcvq(spdk_fc_queue_dump_info_t *dump_info, char *name, fc_rcvq_t *rq)
+nvmf_tgt_fc_dump_rcvq(spdk_nvmf_bcm_fc_queue_dump_info_t *dump_info, char *name, fc_rcvq_t *rq)
 {
 	nvmf_tgt_fc_dump_sli_queue(dump_info, name, &rq->q);
 }
@@ -783,7 +764,7 @@ nvmf_tgt_fc_dump_rcvq(spdk_fc_queue_dump_info_t *dump_info, char *name, fc_rcvq_
  * Dump the contents of fc_hwqp.
  */
 static void
-nvmf_tgt_fc_dump_hwqp(spdk_fc_queue_dump_info_t         *dump_info,
+nvmf_tgt_fc_dump_hwqp(spdk_nvmf_bcm_fc_queue_dump_info_t         *dump_info,
 		      struct spdk_nvmf_bcm_fc_hw_queues *hw_queue)
 {
 	/*
@@ -822,7 +803,7 @@ nvmf_tgt_fc_dump_hwqp(spdk_fc_queue_dump_info_t         *dump_info,
  */
 static void
 nvmf_tgt_fc_dump_all_queues(struct spdk_nvmf_bcm_fc_port *fc_port,
-			    spdk_fc_queue_dump_info_t    *dump_info)
+			    spdk_nvmf_bcm_fc_queue_dump_info_t    *dump_info)
 {
 	struct spdk_nvmf_bcm_fc_hwqp *ls_queue;
 	struct spdk_nvmf_bcm_fc_hwqp *io_queue;
@@ -1661,10 +1642,10 @@ out:
 static void
 nvmf_fc_hw_port_quiesce_dump_cb(void *ctx, spdk_err_t err)
 {
-	spdk_fc_hw_port_dump_ctx_t   *dump_ctx = (spdk_fc_hw_port_dump_ctx_t *)ctx;
-	spdk_hw_port_dump_args_t     *args     = dump_ctx->dump_args;
+	spdk_nvmf_bcm_fc_hw_port_dump_ctx_t   *dump_ctx = (spdk_nvmf_bcm_fc_hw_port_dump_ctx_t *)ctx;
+	spdk_nvmf_bcm_fc_hw_port_dump_args_t     *args     = dump_ctx->dump_args;
 	spdk_nvmf_bcm_fc_callback                   cb_func  = dump_ctx->dump_cb_func;
-	spdk_fc_queue_dump_info_t     dump_info;
+	spdk_nvmf_bcm_fc_queue_dump_info_t     dump_info;
 	struct spdk_nvmf_bcm_fc_port *fc_port       = NULL;
 	char                         *dump_buf      = NULL;
 	uint32_t                      dump_buf_size = SPDK_FC_HW_DUMP_BUF_SIZE;
@@ -1725,9 +1706,9 @@ static void
 nvmf_fc_hw_port_dump(void *arg1, void *arg2)
 {
 	struct spdk_nvmf_bcm_fc_port *fc_port = NULL;
-	spdk_hw_port_dump_args_t     *args    = (spdk_hw_port_dump_args_t *)arg1;
+	spdk_nvmf_bcm_fc_hw_port_dump_args_t     *args    = (spdk_nvmf_bcm_fc_hw_port_dump_args_t *)arg1;
 	spdk_nvmf_bcm_fc_callback     cb_func = (spdk_nvmf_bcm_fc_callback)arg2;
-	spdk_fc_hw_port_dump_ctx_t   *ctx     = NULL;
+	spdk_nvmf_bcm_fc_hw_port_dump_ctx_t   *ctx     = NULL;
 	spdk_err_t                    err     = SPDK_SUCCESS;
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "HW port %d dump\n", args->port_handle);
@@ -1745,8 +1726,8 @@ nvmf_fc_hw_port_dump(void *arg1, void *arg2)
 	/*
 	 * Save the dump event args and the callback in a context struct.
 	 */
-	ctx = spdk_calloc(1, sizeof(spdk_fc_hw_port_dump_ctx_t));
-	bzero(ctx, sizeof(spdk_fc_hw_port_dump_ctx_t));
+	ctx = spdk_calloc(1, sizeof(spdk_nvmf_bcm_fc_hw_port_dump_ctx_t));
+	bzero(ctx, sizeof(spdk_nvmf_bcm_fc_hw_port_dump_ctx_t));
 	ctx->dump_args    = (void *)arg1;
 	ctx->dump_cb_func = cb_func;
 
