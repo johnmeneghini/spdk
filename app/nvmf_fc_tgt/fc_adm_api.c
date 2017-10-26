@@ -218,10 +218,10 @@ nvmf_fc_tgt_hw_port_data_init(struct spdk_nvmf_bcm_fc_port *fc_port,
 		TAILQ_INIT(&fc_port->io_queues[i].connection_list);
 		TAILQ_INIT(&fc_port->io_queues[i].pending_xri_list);
 
-		lcore_id = nvmf_fc_tgt_get_next_lcore(lcore_id);
-		if (lcore_id == UINT32_MAX) {
-			goto err;
-		}
+                lcore_id = nvmf_fc_tgt_get_next_lcore(lcore_id);
+                if (lcore_id == UINT32_MAX) {
+                        goto err;
+                }
 
 		fc_port->io_queues[i].lcore_id  = lcore_id;
 		fc_port->io_queues[i].hwqp_id   = i;
@@ -841,8 +841,8 @@ nvmf_fc_nport_create(void *arg1, void *arg2)
 	struct spdk_nvmf_bcm_fc_port         *fc_port = NULL;
 	spdk_nvmf_bcm_fc_nport_create_args_t *args    = (spdk_nvmf_bcm_fc_nport_create_args_t *)arg1;
 	spdk_nvmf_bcm_fc_callback             cb_func = (spdk_nvmf_bcm_fc_callback)arg2;
-	struct spdk_nvmf_bcm_fc_nport        *nport   = NULL;
-	spdk_err_t                            err     = SPDK_SUCCESS;
+	struct spdk_nvmf_bcm_fc_nport         *nport   = NULL;
+	spdk_err_t                             err     = SPDK_SUCCESS;
 	spdk_err_t                            rc      = SPDK_SUCCESS;
 
 	/*
@@ -979,12 +979,12 @@ nvmf_fc_nport_delete(void *arg1, void *arg2)
 	spdk_nvmf_bcm_fc_callback                  cb_func     = arg2;
 	struct spdk_nvmf_bcm_fc_nport             *nport       = NULL;
 	struct spdk_nvmf_bcm_fc_nport_del_cb_data *cb_data     = NULL;
-	struct spdk_nvmf_bcm_fc_remote_port_info  *rem_port    = NULL;
-	spdk_err_t                                 err         = SPDK_SUCCESS;
+	struct spdk_nvmf_bcm_fc_remote_port_info *rport_iter  = NULL;
+	spdk_err_t                                err         = SPDK_SUCCESS;
+	uint32_t                                  rport_cnt   = 0;
+	spdk_nvmf_bcm_fc_hw_i_t_delete_args_t    *it_del_args = NULL;
+	struct spdk_event                        *spdk_evt    = NULL;
 	spdk_err_t                                 rc          = SPDK_SUCCESS;
-	uint32_t                                   rport_cnt   = 0;
-	spdk_nvmf_bcm_fc_hw_i_t_delete_args_t     *it_del_args = NULL;
-	struct spdk_event                         *spdk_evt    = NULL;
 
 	/*
 	 * 1. Make sure that the nport exists.
@@ -1056,14 +1056,14 @@ nvmf_fc_nport_delete(void *arg1, void *arg2)
 		goto out;
 	}
 
-	TAILQ_FOREACH(rem_port, &nport->rem_port_list, link) {
+	TAILQ_FOREACH(rport_iter, &nport->rem_port_list, link) {
 		rport_cnt++;
 		it_del_args               = spdk_malloc(sizeof(spdk_nvmf_bcm_fc_hw_i_t_delete_args_t));
 		it_del_args->port_handle  = nport->port_hdl;
 		it_del_args->nport_handle = nport->nport_hdl;
 		it_del_args->cb_ctx       = (void *)cb_data;
-		it_del_args->rpi          = rem_port->rpi;
-		it_del_args->s_id         = rem_port->s_id;
+		it_del_args->rpi          = rport_iter->rpi;
+		it_del_args->s_id         = rport_iter->s_id;
 
 		spdk_evt = spdk_event_allocate(spdk_env_get_master_lcore(), nvmf_fc_i_t_delete,
 					       (void *)it_del_args, nvmf_fc_tgt_delete_nport_cb);
@@ -1106,11 +1106,12 @@ out:
 static void
 nvmf_fc_i_t_add(void *arg1, void *arg2)
 {
-	spdk_nvmf_bcm_fc_hw_i_t_add_args_t       *args    = arg1;
-	spdk_nvmf_bcm_fc_callback                 cb_func = (spdk_nvmf_bcm_fc_callback)arg2;
-	struct spdk_nvmf_bcm_fc_nport            *nport   = NULL;
-	struct spdk_nvmf_bcm_fc_remote_port_info *rport   = NULL;
-	spdk_err_t                                err     = SPDK_SUCCESS;
+	spdk_nvmf_bcm_fc_hw_i_t_add_args_t       *args       = arg1;
+	spdk_nvmf_bcm_fc_callback                 cb_func    = (spdk_nvmf_bcm_fc_callback) arg2;
+	struct spdk_nvmf_bcm_fc_nport            *nport      = NULL;
+	struct spdk_nvmf_bcm_fc_remote_port_info *rport_iter = NULL;
+	struct spdk_nvmf_bcm_fc_remote_port_info *rport      = NULL;
+	spdk_err_t                                err        = SPDK_SUCCESS;
 
 	/*
 	 * 1. Make sure the nport port exists.
@@ -1125,11 +1126,10 @@ nvmf_fc_i_t_add(void *arg1, void *arg2)
 	/*
 	 * TODO: 2. Check for duplicate i_t_add.
 	 */
-	TAILQ_FOREACH(rport, &nport->rem_port_list, link) {
-		if ((rport->s_id == args->s_id) &&
-		    (rport->rpi == args->rpi)) {
+	TAILQ_FOREACH(rport_iter, &nport->rem_port_list, link) {
+		if ((rport_iter->s_id == args->s_id) && (rport_iter->rpi == args->rpi)) {
 			SPDK_ERRLOG("Duplicate rport found for FC nport %d: sid:%d rpi:%d\n",
-				    args->nport_handle, rport->s_id, rport->rpi);
+				    args->nport_handle, rport_iter->s_id, rport_iter->rpi);
 			err = SPDK_ERR_INTERNAL;
 			goto out;
 		}
