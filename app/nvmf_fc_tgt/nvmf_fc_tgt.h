@@ -41,6 +41,7 @@
 #include "spdk/nvmf.h"
 #include "spdk/queue.h"
 #include "spdk/event.h"
+#include "spdk/error.h"
 
 struct rpc_listen_address {
 	char *transport;
@@ -88,5 +89,11 @@ int
 spdk_nvmf_bcm_fc_tgt_shutdown_subsystem_by_nqn(const char *nqn);
 
 int spdk_nvmf_bcm_fc_tgt_start(struct spdk_app_opts *opts);
+
+spdk_err_t
+spdk_nvmf_bcm_fc_tgt_add_port(const char *trname, struct spdk_nvmf_bcm_fc_nport *nport);
+
+spdk_err_t
+spdk_nvmf_bcm_fc_tgt_remove_port(const char *trname, struct spdk_nvmf_bcm_fc_nport *nport);
 
 #endif

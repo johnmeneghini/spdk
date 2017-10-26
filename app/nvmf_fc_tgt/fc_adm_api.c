@@ -32,6 +32,7 @@
  */
 
 #include "fc_adm_api.h"
+#include "nvmf_fc_tgt.h"
 #include <nvmf/transport.h>
 #include <nvmf/nvmf_internal.h>
 #include <spdk/trace.h>
