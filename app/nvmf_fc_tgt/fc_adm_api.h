@@ -307,10 +307,4 @@ struct spdk_nvmf_bcm_fc_master_ops {
 
 typedef struct spdk_nvmf_bcm_fc_master_ops spdk_fc_ops_t;
 
-extern spdk_err_t
-spdk_nvmf_bcm_fc_tgt_add_port(const char *trname, struct spdk_nvmf_bcm_fc_nport *nport);
-
-extern spdk_err_t
-spdk_nvmf_bcm_fc_tgt_remove_port(const char *trname, struct spdk_nvmf_bcm_fc_nport *nport);
-
 #endif
