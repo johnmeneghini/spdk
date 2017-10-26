@@ -55,6 +55,8 @@ static void nvmf_fc_nport_delete(void *arg1, void *arg2);
 static void nvmf_fc_i_t_add(void *arg1, void *arg2);
 static void nvmf_fc_i_t_delete(void *arg1, void *arg2);
 static void nvmf_fc_abts_recv(void *arg1, void *arg2);
+static void nvmf_fc_hw_port_dump(void *arg1, void *arg2);
+static void nvmf_fc_hw_port_quiesce_dump_cb(void *ctx, spdk_err_t err);
 
 static uint32_t
 nvmf_fc_tgt_get_next_lcore(uint32_t prev_core)
@@ -516,6 +518,362 @@ nvmf_fc_tgt_rport_data_init(struct spdk_nvmf_bcm_fc_remote_port_info *rport,
 	rport->rpi  = args->rpi;
 }
 
+static void
+nvmf_tgt_fc_queue_quiesce_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
+{
+	struct spdk_nvmf_bcm_fc_poller_api_quiesce_queue_args *quiesce_api_data = NULL;
+	spdk_nvmf_bcm_fc_hw_port_quiesce_ctx_t                     *port_quiesce_ctx = NULL;
+	struct spdk_nvmf_bcm_fc_hwqp                          *hwqp             = NULL;
+	struct spdk_nvmf_bcm_fc_port                          *fc_port          = NULL;
+	spdk_err_t                                             err              = SPDK_SUCCESS;
+
+	quiesce_api_data           = (struct spdk_nvmf_bcm_fc_poller_api_quiesce_queue_args *)cb_data;
+	hwqp                       = quiesce_api_data->hwqp;
+	fc_port                    = hwqp->fc_port;
+	port_quiesce_ctx           = (spdk_nvmf_bcm_fc_hw_port_quiesce_ctx_t *)quiesce_api_data->ctx;
+	spdk_nvmf_bcm_fc_hw_port_quiesce_cb_fn cb_func = port_quiesce_ctx->cb_func;
+
+	/*
+	 * Decrement the callback/quiesced queue count.
+	 */
+	port_quiesce_ctx->quiesce_count--;
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "Queue%d Quiesced\n", quiesce_api_data->hwqp->hwqp_id);
+
+	spdk_free(quiesce_api_data);
+	/*
+	 * Wait for 17 call backs i.e. NVMF_FC_MAX_IO_QUEUES + LS QUEUE.
+	 */
+	if (port_quiesce_ctx->quiesce_count > 0) {
+		return;
+	}
+
+	if (fc_port->hw_port_status == SPDK_FC_PORT_QUIESCED) {
+		SPDK_ERRLOG("Port %d already in quiesced state.\n", fc_port->port_hdl);
+	} else {
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "HW port %d  quiesced.\n", fc_port->port_hdl);
+		fc_port->hw_port_status = SPDK_FC_PORT_QUIESCED;
+	}
+
+	if (cb_func) {
+		/*
+		 * Callback function for the called of quiesce.
+		 */
+		cb_func(port_quiesce_ctx->ctx, err);
+	}
+
+	/*
+	 * Free the context structure.
+	 */
+	spdk_free(port_quiesce_ctx);
+
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "HW port %d quiesce done, rc = %d.\n", fc_port->port_hdl,
+		      err);
+}
+
+static spdk_err_t
+nvmf_tgt_fc_hw_queue_quiesce(struct spdk_nvmf_bcm_fc_hwqp *fc_hwqp, void *ctx,
+			     spdk_nvmf_bcm_fc_poller_api_cb cb_func)
+{
+	struct spdk_nvmf_bcm_fc_poller_api_quiesce_queue_args *args;
+	spdk_nvmf_bcm_fc_poller_api_ret_t                      rc  = 0;
+	spdk_err_t                                             err = SPDK_SUCCESS;
+
+	args = spdk_calloc(1, sizeof(struct spdk_nvmf_bcm_fc_poller_api_quiesce_queue_args));
+
+	args->hwqp            = fc_hwqp;
+	args->ctx             = ctx;
+	args->cb_info.cb_func = cb_func;
+	args->cb_info.cb_data = args;
+
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "Quiesce queue %d\n", fc_hwqp->hwqp_id);
+	rc = spdk_nvmf_bcm_fc_poller_api(fc_hwqp->lcore_id, SPDK_NVMF_BCM_FC_POLLER_API_QUIESCE_QUEUE,
+					 args);
+	if (rc) {
+		spdk_free(args);
+		err = SPDK_ERR_INTERNAL;
+	}
+
+	return err;
+}
+
+/*
+ * Hw port Quiesce
+ */
+static spdk_err_t
+nvmf_tgt_fc_hw_port_quiesce(struct spdk_nvmf_bcm_fc_port *fc_port, void *ctx,
+			    spdk_nvmf_bcm_fc_hw_port_quiesce_cb_fn cb_func)
+{
+	struct spdk_nvmf_bcm_fc_hw_port_quiesce_ctx *port_quiesce_ctx = NULL;
+	int                                     i                = 0;
+	spdk_err_t                              err              = SPDK_SUCCESS;
+
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "HW port:%d is being quiesced.\n", fc_port->port_hdl);
+
+	if (fc_port->hw_port_status == SPDK_FC_PORT_QUIESCED) {
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "Port %d already in quiesced state.\n",
+			      fc_port->port_hdl);
+		/*
+		 * Execute the callback function directly.
+		 */
+		cb_func(ctx, err);
+		goto fail;
+	}
+
+	port_quiesce_ctx = spdk_calloc(1, sizeof(spdk_nvmf_bcm_fc_hw_port_quiesce_ctx_t));
+	bzero(port_quiesce_ctx, sizeof(spdk_nvmf_bcm_fc_hw_port_quiesce_ctx_t));
+	port_quiesce_ctx->quiesce_count = 0;
+	port_quiesce_ctx->ctx           = ctx;
+	port_quiesce_ctx->cb_func       = cb_func;
+
+	/*
+	 * Quiesce the LS queue.
+	 */
+	err = nvmf_tgt_fc_hw_queue_quiesce(&fc_port->ls_queue, port_quiesce_ctx,
+					   nvmf_tgt_fc_queue_quiesce_cb);
+	if (err != SPDK_SUCCESS) {
+		SPDK_ERRLOG("Failed to quiesce the LS queue.\n");
+		err = SPDK_ERR_INTERNAL;
+		goto fail;
+	}
+	port_quiesce_ctx->quiesce_count++;
+
+	/*
+	 * Quiesce the IO queues.
+	 */
+	for (i = 0; i < NVMF_FC_MAX_IO_QUEUES; i++) {
+		err = nvmf_tgt_fc_hw_queue_quiesce(&fc_port->io_queues[i],
+						   port_quiesce_ctx,
+						   nvmf_tgt_fc_queue_quiesce_cb);
+		if (err != SPDK_SUCCESS) {
+			DEV_VERIFY(0);
+			SPDK_ERRLOG("Failed to quiesce the IO  queue:%d.\n", fc_port->io_queues[i].hwqp_id);
+		}
+		port_quiesce_ctx->quiesce_count++;
+	}
+
+fail:
+	if (port_quiesce_ctx && err != SPDK_SUCCESS) {
+		spdk_free(port_quiesce_ctx);
+	}
+	return err;
+}
+
+/*
+ * Print content to a text buffer.
+ */
+static void
+nvmf_tgt_fc_dump_buf_print(spdk_nvmf_bcm_fc_queue_dump_info_t *dump_info, char *fmt, ...)
+{
+	va_list ap;
+	int32_t avail;
+	int32_t written;
+	va_start(ap, fmt);
+	uint64_t buffer_size = SPDK_FC_HW_DUMP_BUF_SIZE;
+
+	avail = (int32_t)(buffer_size - dump_info->offset);
+
+	if (avail <= 0) {
+		va_end(ap);
+		return;
+	}
+	written = vsnprintf(dump_info->buffer + dump_info->offset, avail, fmt, ap);
+	if (written >= avail) {
+		dump_info->offset += avail;
+	} else {
+		dump_info->offset += written;
+	}
+	va_end(ap);
+}
+
+/*
+ * Dump queue entry
+ */
+static void
+nvmf_tgt_fc_dump_buffer(spdk_nvmf_bcm_fc_queue_dump_info_t *dump_info, const char *name,
+			void *buffer,
+			uint32_t size)
+{
+	uint32_t *dword;
+	uint32_t  i;
+	uint32_t  count;
+
+	/*
+	 * Print a max of 8 dwords per buffer line.
+	 */
+#define NVMF_TGT_FC_NEWLINE_MOD 8
+
+	/*
+	 * Make sure the print data  size is non-zero.
+	 */
+	count = size / sizeof(uint32_t);
+	if (count == 0) {
+		return;
+	}
+
+	nvmf_tgt_fc_dump_buf_print(dump_info, "%s type=buffer:", (char *)name);
+	dword = buffer;
+
+	for (i = 0; i < count; i++) {
+		nvmf_tgt_fc_dump_buf_print(dump_info, "%08x", *dword++);
+		if ((i % NVMF_TGT_FC_NEWLINE_MOD) == (NVMF_TGT_FC_NEWLINE_MOD - 1)) {
+			nvmf_tgt_fc_dump_buf_print(dump_info, "\n");
+		}
+	}
+}
+
+/*
+ * Dump queue entries.
+ */
+static void
+nvmf_tgt_fc_dump_queue_entries(spdk_nvmf_bcm_fc_queue_dump_info_t *dump_info, bcm_sli_queue_t *q)
+{
+#define NVMF_TGT_FC_QDUMP_RADIUS 1
+	char     name[64];
+	int32_t  index = 0;
+	uint8_t *entry = NULL;
+	uint32_t i;
+
+	index = q->tail;
+
+	index -= NVMF_TGT_FC_QDUMP_RADIUS;
+	if (index < 0) {
+		index += q->max_entries;
+	}
+
+	/*
+	 * Print the NVMF_TGT_FC_QDUMP_RADIUS number of entries before and
+	 * the tail index.
+	 */
+	for (i = 0; i < 2 * NVMF_TGT_FC_QDUMP_RADIUS + 1; i++) {
+		bzero(name, sizeof(name));
+		(void)snprintf(name, sizeof(name), "\nentry:%d ", index);
+		entry = q->address;
+		entry += index * q->size;
+		nvmf_tgt_fc_dump_buffer(dump_info, name, entry, q->size);
+		index++;
+		if (index >= q->max_entries) {
+			index = 0;
+		}
+	}
+	nvmf_tgt_fc_dump_buf_print(dump_info, "\n");
+}
+
+/*
+ * Dump the contents of Event Q.
+ */
+static void
+nvmf_tgt_fc_dump_sli_queue(spdk_nvmf_bcm_fc_queue_dump_info_t *dump_info, char *name,
+			   bcm_sli_queue_t *q)
+{
+	nvmf_tgt_fc_dump_buf_print(dump_info,
+				   "\nname:%s, head:%" PRIu16 ", tail:%" PRIu16 ", used:%" PRIu16 ", "
+				   "posted_limit:%" PRIu32 ", processed_limit:%" PRIu32 ", "
+				   "type:%" PRIu16 ", qid:%" PRIu16 ", size:%" PRIu16 ", "
+				   "max_entries:%" PRIu16 ", address:%p",
+				   name, q->head, q->tail, q->used, q->posted_limit, q->processed_limit,
+				   q->type, q->qid, q->size, q->max_entries, q->address);
+
+	nvmf_tgt_fc_dump_queue_entries(dump_info, q);
+}
+
+/*
+ * Dump the contents of Event Q.
+ */
+static void
+nvmf_tgt_fc_dump_eventq(spdk_nvmf_bcm_fc_queue_dump_info_t *dump_info, char *name, fc_eventq_t *eq)
+{
+	nvmf_tgt_fc_dump_sli_queue(dump_info, name, &eq->q);
+}
+
+/*
+ * Dump the contents of Work Q.
+ */
+static void
+nvmf_tgt_fc_dump_wrkq(spdk_nvmf_bcm_fc_queue_dump_info_t *dump_info, char *name, fc_wrkq_t *wq)
+{
+	nvmf_tgt_fc_dump_sli_queue(dump_info, name, &wq->q);
+}
+
+/*
+ * Dump the contents of recv Q.
+ */
+static void
+nvmf_tgt_fc_dump_rcvq(spdk_nvmf_bcm_fc_queue_dump_info_t *dump_info, char *name, fc_rcvq_t *rq)
+{
+	nvmf_tgt_fc_dump_sli_queue(dump_info, name, &rq->q);
+}
+
+/*
+ * Dump the contents of fc_hwqp.
+ */
+static void
+nvmf_tgt_fc_dump_hwqp(spdk_nvmf_bcm_fc_queue_dump_info_t         *dump_info,
+		      struct spdk_nvmf_bcm_fc_hw_queues *hw_queue)
+{
+	/*
+	 * Dump the EQ.
+	 */
+	nvmf_tgt_fc_dump_eventq(dump_info, "eq", &hw_queue->eq);
+
+	/*
+	 * Dump the CQ-WQ.
+	 */
+	nvmf_tgt_fc_dump_eventq(dump_info, "cq_wq", &hw_queue->cq_wq);
+
+	/*
+	 * Dump the CQ-RQ.
+	 */
+	nvmf_tgt_fc_dump_eventq(dump_info, "cq_rq", &hw_queue->cq_rq);
+
+	/*
+	 * Dump the WQ.
+	 */
+	nvmf_tgt_fc_dump_wrkq(dump_info, "wq", &hw_queue->wq);
+
+	/*
+	 * Dump the RQ-HDR.
+	 */
+	nvmf_tgt_fc_dump_rcvq(dump_info, "rq_hdr", &hw_queue->rq_hdr);
+
+	/*
+	 * Dump the RQ-PAYLOAD.
+	 */
+	nvmf_tgt_fc_dump_rcvq(dump_info, "rq_payload", &hw_queue->rq_payload);
+}
+
+/*
+ * Dump the hwqps.
+ */
+static void
+nvmf_tgt_fc_dump_all_queues(struct spdk_nvmf_bcm_fc_port *fc_port,
+			    spdk_nvmf_bcm_fc_queue_dump_info_t    *dump_info)
+{
+	struct spdk_nvmf_bcm_fc_hwqp *ls_queue;
+	struct spdk_nvmf_bcm_fc_hwqp *io_queue;
+	int                           i = 0;
+
+	/*
+	 * Dump the LS queue.
+	 */
+	ls_queue = &fc_port->ls_queue;
+	nvmf_tgt_fc_dump_buf_print(dump_info, "\nHW Queue type: LS, HW Queue ID:%d", ls_queue->hwqp_id);
+	nvmf_tgt_fc_dump_hwqp(dump_info, &ls_queue->queues);
+
+	/*
+	 * Dump the IO queues.
+	 */
+	for (i = 0; i < NVMF_FC_MAX_IO_QUEUES; i++) {
+		io_queue = &fc_port->io_queues[i];
+		nvmf_tgt_fc_dump_buf_print(dump_info, "\nHW Queue type: IO, HW Queue ID:%d",
+					   io_queue->hwqp_id);
+		nvmf_tgt_fc_dump_hwqp(dump_info, &io_queue->queues);
+	}
+}
+
+/* ******************* PRIVATE HELPER FUNCTIONS - END ************** */
+
+/* ******************* PUBLIC FUNCTIONS FOR DRIVER AND LIBRARY INTERACTIONS - BEGIN ************** */
+
 /*
  * Queue up an event in the SPDK masters event queue.
  * Used by the FC driver to notify the SPDK master of FC related events.
@@ -603,9 +961,11 @@ spdk_nvmf_bcm_fc_master_enqueue_event(spdk_fc_event_t event_type, void *args,
 
 	case SPDK_FC_LINK_BREAK:
 		break;
-	case SPDK_FC_ADAPTER_ERR1: /* Firmware Dump */
-		break;
-	case SPDK_FC_ADAPTER_ERR2:
+	case SPDK_FC_HW_PORT_DUMP: /* Firmware Dump */
+		event = spdk_event_allocate(spdk_env_get_master_lcore(), nvmf_fc_hw_port_dump, args, cb_func);
+		if (event == NULL) {
+			err = SPDK_ERR_NOMEM;
+		}
 		break;
 	case SPDK_FC_UNRECOVERABLE_ERR:
 		break;
@@ -1324,5 +1684,128 @@ out:
 		spdk_free(args);
 	}
 }
+
+/*
+ * Callback function for hw port quiesce.
+ */
+static void
+nvmf_fc_hw_port_quiesce_dump_cb(void *ctx, spdk_err_t err)
+{
+	spdk_nvmf_bcm_fc_hw_port_dump_ctx_t   *dump_ctx = (spdk_nvmf_bcm_fc_hw_port_dump_ctx_t *)ctx;
+	spdk_nvmf_bcm_fc_hw_port_dump_args_t     *args     = dump_ctx->dump_args;
+	spdk_nvmf_bcm_fc_callback                   cb_func  = dump_ctx->dump_cb_func;
+	spdk_nvmf_bcm_fc_queue_dump_info_t     dump_info;
+	struct spdk_nvmf_bcm_fc_port *fc_port       = NULL;
+	char                         *dump_buf      = NULL;
+	uint32_t                      dump_buf_size = SPDK_FC_HW_DUMP_BUF_SIZE;
+
+	/*
+	 * Free the callback context struct.
+	 */
+	spdk_free(ctx);
+
+	if (err != SPDK_SUCCESS) {
+		SPDK_ERRLOG("Port %d  quiesce operation failed.\n", args->port_handle);
+		goto out;
+	}
+
+	/*
+	 * Get the fc port.
+	 */
+	fc_port = spdk_nvmf_bcm_fc_port_list_get(args->port_handle);
+	if (fc_port == NULL) {
+		SPDK_ERRLOG("Unable to find the SPDK FC port %d\n", args->port_handle);
+		err = SPDK_ERR_INVALID_ARGS;
+		goto out;
+	}
+
+	/*
+	 * Allocate memory for the dump  buffer.
+	 * This memory will be freed by FCT.
+	 */
+	dump_buf = (char *)spdk_calloc(1, dump_buf_size);
+	bzero(dump_buf, dump_buf_size);
+	*args->dump_buf  = (uint32_t *)dump_buf;
+	dump_info.buffer = dump_buf;
+	dump_info.offset = 0;
+
+	/*
+	 * Add the dump reason to the top of the buffer.
+	 */
+	nvmf_tgt_fc_dump_buf_print(&dump_info, "%s\n", args->reason);
+
+	/*
+	 * Dump the hwqp.
+	 */
+	nvmf_tgt_fc_dump_all_queues(fc_port, &dump_info);
+
+out:
+	if (cb_func != NULL) {
+		(void)cb_func(args->port_handle, SPDK_FC_HW_PORT_DUMP, args->cb_ctx, err);
+	}
+
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "HW port %d dump done, rc = %d.\n", args->port_handle,
+		      err);
+}
+
+/*
+ * HW port dump
+ */
+static void
+nvmf_fc_hw_port_dump(void *arg1, void *arg2)
+{
+	struct spdk_nvmf_bcm_fc_port *fc_port = NULL;
+	spdk_nvmf_bcm_fc_hw_port_dump_args_t     *args    = (spdk_nvmf_bcm_fc_hw_port_dump_args_t *)arg1;
+	spdk_nvmf_bcm_fc_callback     cb_func = (spdk_nvmf_bcm_fc_callback)arg2;
+	spdk_nvmf_bcm_fc_hw_port_dump_ctx_t   *ctx     = NULL;
+	spdk_err_t                    err     = SPDK_SUCCESS;
+
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "HW port %d dump\n", args->port_handle);
+
+	/*
+	 * Make sure the physical port exists.
+	 */
+	fc_port = spdk_nvmf_bcm_fc_port_list_get(args->port_handle);
+	if (fc_port == NULL) {
+		SPDK_ERRLOG("Unable to find the SPDK FC port %d\n", args->port_handle);
+		err = SPDK_ERR_INVALID_ARGS;
+		goto out;
+	}
+
+	/*
+	 * Save the dump event args and the callback in a context struct.
+	 */
+	ctx = spdk_calloc(1, sizeof(spdk_nvmf_bcm_fc_hw_port_dump_ctx_t));
+	bzero(ctx, sizeof(spdk_nvmf_bcm_fc_hw_port_dump_ctx_t));
+	ctx->dump_args    = (void *)arg1;
+	ctx->dump_cb_func = cb_func;
+
+	/*
+	 * Quiesce the hw port.
+	 */
+	err = nvmf_tgt_fc_hw_port_quiesce(fc_port, ctx, nvmf_fc_hw_port_quiesce_dump_cb);
+	if (err != SPDK_SUCCESS) {
+		goto fail;
+	}
+
+	/*
+	 * Once the ports are successfully quiesced the dump processing
+	 * will continue in the callback function: spdk_fc_port_quiesce_dump_cb
+	 */
+	return;
+fail:
+	if (ctx) {
+		spdk_free(ctx);
+	}
+
+out:
+	if (cb_func != NULL) {
+		(void)cb_func(args->port_handle, SPDK_FC_HW_PORT_DUMP, args->cb_ctx, err);
+	}
+
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "HW port %d dump done, rc = %d.\n", args->port_handle,
+		      err);
+}
+/* ******************* PUBLIC FUNCTIONS FOR DRIVER AND LIBRARY INTERACTIONS - END ************** */
 
 SPDK_LOG_REGISTER_TRACE_FLAG("nvmf_bcm_fc_adm", SPDK_TRACE_NVMF_BCM_FC_ADM);

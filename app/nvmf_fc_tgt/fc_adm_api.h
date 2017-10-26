@@ -36,6 +36,13 @@
 #include "spdk/error.h"
 #include "nvmf_fc/bcm_fc.h"
 
+/*
+ * Approximately amount of memory to dump
+ * the 3 entries from each of the 16 IO queues and 1 LS queue.
+ */
+#define SPDK_FC_HW_DUMP_BUF_SIZE (10 * 4096)
+#define SPDK_FC_HW_DUMP_REASON_STR_MAX_SIZE 256
+
 /**
  * \enum	spdk_fc_event_t
  *
@@ -52,8 +59,7 @@ typedef enum {
 	SPDK_FC_IT_DELETE, /* PRLI */
 	SPDK_FC_ABTS_RECV,
 	SPDK_FC_LINK_BREAK,
-	SPDK_FC_ADAPTER_ERR1, /* Firmware Dump */
-	SPDK_FC_ADAPTER_ERR2,
+	SPDK_FC_HW_PORT_DUMP,
 	SPDK_FC_UNRECOVERABLE_ERR,
 	SPDK_FC_EVENT_MAX,
 } spdk_fc_event_t;
@@ -207,14 +213,18 @@ struct spdk_nvmf_bcm_fc_link_break_args {
 typedef struct spdk_nvmf_bcm_fc_link_break_args spdk_nvmf_bcm_fc_link_break_args_t;
 
 /**
- * \struct spdk_nvmf_bcm_fc_adapter_event_args
+ * \struct spdk_nvmf_bcm_fc_hw_port_dump_args
  *
- * \brief  Arguemnts for adapter event.
+ * \brief  Arguments for port dump event.
  */
-struct spdk_nvmf_bcm_fc_adapter_event_args {
+struct spdk_nvmf_bcm_fc_hw_port_dump_args {
+	uint8_t    port_handle;
+	char       reason[SPDK_FC_HW_DUMP_REASON_STR_MAX_SIZE];
+	uint32_t **dump_buf;
+	void      *cb_ctx;
 };
 
-typedef struct spdk_nvmf_bcm_fc_adapter_event_args spdk_nvmf_bcm_fc_adapter_event_args_t;
+typedef struct spdk_nvmf_bcm_fc_hw_port_dump_args spdk_nvmf_bcm_fc_hw_port_dump_args_t;
 
 /**
  * \struct spdk_nvmf_bcm_fc_unrecoverable_error_args
@@ -306,5 +316,47 @@ struct spdk_nvmf_bcm_fc_master_ops {
 };
 
 typedef struct spdk_nvmf_bcm_fc_master_ops spdk_fc_ops_t;
+
+/*
+ * Call back function pointer for HW port quiesce.
+ */
+typedef void (*spdk_nvmf_bcm_fc_hw_port_quiesce_cb_fn)(void *ctx, spdk_err_t err);
+
+/**
+ * \struct spdk_nvmf_bcm_fc_hw_port_quiesce_ctx
+ *
+ * \brief Context structure for quiescing a hardware port
+ */
+struct spdk_nvmf_bcm_fc_hw_port_quiesce_ctx {
+	int                quiesce_count;
+	void              *ctx;
+	spdk_nvmf_bcm_fc_hw_port_quiesce_cb_fn cb_func;
+};
+
+typedef struct spdk_nvmf_bcm_fc_hw_port_quiesce_ctx spdk_nvmf_bcm_fc_hw_port_quiesce_ctx_t;
+
+/**
+ * \struct spdk_nvmf_bcm_fc_hw_port_dump_ctx
+ *
+ * \brief Context structure for dumping a hardware port
+ */
+struct spdk_nvmf_bcm_fc_hw_port_dump_ctx {
+	void       *dump_args;
+	spdk_nvmf_bcm_fc_callback dump_cb_func;
+};
+
+typedef struct spdk_nvmf_bcm_fc_hw_port_dump_ctx spdk_nvmf_bcm_fc_hw_port_dump_ctx_t;
+
+/**
+ * \struct spdk_nvmf_bcm_fc_hw_port_dump_ctx
+ *
+ * \brief info structure for dumping a queue
+ */
+struct spdk_nvmf_bcm_fc_queue_dump_info {
+	char *buffer;
+	int   offset;
+};
+
+typedef struct spdk_nvmf_bcm_fc_queue_dump_info spdk_nvmf_bcm_fc_queue_dump_info_t;
 
 #endif
