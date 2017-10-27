@@ -22,6 +22,7 @@
 #define SPDK_NVMF_FC_LOG_STR_SIZE 255
 
 static void nvmf_fc_hw_port_init(void *arg1, void *arg2);
+static void nvmf_fc_hw_port_link_break(void *arg1, void *arg2);
 static void nvmf_fc_hw_port_online(void *arg1, void *arg2);
 static void nvmf_fc_hw_port_offline(void *arg1, void *arg2);
 static void nvmf_fc_nport_create(void *arg1, void *arg2);
@@ -207,6 +208,107 @@ err:
 	}
 
 	return err;
+}
+
+/*
+ * Callback function for HW port link break operation.
+ *
+ * Notice that this callback is being triggered when spdk_fc_nport_delete()
+ * completes, if that spdk_fc_nport_delete() called is issued by
+ * nvmf_fc_hw_port_link_break().
+ *
+ * Since nvmf_fc_hw_port_link_break() can invoke spdk_fc_nport_delete() multiple
+ * times (one per nport in the HW port's nport_list), a single call to
+ * nvmf_fc_hw_port_link_break() can result in multiple calls to this callback function.
+ *
+ * As a result, this function only invokes a callback to the caller of
+ * nvmf_fc_hw_port_link_break() only when the HW port's nport_list is empty.
+ */
+static void
+nvmf_fc_tgt_hw_port_link_break_cb(uint8_t port_handle,
+				  spdk_fc_event_t event_type, void *cb_args, spdk_err_t spdk_err)
+{
+	spdk_nvmf_bcm_fc_port_link_break_cb_data_t   *offline_cb_args = cb_args;
+	spdk_nvmf_bcm_hw_port_link_break_args_t      *offline_args = NULL;
+	spdk_nvmf_bcm_fc_callback                     cb_func      = NULL;
+	spdk_err_t                                    err          = SPDK_SUCCESS;
+	struct spdk_nvmf_bcm_fc_port                 *fc_port      = NULL;
+	int                                           num_nports   = 0;
+	char                                          log_str[SPDK_NVMF_FC_LOG_STR_SIZE];
+
+	if (SPDK_SUCCESS != spdk_err) {
+		DEV_VERIFY(!"port link break cb: spdk_err not success.");
+		SPDK_ERRLOG("port link break cb: spdk_err:%d.\n", spdk_err);
+		goto out;
+	}
+
+	if (!offline_cb_args) {
+		DEV_VERIFY(!"port link break cb: port_offline_args is NULL.");
+		err = SPDK_ERR_INVALID_ARGS;
+		goto out;
+	}
+
+	offline_args = offline_cb_args->args;
+	if (!offline_args) {
+		DEV_VERIFY(!"port link break cb: offline_args is NULL.");
+		err = SPDK_ERR_INVALID_ARGS;
+		goto out;
+	}
+
+	if (port_handle != offline_args->port_handle) {
+		DEV_VERIFY(!"port link break cb: port_handle mismatch.");
+		err = SPDK_ERR_INVALID_ARGS;
+		goto out;
+	}
+
+	cb_func = offline_cb_args->cb_func;
+	if (!cb_func) {
+		DEV_VERIFY(!"port link break cb: cb_func is NULL.");
+		err = SPDK_ERR_INVALID_ARGS;
+		goto out;
+	}
+
+	fc_port = spdk_nvmf_bcm_fc_port_list_get(port_handle);
+	if (!fc_port) {
+		DEV_VERIFY(!"port link break cb: fc_port is NULL.");
+		SPDK_ERRLOG("port link break cb: Unable to find port:%d\n",
+			    offline_args->port_handle);
+		err =  SPDK_ERR_INTERNAL;
+		goto out;
+	}
+
+	num_nports = fc_port->num_nports;
+	if (!TAILQ_EMPTY(&fc_port->nport_list)) {
+		/*
+		 * Don't call the callback unless all nports have been deleted.
+		 */
+		goto out;
+	}
+
+	if (num_nports != 0) {
+		DEV_VERIFY(!"port link break cb: num_nports in non-zero.");
+		SPDK_ERRLOG("port link break cb: # of ports should be 0. Instead, num_nports:%d\n",
+			    num_nports);
+		err =  SPDK_ERR_INTERNAL;
+	}
+
+	/*
+	 * Since there are no more nports, execute the callback(s).
+	 */
+	(void)cb_func(port_handle, SPDK_FC_LINK_BREAK,
+		      (void *)offline_args->cb_ctx, spdk_err);
+
+out:
+	spdk_free(offline_cb_args);
+	sprintf(log_str, "port link break cb: port:%d evt_type:%d \
+num_nports:%d err:%d rc:%d.\n",
+		port_handle, event_type, num_nports, err, spdk_err);
+	if (err != SPDK_SUCCESS) {
+		SPDK_ERRLOG("%s", log_str);
+	} else {
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "%s", log_str);
+	}
+	return;
 }
 
 /*
@@ -922,6 +1024,10 @@ spdk_nvmf_bcm_fc_master_enqueue_event(spdk_fc_event_t event_type, void *args,
 		break;
 
 	case SPDK_FC_LINK_BREAK:
+		event = spdk_event_allocate(spdk_env_get_master_lcore(), nvmf_fc_hw_port_link_break, args, cb_func);
+		if (event == NULL) {
+			err = SPDK_ERR_NOMEM;
+		}
 		break;
 	case SPDK_FC_HW_PORT_DUMP: /* Firmware Dump */
 		event = spdk_event_allocate(spdk_env_get_master_lcore(), nvmf_fc_hw_port_dump, args, cb_func);
@@ -1110,12 +1216,12 @@ nvmf_fc_hw_port_offline(void *arg1, void *arg2)
 	fc_port = spdk_nvmf_bcm_fc_port_list_get(args->port_handle);
 	if (fc_port) {
 		/*
-		 * 2. Set the port state to offline.
+		 * 2. Set the port state to offline, if it is not already.
 		 */
 		err = spdk_nvmf_bcm_fc_port_set_offline(fc_port);
 		if (err != SPDK_SUCCESS) {
-			SPDK_ERRLOG("Hw port %d offline failed. rc = %d\n", fc_port->port_hdl, err);
-			DEV_VERIFY(0 != "HW port offline failed");
+			SPDK_ERRLOG("Hw port %d already offline. rc = %d\n", fc_port->port_hdl, err);
+			err = SPDK_SUCCESS;
 			goto out;
 		}
 
@@ -1232,6 +1338,8 @@ nvmf_fc_tgt_delete_nport_cb(uint8_t port_handle, spdk_fc_event_t event_type,
 	spdk_nvmf_bcm_fc_callback                  cb_func     = cb_data->fc_cb_func;
 	uint32_t                                   assoc_count = 0;
 	spdk_err_t                                 err         = SPDK_SUCCESS;
+	uint16_t                                   nport_hdl   = 0;
+	char                                       log_str[SPDK_NVMF_FC_LOG_STR_SIZE];
 
 	/*
 	 * Assert on any delete failure.
@@ -1242,6 +1350,7 @@ nvmf_fc_tgt_delete_nport_cb(uint8_t port_handle, spdk_fc_event_t event_type,
 		goto out;
 	}
 
+	nport_hdl = nport->nport_hdl;
 	if (SPDK_SUCCESS != spdk_err) {
 		SPDK_ERRLOG("Nport delete callback returned error. FC Port: "
 			    "%d, Nport: %d\n",
@@ -1276,9 +1385,13 @@ nvmf_fc_tgt_delete_nport_cb(uint8_t port_handle, spdk_fc_event_t event_type,
 		spdk_free(cb_data);
 	}
 out:
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM,
-		      "nport:%d delete cb exit, evt_type:%d rc:%d.\n",
-		      port_handle, event_type, spdk_err);
+	sprintf(log_str, "port:%d nport:%d delete cb exit, evt_type:%d rc:%d.\n", port_handle, nport_hdl,
+		event_type, spdk_err);
+	if (err != SPDK_SUCCESS) {
+		SPDK_ERRLOG("%s", log_str);
+	} else {
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "%s", log_str);
+	}
 }
 
 /*
@@ -1757,6 +1870,131 @@ out:
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "HW port %d dump done, rc = %d.\n", args->port_handle,
 		      err);
 }
+
+/*
+ * Process a link break event on a HW port.
+ */
+static void
+nvmf_fc_hw_port_link_break(void *arg1, void *arg2)
+{
+	struct spdk_nvmf_bcm_fc_port   *fc_port = NULL;
+	struct spdk_nvmf_bcm_fc_hwqp   *hwqp    = NULL;
+	spdk_nvmf_bcm_hw_port_link_break_args_t *args    = (spdk_nvmf_bcm_hw_port_link_break_args_t *)arg1;
+	spdk_nvmf_bcm_fc_callback       cb_func = (spdk_nvmf_bcm_fc_callback)arg2;
+	int                             i       = 0;
+	spdk_err_t                      err     = SPDK_SUCCESS;
+	struct spdk_nvmf_bcm_fc_nport *nport   = NULL;
+	uint32_t                        nport_deletes_sent = 0;
+	uint32_t                        nport_deletes_skipped = 0;
+	struct spdk_event              *spdk_evt = NULL;
+	spdk_nvmf_bcm_fc_nport_delete_args_t       *nport_del_args = NULL;
+	spdk_nvmf_bcm_fc_port_link_break_cb_data_t *cb_data = NULL;
+	char                            log_str[SPDK_NVMF_FC_LOG_STR_SIZE];
+
+	/*
+	 * 1. Get the fc port using the port handle.
+	 */
+	fc_port = spdk_nvmf_bcm_fc_port_list_get(args->port_handle);
+	if (!fc_port) {
+		SPDK_ERRLOG("port link break: Unable to find the SPDK FC port %d\n",
+			    args->port_handle);
+		err = SPDK_ERR_INVALID_ARGS;
+		goto out;
+	}
+
+	/*
+	 * 2. Set the port state to offline, if it is not already.
+	 */
+	err = spdk_nvmf_bcm_fc_port_set_offline(fc_port);
+	if (err != SPDK_SUCCESS) {
+		SPDK_ERRLOG("port link break: HW port %d already offline. rc = %d\n",
+			    fc_port->port_hdl, err);
+		err = SPDK_SUCCESS;
+		goto out;
+	}
+
+	/*
+	 * 3. Remove poller for the LS queue.
+	 */
+	hwqp = &fc_port->ls_queue;
+	(void)spdk_nvmf_bcm_fc_hwqp_port_set_offline(hwqp);
+	spdk_nvmf_bcm_fc_delete_poller(hwqp);
+
+	/*
+	 * 4. Remove poller for all the io queues.
+	 */
+	for (i = 0; i < (int)fc_port->max_io_queues; i++) {
+		hwqp = &fc_port->io_queues[i];
+		(void)spdk_nvmf_bcm_fc_hwqp_port_set_offline(hwqp);
+		spdk_nvmf_bcm_fc_delete_poller(hwqp);
+	}
+
+	/*
+	 * 5. Delete all the nports, if any.
+	 */
+	if (TAILQ_EMPTY(&fc_port->nport_list)) {
+		goto out;
+	}
+
+
+	TAILQ_FOREACH(nport, &fc_port->nport_list, link) {
+		/* Skipped the nports that are not in CREATED state */
+		if (nport->nport_state != SPDK_NVMF_BCM_FC_OBJECT_CREATED) {
+			nport_deletes_skipped++;
+			continue;
+		}
+
+		/* Allocate memory for callback data. */
+		cb_data = spdk_calloc(1, sizeof(spdk_nvmf_bcm_fc_port_link_break_cb_data_t));
+		if (NULL == cb_data) {
+			SPDK_ERRLOG("port link break: Failed to allocate memory for cb_data %d.\n",
+				    args->port_handle);
+			err = SPDK_ERR_NOMEM;
+			goto out;
+		}
+		cb_data->args = args;
+		cb_data->cb_func = cb_func;
+		nport_del_args = &cb_data->nport_del_args;
+		nport_del_args->port_handle = args->port_handle;
+		nport_del_args->nport_handle = nport->nport_hdl;
+		nport_del_args->cb_ctx = cb_data;
+
+		spdk_evt = spdk_event_allocate(spdk_env_get_master_lcore(),
+					       nvmf_fc_nport_delete,
+					       (void *)nport_del_args, nvmf_fc_tgt_hw_port_link_break_cb);
+		if (spdk_evt == NULL) {
+			err = SPDK_ERR_NOMEM;
+			SPDK_ERRLOG("port link break: event allocate failed for nport \
+with port_handle:%d.\n", nport_del_args->port_handle);
+			spdk_free(cb_data);
+			DEV_VERIFY(!"port link break: event allocate failed.");
+			(void)spdk_nvmf_bcm_fc_nport_set_state(
+				nport, SPDK_NVMF_BCM_FC_OBJECT_ZOMBIE);
+		} else {
+			spdk_event_call(spdk_evt);
+			nport_deletes_sent++;
+		}
+	}
+out:
+	if ((cb_func != NULL) && (nport_deletes_sent == 0)) {
+		/*
+		 * No nport_deletes are sent, which would have eventually
+		 * called the port_link_break callback. Therefore, call the
+		 * port_link_break callback here.
+		 */
+		(void)cb_func(args->port_handle, SPDK_FC_LINK_BREAK, args->cb_ctx, err);
+	}
+
+	sprintf(log_str, "port link break done: port:%d \
+nport_deletes_sent:%d nport_deletes_skipped:%d rc:%d.\n", args->port_handle,
+		nport_deletes_sent, nport_deletes_skipped, err);
+	if (err != SPDK_SUCCESS) {
+		SPDK_ERRLOG("%s", log_str);
+	} else {
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "%s", log_str);
+	}
+}
+
 /* ******************* PUBLIC FUNCTIONS FOR DRIVER AND LIBRARY INTERACTIONS - END ************** */
 
 SPDK_LOG_REGISTER_TRACE_FLAG("nvmf_bcm_fc_adm", SPDK_TRACE_NVMF_BCM_FC_ADM);
