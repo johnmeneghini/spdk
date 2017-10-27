@@ -67,7 +67,7 @@ typedef enum {
 /**
  * \struct spdk_nvmf_bcm_fc_hw_port_init_args
  *
- * \brief  Arguemnts for HW port init event.
+ * \brief  Arguments for HW port init event.
  */
 struct spdk_nvmf_bcm_fc_hw_port_init_args {
 	uint8_t                           port_handle;
@@ -84,7 +84,16 @@ typedef struct spdk_nvmf_bcm_fc_hw_port_init_args spdk_nvmf_bcm_fc_hw_port_init_
 /**
  * \struct spdk_nvmf_bcm_fc_hw_port_online_args
  *
- * \brief  Arguemnts for HW port online event.
+ * \brief  Arguments for HW port link break event.
+ */
+typedef struct {
+	uint8_t port_handle;
+	void   *cb_ctx;
+} spdk_nvmf_bcm_hw_port_link_break_args_t;
+
+/**
+ *
+ * \brief  Arguments for HW port online event.
  */
 struct spdk_nvmf_bcm_fc_hw_port_online_args {
 	uint8_t port_handle;
@@ -96,7 +105,7 @@ typedef struct spdk_nvmf_bcm_fc_hw_port_online_args spdk_nvmf_bcm_fc_hw_port_onl
 /**
  * \struct spdk_nvmf_bcm_fc_hw_port_offline_args
  *
- * \brief  Arguemnts for HW port offline event.
+ * \brief  Arguments for HW port offline event.
  */
 struct spdk_nvmf_bcm_fc_hw_port_offline_args {
 	uint8_t port_handle;
@@ -108,7 +117,7 @@ typedef struct spdk_nvmf_bcm_fc_hw_port_offline_args spdk_nvmf_bcm_fc_hw_port_of
 /**
  * \struct spdk_nvmf_bcm_fc_hw_port_reset_args
  *
- * \brief  Arguemnts for HW port reset event.
+ * \brief  Arguments for HW port reset event.
  */
 struct spdk_nvmf_bcm_fc_hw_port_reset_args {
 	uint8_t port_handle;
@@ -120,7 +129,7 @@ typedef struct spdk_nvmf_bcm_fc_hw_port_reset_args spdk_nvmf_bcm_fc_hw_port_rese
 /**
  * \struct spdk_nvmf_bcm_fc_nport_create_args
  *
- * \brief  Arguemnts for n-port add event.
+ * \brief  Arguments for n-port add event.
  */
 struct spdk_nvmf_bcm_fc_nport_create_args {
 	uint8_t                     port_handle;
@@ -139,7 +148,7 @@ typedef struct spdk_nvmf_bcm_fc_nport_create_args spdk_nvmf_bcm_fc_nport_create_
 /**
  * \struct spdk_nvmf_bcm_fc_nport_delete_args
  *
- * \brief  Arguemnts for n-port delete event.
+ * \brief  Arguments for n-port delete event.
  */
 struct spdk_nvmf_bcm_fc_nport_delete_args {
 	uint8_t  port_handle;
@@ -153,7 +162,7 @@ typedef struct spdk_nvmf_bcm_fc_nport_delete_args spdk_nvmf_bcm_fc_nport_delete_
 /**
  * \struct spdk_nvmf_bcm_fc_hw_i_t_add_args
  *
- * \brief  Arguemnts for I_T add event.
+ * \brief  Arguments for I_T add event.
  */
 struct spdk_nvmf_bcm_fc_hw_i_t_add_args {
 	uint8_t                      port_handle;
@@ -173,7 +182,7 @@ typedef struct spdk_nvmf_bcm_fc_hw_i_t_add_args spdk_nvmf_bcm_fc_hw_i_t_add_args
 /**
  * \struct spdk_nvmf_bcm_fc_hw_i_t_delete_args
  *
- * \brief  Arguemnts for I_T delete event.
+ * \brief  Arguments for I_T delete event.
  */
 struct spdk_nvmf_bcm_fc_hw_i_t_delete_args {
 	uint8_t  port_handle;
@@ -189,7 +198,7 @@ typedef struct spdk_nvmf_bcm_fc_hw_i_t_delete_args spdk_nvmf_bcm_fc_hw_i_t_delet
 /**
  * \struct spdk_nvmf_bcm_fc_abts_args
  *
- * \brief  Arguemnts for ABTS  event.
+ * \brief  Arguments for ABTS  event.
  */
 struct spdk_nvmf_bcm_fc_abts_args {
 	uint8_t  port_handle;
@@ -204,7 +213,7 @@ typedef struct spdk_nvmf_bcm_fc_abts_args spdk_nvmf_bcm_fc_abts_args_t;
 /**
  * \struct spdk_nvmf_bcm_fc_link_break_args
  *
- * \brief  Arguemnts for link break event.
+ * \brief  Arguments for link break event.
  */
 struct spdk_nvmf_bcm_fc_link_break_args {
 	uint8_t port_handle;
@@ -229,7 +238,7 @@ typedef struct spdk_nvmf_bcm_fc_hw_port_dump_args spdk_nvmf_bcm_fc_hw_port_dump_
 /**
  * \struct spdk_nvmf_bcm_fc_unrecoverable_error_args
  *
- * \brief  Arguemnts for unrecoverable error event
+ * \brief  Arguments for unrecoverable error event
  */
 struct spdk_nvmf_bcm_fc_unrecoverable_error_event_args {
 };
@@ -246,6 +255,18 @@ typedef void (*spdk_nvmf_bcm_fc_callback)(uint8_t port_handle,
 
 /**
  * \struct spdk_nvmf_bcm_fc_nport_del_cb_data
+ *
+ * \brief  The callback structure for HW port link break event
+ */
+struct spdk_nvmf_bcm_fc_port_link_break_cb_data {
+	spdk_nvmf_bcm_hw_port_link_break_args_t *args;
+	spdk_nvmf_bcm_fc_nport_delete_args_t        nport_del_args;
+	spdk_nvmf_bcm_fc_callback       cb_func;
+};
+
+typedef struct spdk_nvmf_bcm_fc_port_link_break_cb_data spdk_nvmf_bcm_fc_port_link_break_cb_data_t;
+
+/**
  *
  * \brief  The callback structure for nport-delete
  */
