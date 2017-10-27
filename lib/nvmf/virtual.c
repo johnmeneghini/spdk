@@ -710,7 +710,6 @@ nvmf_virtual_ctrlr_process_io_cleanup(struct spdk_nvmf_request *req)
 	struct spdk_bdev *bdev;
 	struct spdk_nvmf_subsystem *subsystem = req->conn->sess->subsys;
 	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
-	struct spdk_io_channel *ch;
 
 	nsid = cmd->nsid;
 	if (nsid > subsystem->dev.virt.max_nsid || nsid == 0) {
@@ -721,7 +720,6 @@ nvmf_virtual_ctrlr_process_io_cleanup(struct spdk_nvmf_request *req)
 	if (!bdev) {
 		return;
 	}
-	ch = subsystem->dev.virt.ch[nsid - 1];
 
 	switch (cmd->opc) {
 	case SPDK_NVME_OPC_READ:
