@@ -43,12 +43,14 @@
 int ocs_nvme_nport_offline(ocs_t *ocs);
 int ocs_nvme_nport_online(ocs_t *ocs);
 int ocs_nvme_nport_create(ocs_sport_t *sport);
+int ocs_nvme_nport_delete(ocs_t *ocs);
 int ocs_nvme_hw_port_create(ocs_t *ocs);
 void ocs_hw_port_cleanup(ocs_t *ocs);
 int ocs_nvme_process_hw_port_online(ocs_sport_t *sport);
-int ocs_nvme_process_hw_port_offline(ocs_sport_t *sport);
+int ocs_nvme_process_hw_port_offline(ocs_t *ocs);
 int ocs_nvme_process_prli(ocs_io_t *io, uint16_t ox_id);
 int ocs_nvme_process_prlo(ocs_io_t *io, uint16_t ox_id);
+int ocs_nvme_node_lost(ocs_node_t *node);
 int ocs_nvme_process_abts(uint16_t oxid, uint16_t rxid, uint32_t rpi);
 
 #endif //__OCS_SPDK_NVMET_H__

@@ -357,6 +357,7 @@ struct ocs_node_s {
 
 	uint32_t		targ:1,		/**< node is target capable */
 				init:1,		/**< node is init capable */
+				nvme_init:1,	/**< node is NVME tgt capable */
 				nvme_tgt:1,	/**< node is NVME tgt capable */
 				refound:1;	/**< Handle node refound case when node is being deleted  */
 

@@ -50,6 +50,8 @@
 #include "fc/fc.h"
 #include "nvmf_fc/bcm_fc.h"
 
+#include <nvmf/nvmf_internal.h>
+
 #include <rte_debug.h>
 #include <rte_config.h>
 #include <rte_per_lcore.h>
@@ -169,17 +171,29 @@ attach_cb(void *cb_ctx, struct spdk_pci_device *pci_dev, struct spdk_ocs_t *spdk
 	TAILQ_INSERT_TAIL(&g_devices, dev, tailq);
 }
 
+
+/* Dont assign master lcore and nvmf lcores. */
 static uint32_t
 ocs_alloc_lcore(void)
 {
-	uint32_t least_assgined_lcore = rte_get_next_lcore(-1, 1, 0);
-	uint32_t least_assigned = g_fc_lcore[least_assgined_lcore], i;
+	uint32_t least_assgined_lcore = 0;
+	uint32_t least_assigned = 0, i = 0;
 
-	RTE_LCORE_FOREACH(i) {
-		if (g_fc_lcore[i] < least_assigned) {
+	RTE_LCORE_FOREACH_SLAVE(i) {
+		/* If this is nvmf lcore skip */
+		if ((g_nvmf_tgt.lcore_mask >> i) & 0x1) {
+			continue;
+		}
+
+		if (!least_assigned || (g_fc_lcore[i] < least_assigned)) {
 			least_assigned = g_fc_lcore[i];
 			least_assgined_lcore = i;
 		}
+	}
+
+	if (!least_assgined_lcore) {
+		/* This means no lcore availble. */
+		return UINT32_MAX;
 	}
 
 	g_fc_lcore[least_assgined_lcore]++;
@@ -218,25 +232,42 @@ ocs_spdk_poller_stop(ocs_t *ocs)
 }
 
 static void
+ocs_delay_poller_start(void *arg1, void *arg2)
+{
+	struct ocs_spdk_fc_poller *poller = arg1;
+	hal_eq_t *eq = arg2;
+
+	spdk_poller_register(&poller->spdk_poller, ocs_spdk_fc_poller, eq, poller->lcore, 0);
+}
+
+static int
 ocs_create_pollers(ocs_t *ocs)
 {
-	uint32_t index, i, lcore_id;
+	uint32_t index = 0, i, lcore_id;
 	uint32_t pollers_required = ocs->hal.config.n_eq - (NVMF_FC_MAX_IO_QUEUES + 1);
+	struct spdk_event *event = NULL;
 
-	index = 0;
 	for (i = 0; i < pollers_required; i++) {
 		lcore_id = ocs_alloc_lcore();
+		if (lcore_id == UINT32_MAX) {
+			return -1;
+		}
 
 		ocs_log_debug(ocs, "Starting polling thread on Port: %d core: %d\n",
 			ocs_instance(ocs), lcore_id);
 
 		g_fc_port_poller[ocs_instance(ocs)][index].lcore = lcore_id;
-		spdk_poller_register(&g_fc_port_poller[ocs_instance(ocs)][index].spdk_poller,
-			ocs_spdk_fc_poller, ocs->hal.hal_eq[index], lcore_id, 0);
+
+		event = spdk_event_allocate(spdk_env_get_master_lcore(),
+				ocs_delay_poller_start,
+				(void *)&g_fc_port_poller[ocs_instance(ocs)][index], ocs->hal.hal_eq[index]);
+		spdk_event_call(event);
+
 		index++;
 
 		ocs->lcore_mask |= (1 << lcore_id);
 	}
+	return 0;
 }
 
 ocs_t*
@@ -269,7 +300,8 @@ ocsu_device_init(struct spdk_pci_device *pci_dev)
 	    default:
 	    {
 		    ocs_log_err(NULL, "Unsupported device found.");
-		    goto error1;
+		    ocs_free(ocs, ocs, sizeof(*ocs));
+		    return NULL;
 	    }
 	}
 
@@ -311,7 +343,7 @@ ocsu_device_init(struct spdk_pci_device *pci_dev)
 	num_interrupts = ocs_device_interrupts_required(ocs);
 	if (num_interrupts < 0) {
 		ocs_log_err(ocs, "%s: ocs_device_interrupts_required() failed\n", __func__);
-		goto error2;
+		goto error1;
 	}
 
 	ocs_log_info(ocs, "Found Adapter Port: %d\n",
@@ -349,19 +381,23 @@ ocsu_device_init(struct spdk_pci_device *pci_dev)
 	rc = ocs_device_attach(ocs);
 	if (rc) {
 		ocs_log_err(ocs, "%s: ocs_device_attach failed: %d\n", __func__, rc);
+		goto error2;
+	}
+
+	rc = ocs_create_pollers(ocs);
+	if (rc) {
+		ocs_log_err(ocs, "%s: ocs_device_attach failed: unable to start pollers\n",
+				__func__);
 		goto error3;
 	}
 
-	ocs_create_pollers(ocs);
-
 	return ocs;
-
 error3:
-	ocs_dma_teardown(ocs);
+	ocs_device_detach(ocs);
 error2:
-	ocs_device_free(ocs);
+	ocs_dma_teardown(ocs);
 error1:
-	free(ocs);
+	ocs_device_free(ocs);
 	return NULL;
 }
 

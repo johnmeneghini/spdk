@@ -727,12 +727,6 @@ __ocs_ns_nvme_rffid_wait_rsp(ocs_sm_ctx_t *ctx, ocs_sm_event_t evt, void *arg)
 	case OCS_EVT_RSCN_RCVD:
 		break;
 
-	case OCS_EVT_SHUTDOWN:
-		ocs_ns_send_da_id(node, OCS_FC_ELS_SEND_DEFAULT_TIMEOUT,
-				OCS_FC_ELS_DEFAULT_RETRIES, NULL, NULL);
-		ocs_node_transition(node, __ocs_ns_daid_wait_rsp, NULL);
-		break;
-
 	default:
 		__ocs_fabric_common(__func__, ctx, evt, arg);
 		return NULL;
@@ -781,12 +775,6 @@ __ocs_ns_rffid_wait_rsp(ocs_sm_ctx_t *ctx, ocs_sm_event_t evt, void *arg)
 	}
 	/* if receive RSCN just ignore, we haven't sent GID_FT yet (ACC sent by fabctl node) */
 	case OCS_EVT_RSCN_RCVD:
-		break;
-
-	case OCS_EVT_SHUTDOWN:
-		ocs_ns_send_da_id(node, OCS_FC_ELS_SEND_DEFAULT_TIMEOUT,
-				OCS_FC_ELS_DEFAULT_RETRIES, NULL, NULL);
-		ocs_node_transition(node, __ocs_ns_daid_wait_rsp, NULL);
 		break;
 
 	default:
@@ -849,13 +837,6 @@ __ocs_ns_gidft_wait_rsp(ocs_sm_ctx_t *ctx, ocs_sm_event_t evt, void *arg)
 		break;
 	}
 
-	case OCS_EVT_SHUTDOWN: {
-		ocs_ns_send_da_id(node, OCS_FC_ELS_SEND_DEFAULT_TIMEOUT,
-				OCS_FC_ELS_DEFAULT_RETRIES, NULL, NULL);
-		ocs_node_transition(node, __ocs_ns_daid_wait_rsp, NULL);
-		break;
-	}
-
 	default:
 		__ocs_fabric_common(__func__, ctx, evt, arg);
 		return NULL;
@@ -892,13 +873,6 @@ __ocs_ns_ganxt_wait_rsp(ocs_sm_ctx_t *ctx, ocs_sm_event_t evt, void *arg)
 
 	case OCS_EVT_RSCN_RCVD: {
 		node->rscn_pending = 1;
-		break;
-	}
-
-	case OCS_EVT_SHUTDOWN: {
-		ocs_ns_send_da_id(node, OCS_FC_ELS_SEND_DEFAULT_TIMEOUT,
-				OCS_FC_ELS_DEFAULT_RETRIES, NULL, NULL);
-		ocs_node_transition(node, __ocs_ns_daid_wait_rsp, NULL);
 		break;
 	}
 
@@ -954,13 +928,6 @@ __ocs_ns_idle(ocs_sm_ctx_t *ctx, ocs_sm_event_t evt, void *arg)
 			ocs_ns_send_gidft(node, OCS_FC_ELS_SEND_DEFAULT_TIMEOUT, OCS_FC_ELS_DEFAULT_RETRIES, NULL, NULL);
 			ocs_node_transition(node, __ocs_ns_gidft_wait_rsp, NULL);
 		}
-		break;
-	}
-
-	case OCS_EVT_SHUTDOWN: {
-		ocs_ns_send_da_id(node, OCS_FC_ELS_SEND_DEFAULT_TIMEOUT,
-				OCS_FC_ELS_DEFAULT_RETRIES, NULL, NULL);
-		ocs_node_transition(node, __ocs_ns_daid_wait_rsp, NULL);
 		break;
 	}
 
@@ -1047,13 +1014,6 @@ __ocs_ns_gidft_delay(ocs_sm_ctx_t *ctx, ocs_sm_event_t evt, void *arg)
 		break;
 	}
 
-	case OCS_EVT_SHUTDOWN: {
-		ocs_ns_send_da_id(node, OCS_FC_ELS_SEND_DEFAULT_TIMEOUT,
-				OCS_FC_ELS_DEFAULT_RETRIES, NULL, NULL);
-		ocs_node_transition(node, __ocs_ns_daid_wait_rsp, NULL);
-		break;
-	}
-
 	default:
 		__ocs_fabric_common(__func__, ctx, evt, arg);
 		break;
@@ -1061,46 +1021,6 @@ __ocs_ns_gidft_delay(ocs_sm_ctx_t *ctx, ocs_sm_event_t evt, void *arg)
 
 	return NULL;
 }
-
-void *
-__ocs_ns_daid_wait_rsp(ocs_sm_ctx_t *ctx, ocs_sm_event_t evt, void *arg)
-{
-	std_node_state_decl();
-
-	node_sm_trace();
-
-	switch(evt) {
-	case OCS_EVT_ENTER:
-		ocs_node_hold_frames(node);
-		break;
-	case OCS_EVT_EXIT:
-		ocs_node_accept_frames(node);
-		break;
-	case OCS_EVT_SRRS_ELS_REQ_OK:
-	case OCS_EVT_SRRS_ELS_REQ_FAIL:
-		if (node_check_ns_req(ctx, evt, arg, FC_GS_NAMESERVER_DA_ID, __ocs_fabric_common, __func__)) {
-			return NULL;
-		}
-		ocs_assert(node->els_req_cnt, NULL);
-		node->els_req_cnt--;
-		
-		/* cleanup */
-		node->shutdown_reason = OCS_NODE_SHUTDOWN_DEFAULT;
-
-		ocs_fabric_initiate_shutdown(node);
-		break;
-	case OCS_EVT_RSCN_RCVD:
-		break;
-	case OCS_EVT_SHUTDOWN:
-		break; // Already in shutdownpath.
-	default:
-		__ocs_fabric_common(__func__, ctx, evt, arg);
-		return NULL;
-	}
-	
-	return NULL;
-}
-
 
 /**
  * @ingroup fabric_sm
