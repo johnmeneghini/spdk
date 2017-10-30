@@ -55,6 +55,7 @@ struct spdk_nvmf_conn {
 	struct spdk_nvmf_session		*sess;
 	enum conn_type				type;
 
+	uint16_t				qid;
 	uint16_t				sq_head;
 	uint16_t				sq_head_max;
 

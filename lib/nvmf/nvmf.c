@@ -50,10 +50,11 @@ struct spdk_nvmf_tgt g_nvmf_tgt;
 int
 spdk_nvmf_tgt_init(uint16_t max_associations, uint16_t max_aq_depth,
 		   uint16_t max_queue_depth, uint16_t max_queues_per_sess,
-		   uint32_t in_capsule_data_size, uint32_t max_io_size)
+		   uint32_t in_capsule_data_size, uint32_t max_io_size, uint64_t lcore_mask)
 {
 	int rc;
 
+	g_nvmf_tgt.lcore_mask = lcore_mask;
 	g_nvmf_tgt.max_associations = max_associations;
 	g_nvmf_tgt.max_aq_depth = max_aq_depth;
 	g_nvmf_tgt.max_queues_per_session = max_queues_per_sess;

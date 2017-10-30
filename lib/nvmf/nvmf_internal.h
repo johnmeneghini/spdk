@@ -49,6 +49,7 @@ struct spdk_nvmf_tgt {
 	uint16_t				max_queues_per_session;
 	uint32_t				in_capsule_data_size;
 	uint32_t				max_io_size;
+	uint64_t				lcore_mask;
 	uint64_t				discovery_genctr;
 	TAILQ_HEAD(, spdk_nvmf_subsystem)	subsystems;
 	struct spdk_nvmf_discovery_log_page	*discovery_log_page;
