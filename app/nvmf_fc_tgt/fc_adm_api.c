@@ -54,6 +54,28 @@ static void nvmf_fc_i_t_add(void *arg1, void *arg2);
 static void nvmf_fc_i_t_delete(void *arg1, void *arg2);
 static void nvmf_fc_abts_recv(void *arg1, void *arg2);
 
+static uint32_t
+nvmf_fc_tgt_get_next_lcore(uint32_t prev_core)
+{
+	int retries		= spdk_env_get_core_count() + 1;
+	uint32_t lcore_id	= 0;
+	uint64_t lcore_mask	= g_nvmf_tgt.lcore_mask;
+
+	while (retries) {
+		retries --;
+		lcore_id = spdk_env_get_next_core(prev_core);
+		if ((lcore_id == spdk_env_get_master_lcore()) ||
+		    (lcore_id == UINT32_MAX) ||
+		    (lcore_mask && (!((lcore_mask >> lcore_id) & 0x1)))) {
+			prev_core = lcore_id;
+			continue;
+		}
+		return lcore_id;
+	}
+
+	return UINT32_MAX;
+}
+
 /*
  * Re-initialize the FC-Port after an offline event.
  * Only the queue information needs to be populated. XRI, lcore and other hwqp information remains
@@ -115,7 +137,7 @@ nvmf_fc_tgt_hw_port_data_init(struct spdk_nvmf_bcm_fc_port *fc_port,
 	struct spdk_nvmf_bcm_fc_xri *ring_xri_ptr = NULL;
 	spdk_err_t                  err        = SPDK_SUCCESS;
 	int                         i, rc;
-	uint32_t                    lcore_id   = 0;
+	uint32_t                    lcore_id = UINT32_MAX ;
 
 	bzero(fc_port, sizeof(struct spdk_nvmf_bcm_fc_port));
 
@@ -197,16 +219,9 @@ nvmf_fc_tgt_hw_port_data_init(struct spdk_nvmf_bcm_fc_port *fc_port,
 		TAILQ_INIT(&fc_port->io_queues[i].connection_list);
 		TAILQ_INIT(&fc_port->io_queues[i].pending_xri_list);
 
-		lcore_id = spdk_env_get_next_core(lcore_id);
-
-		/* Skip master */
-		if (lcore_id == spdk_env_get_master_lcore()) {
-			lcore_id = spdk_env_get_next_core(lcore_id);
-		}
-
-		/* Wrap around */
+		lcore_id = nvmf_fc_tgt_get_next_lcore(lcore_id);
 		if (lcore_id == UINT32_MAX) {
-			lcore_id = spdk_env_get_first_core();
+			goto err;
 		}
 
 		fc_port->io_queues[i].lcore_id  = lcore_id;
