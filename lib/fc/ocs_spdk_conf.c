@@ -69,7 +69,7 @@ spdk_fc_cf_init_hba_ports(void)
 			
 			val = spdk_conf_section_get_val(sp, "Initiator");
 			if (val == NULL) {
-				hba_port->initiator = true;
+				hba_port->initiator = false;
 			} else if (strcasecmp(val, "Yes") == 0) {
 				hba_port->initiator = true;
 			} else if (strcasecmp(val, "No") == 0) {

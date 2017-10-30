@@ -142,6 +142,10 @@ __ocs_d_initiate_shutdown(ocs_sm_ctx_t *ctx, ocs_sm_event_t evt, void *arg)
 		ocs_scsi_io_alloc_disable(node);
 
 		/* make necessary delete upcall(s) */
+		if (node->nvme_init) {
+			ocs_nvme_node_lost(node);	
+		}
+
 		if (node->init && !node->targ) {
 			ocs_log_info(node->ocs, "[%s] delete (initiator) WWPN %s WWNN %s\n", node->display_name,
 				node->wwpn, node->wwnn);
@@ -179,7 +183,7 @@ __ocs_d_initiate_shutdown(ocs_sm_ctx_t *ctx, ocs_sm_event_t evt, void *arg)
 			if (rc == OCS_SCSI_CALL_COMPLETE) {
 				ocs_node_post_event(node, OCS_EVT_NODE_DEL_TGT_COMPLETE, NULL);
 			}
-		}
+		} 
 
 		/* we've initiated the upcalls as needed, now kick off the node
 		 * detach to precipitate the aborting of outstanding exchanges
@@ -509,8 +513,9 @@ void
 ocs_process_prli_payload(ocs_node_t *node, fc_prli_payload_t *prli)
 {
 	if (prli->type == FC_TYPE_NVME) {
-		node->nvme_tgt = (ocs_be16toh(prli->service_params) & FC_PRLI_TARGET_FUNCTION) != 0;
-		node->nvme_prli_service_params = prli->service_params; // BE format 
+		node->nvme_tgt 	= (ocs_be16toh(prli->service_params) & FC_PRLI_TARGET_FUNCTION) != 0;
+		node->nvme_init = (ocs_be16toh(prli->service_params) & FC_PRLI_INITIATOR_FUNCTION) != 0;
+		node->nvme_prli_service_params = prli->service_params; /* BE format */
 	} else {
 		node->init = (ocs_be16toh(prli->service_params) & FC_PRLI_INITIATOR_FUNCTION) != 0;
 		node->targ = (ocs_be16toh(prli->service_params) & FC_PRLI_TARGET_FUNCTION) != 0;

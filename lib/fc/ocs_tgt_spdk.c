@@ -521,7 +521,7 @@ ocs_scsi_tgt_new_device(ocs_t *ocs)
 
 	ocs_unlock(&g_spdk_config_lock);
 
-	// If nvme capability is enabled, notify backend.
+	/* If nvme capability is enabled, notify backend. */
 	if (ocs->enable_nvme_tgt) {
 		rc = ocs_nvme_hw_port_create(ocs);
 	}
@@ -533,7 +533,7 @@ int32_t
 ocs_scsi_tgt_del_device(ocs_t *ocs)
 {
 	
-	// If nvme capability is enabled, notify backend.
+	/* If nvme capability is enabled, notify backend. */
 	if (ocs->enable_nvme_tgt) {
 		ocs_hw_port_cleanup(ocs);
 	}
@@ -544,13 +544,22 @@ ocs_scsi_tgt_del_device(ocs_t *ocs)
 int32_t
 ocs_scsi_tgt_new_domain(ocs_domain_t *domain)
 {
+	
 	return 0;
 }
 
 void
 ocs_scsi_tgt_del_domain(ocs_domain_t *domain)
 {
+	ocs_t *ocs = domain->ocs;
 
+	if (ocs->enable_nvme_tgt && ocs_nvme_nport_delete(ocs)) {
+		ocs_log_err(ocs, "Failed to delete nvme port \n");
+	}
+
+	if (ocs->enable_nvme_tgt && ocs_nvme_process_hw_port_offline(ocs)) {
+		ocs_log_err(ocs, "Failed to bring down nvme port offline\n");
+	}
 }
 
 
@@ -576,13 +585,16 @@ ocs_scsi_tgt_new_sport(ocs_sport_t *sport)
 		goto done;
 	}
 
-	// Bring up nvme port online
 	if (ocs->enable_nvme_tgt && ocs_nvme_process_hw_port_online(sport)) {
 		ocs_log_err(ocs, "Failed to bring up nvme port online\n")
 		goto done;
 	}
 
-	// Success.
+	if (ocs->enable_nvme_tgt && ocs_nvme_nport_create(sport)) {
+		goto done;
+	}
+
+	/* Success */
 	rc = 0;
 done:
 	ocs_unlock(&g_spdk_config_lock);
@@ -592,25 +604,7 @@ done:
 void
 ocs_scsi_tgt_del_sport(ocs_sport_t *sport)
 {
-	ocs_t *ocs = sport->ocs;
-
-	/* currently just the physical sport */
-	if (sport->is_vport) {
-		return;
-	}
-
 	/* No SCSI SPDK call to delete port. */
-
-	// Notify NVMET backend.
-	if (spdk_env_get_current_core() != spdk_env_get_master_lcore()) {
-		if (ocs->enable_nvme_tgt && ocs_nvme_process_hw_port_offline(sport)) {
-			ocs_log_err(ocs, "Failed to bring down nvme port offline\n");
-		}
-	} else {
-		// If its master lcore, it means driver is unloading and
-		// transport layer would have already exited. Dont do anything.
-		;
-	}
 }	
 
 int32_t
@@ -618,7 +612,7 @@ ocs_scsi_validate_initiator(ocs_node_t *node)
 {
 	ocs_t	*ocs = NULL;
 	uint64_t wwpn = ocs_node_get_wwpn(node);
-	int32_t rc = 0; // Dont allow.
+	int32_t rc = 0; /* Dont allow. */
 
 	ocs = node->sport->ocs;
 	if (!ocs) {
@@ -634,7 +628,7 @@ ocs_scsi_validate_initiator(ocs_node_t *node)
 
 	ocs_log_info(node->ocs, "%s: access granted for initiator: %s\n",
 			__func__, node->wwpn);
-	rc = 1; //Allow
+	rc = 1; /* Allow */
 
 done:
 	ocs_unlock(&g_spdk_config_lock);
