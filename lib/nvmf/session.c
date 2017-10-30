@@ -464,8 +464,10 @@ nvmf_prop_set_cc(struct spdk_nvmf_session *session, uint64_t value)
 			session->vcprop.cc.bits.en = 1;
 			session->vcprop.csts.bits.rdy = 1;
 		} else {
-			SPDK_ERRLOG("CC.EN transition from 1 to 0 (reset) not implemented!\n");
-
+			/* SPDK_TRACE_NVMF	SPDK_ERRLOG("CC.EN transition from 1 to 0 (reset) not implemented!\n"); */
+			SPDK_TRACELOG(SPDK_TRACE_NVMF, "CC.EN transition from 1 to 0 (reset)\n");
+			cc.bits.en = 0;
+			session->vcprop.csts.bits.rdy = 0;
 		}
 		diff.bits.en = 0;
 	}

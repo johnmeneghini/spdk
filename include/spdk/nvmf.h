@@ -209,6 +209,7 @@ struct spdk_nvmf_tgt_config {
 	uint16_t                                awun;
 	uint16_t                                awupf;
 	uint32_t                                sgls;
+	uint64_t                                lcore_mask;
 };
 
 struct spdk_nvmf_subsystem *spdk_nvmf_create_subsystem(const char *nqn,
