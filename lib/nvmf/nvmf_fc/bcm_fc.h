@@ -310,7 +310,7 @@ struct spdk_nvmf_bcm_fc_conn {
 	struct spdk_nvmf_conn conn;
 
 	uint64_t conn_id;
-	uint16_t qid;
+	struct spdk_nvmf_bcm_fc_hwqp *hwqp;
 	uint16_t esrp_ratio;
 	uint16_t rsp_count;
 	uint32_t rsn;
@@ -387,7 +387,6 @@ struct spdk_nvmf_bcm_fc_poller_api_cb_info {
  */
 struct spdk_nvmf_bcm_fc_poller_api_add_connection_args {
 	struct spdk_nvmf_bcm_fc_conn *fc_conn;
-	struct spdk_nvmf_bcm_fc_hwqp *hwqp;
 	struct spdk_nvmf_bcm_fc_poller_api_cb_info cb_info;
 };
 
@@ -437,7 +436,6 @@ struct spdk_nvmf_bcm_fc_association {
 	struct spdk_nvmf_bcm_fc_nport *tgtport;
 	struct spdk_nvmf_bcm_fc_remote_port_info *rport;
 	struct spdk_nvmf_subsystem *subsystem;
-	struct spdk_nvmf_bcm_fc_session *fc_session;
 	spdk_nvmf_bcm_fc_object_state_t assoc_state;
 
 	char host_id[SPDK_NVMF_FC_HOST_ID_LEN];
