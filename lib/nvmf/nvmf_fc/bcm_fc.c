@@ -253,7 +253,7 @@ spdk_nvmf_bcm_fc_get_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	/* Get the physical port from the hwqp and dequeue an XRI from the
 	 * corresponding ring. Send this back.
 	 */
-	if (0 != spdk_ring_dequeue(hwqp->fc_port->xri_ring, (void **)&xri, 1)) {
+	if (0 == spdk_ring_dequeue(hwqp->fc_port->xri_ring, (void **)&xri, 1)) {
 		SPDK_ERRLOG("Not enough XRIs available in the ring. Sizing messed up\n");
 		hwqp->counters.no_xri++;
 		return NULL;
@@ -268,7 +268,7 @@ spdk_nvmf_bcm_fc_get_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 int
 spdk_nvmf_bcm_fc_put_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct spdk_nvmf_bcm_fc_xri *xri)
 {
-	return spdk_ring_enqueue(hwqp->fc_port->xri_ring, (void **)&xri, 1);
+	return spdk_ring_enqueue(hwqp->fc_port->xri_ring, (void **)&xri, 1) == 1 ? 0 : 1;
 }
 
 static void

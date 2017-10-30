@@ -164,7 +164,7 @@ nvmf_fc_tgt_hw_port_data_init(struct spdk_nvmf_bcm_fc_port *fc_port,
 		/* Since we created the ring with NO flags, this means it is
 		 * mp-mc safe */
 		rc = spdk_ring_enqueue(fc_port->xri_ring, (void *)ring_xri_ptr);
-		if (rc != 0) {
+		if (rc == 0) {
 			SPDK_ERRLOG("XRI ring buffer enqueue failed at count: %d\n",
 				    count);
 			err = SPDK_ERR_INTERNAL;
