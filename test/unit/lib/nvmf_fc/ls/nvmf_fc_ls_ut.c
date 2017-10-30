@@ -211,11 +211,15 @@ nvmf_fc_ls_ut_remove_conn(struct spdk_nvmf_session *session,
 	return 0;
 }
 
+struct spdk_nvmf_subsystem g_nvmf_subsys;
+
+
+
 struct spdk_nvmf_subsystem *
 spdk_nvmf_find_subsystem(const char *subnqn)
 {
-	/* don't care about subsystem check - return subnqn */
-	return (struct spdk_nvmf_subsystem *) subnqn;
+	g_nvmf_subsys.disconnect_cb = spdk_nvmf_bcm_fc_subsys_disconnect_cb;
+	return &g_nvmf_subsys;
 }
 
 bool
