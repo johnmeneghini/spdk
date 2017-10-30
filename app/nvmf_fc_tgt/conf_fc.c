@@ -75,6 +75,39 @@ struct spdk_nvmf_probe_ctx {
 
 static int32_t g_last_core = -1;
 
+static uint64_t
+nvmf_fc_parse_nvmf_core_mask(char *coremask)
+{
+	int i;
+
+	if (coremask == NULL) {
+		return 0;
+	}
+
+	/*
+	 * Remove all blank characters ahead and after.
+	 * Remove 0x/0X if exists.
+	 */
+	while (isblank(*coremask)) {
+		coremask++;
+	}
+
+	if (coremask[0] == '0' && ((coremask[1] == 'x') || (coremask[1] == 'X'))) {
+		coremask += 2;
+	}
+
+	i = strlen(coremask);
+	while ((i > 0) && isblank(coremask[i - 1])) {
+		i--;
+	}
+
+	if (i == 0) {
+		return 0;
+	}
+
+	return (uint64_t)strtol(coremask, NULL, 16);
+}
+
 static int
 nvmf_fc_add_discovery_subsystem(void)
 {
@@ -103,6 +136,8 @@ nvmf_fc_parse_nvmf_tgt(void)
 	int max_queue_depth;
 	int max_queues_per_sess;
 	int max_io_size;
+	char *lcore_mask_str;
+	int64_t lcore_mask = 0;
 	int rc;
 
 	sp = spdk_conf_find_section(NULL, "Nvmf");
@@ -151,8 +186,20 @@ nvmf_fc_parse_nvmf_tgt(void)
 	max_io_size = spdk_max(max_io_size, SPDK_NVMF_CONFIG_MAX_IO_SIZE_MIN);
 	max_io_size = spdk_min(max_io_size, SPDK_NVMF_CONFIG_MAX_IO_SIZE_MAX);
 
+	lcore_mask_str = spdk_conf_section_get_val(sp, "NvmfReactorMask");
+	if (!lcore_mask_str) {
+		SPDK_ERRLOG("NvmfReactorMask not specified. \n");
+		return -1;
+	}
+
+	lcore_mask = nvmf_fc_parse_nvmf_core_mask(lcore_mask_str);
+	if (!lcore_mask) {
+		SPDK_ERRLOG("NvmfReactorMask value invalid. \n");
+		return -1;
+	}
+
 	rc = spdk_nvmf_tgt_init(max_assoc, max_aq_depth, max_queue_depth,
-				max_queues_per_sess,  0, max_io_size);
+				max_queues_per_sess,  0, max_io_size, lcore_mask);
 	if (rc != 0) {
 		SPDK_ERRLOG("spdk_nvmf_tgt_init() failed\n");
 		return rc;
