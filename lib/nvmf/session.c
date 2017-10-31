@@ -311,6 +311,7 @@ spdk_nvmf_session_connect(struct spdk_nvmf_conn *conn,
 		session->max_connections_allowed = g_nvmf_tgt.opts.max_queues_per_session;
 
 		memcpy(session->hostid, data->hostid, sizeof(session->hostid));
+		memcpy(session->hostnqn, data->hostnqn, sizeof(session->hostnqn));
 
 		if (conn->transport->session_add_conn(session, conn)) {
 			rsp->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;

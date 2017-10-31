@@ -49,97 +49,85 @@
 #include "spdk_internal/log.h"
 
 static void
-nvmf_update_discovery_log(void)
+spdk_nvmf_fill_discovery_log_entry(struct spdk_nvmf_discovery_log_page_entry *entry,
+				   struct spdk_nvmf_subsystem *subsystem,
+				   struct spdk_nvmf_listen_addr *listen_addr,
+				   uint64_t numrec)
+{
+	const struct spdk_nvmf_transport *transport;
+	memset(entry, 0, sizeof(*entry));
+	entry->portid = numrec;
+	entry->cntlid = 0xffff;
+	entry->asqsz = g_nvmf_tgt.opts.max_aq_depth;
+	entry->subtype = subsystem->subtype;
+	snprintf((char *)entry->subnqn, sizeof(entry->subnqn), "%s", subsystem->subnqn);
+	transport = spdk_nvmf_transport_get(listen_addr->trname);
+	assert(transport != NULL);
+	transport->listen_addr_discover(listen_addr, entry);
+}
+
+void
+spdk_nvmf_get_discovery_log_page(struct spdk_nvmf_request *req, uint64_t offset, uint32_t length)
 {
 	uint64_t numrec = 0;
 	struct spdk_nvmf_subsystem *subsystem;
 	struct spdk_nvmf_subsystem_allowed_listener *allowed_listener;
 	struct spdk_nvmf_listen_addr *listen_addr;
-	struct spdk_nvmf_discovery_log_page_entry *entry;
-	const struct spdk_nvmf_transport *transport;
-	struct spdk_nvmf_discovery_log_page *disc_log;
-	size_t cur_size;
+	struct spdk_nvmf_discovery_log_page log_header = {0};
+	struct spdk_nvmf_discovery_log_page_entry tmp_entry;
+	uint64_t skip_offset = offset;
+	bool skip_header;
+	uint64_t copy_len = 0, curr_len = length;
+	char *curr_buffer = (char *)req->data;
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Generating log page for genctr %" PRIu64 "\n",
-		      g_nvmf_tgt.discovery_genctr);
-
-	cur_size = sizeof(struct spdk_nvmf_discovery_log_page);
-	disc_log = spdk_calloc(1, cur_size);
-	if (disc_log == NULL) {
-		SPDK_ERRLOG("Discovery log page memory allocation error\n");
-		return;
+	if (skip_offset >= 1024) {
+		/* Skip header */
+		skip_offset -= 1024;
+		skip_header = true;
+	} else {
+		copy_len = spdk_min((1024 - skip_offset), curr_len);
+		memset((char *)curr_buffer, 0, copy_len);
+		curr_buffer += copy_len;
+		curr_len -= copy_len;
+		skip_header = false;
+		skip_offset = 0;
 	}
 
 	TAILQ_FOREACH(subsystem, &g_nvmf_tgt.subsystems, entries) {
-		if (subsystem->subtype == SPDK_NVMF_SUBTYPE_DISCOVERY) {
+		/* XXX: If block can change to host allowed check alone with spdk17.10. Leverage spdk17.10 containers */
+		if (g_nvmf_tgt.disc_log_allowed_fn && !g_nvmf_tgt.disc_log_allowed_fn(req, subsystem)) {
 			continue;
 		}
-
 		TAILQ_FOREACH(allowed_listener, &subsystem->allowed_listeners, link) {
-			size_t new_size = cur_size + sizeof(*entry);
-			void *new_log_page = spdk_realloc(disc_log, new_size);
 
-			if (new_log_page == NULL) {
-				SPDK_ERRLOG("Discovery log page memory allocation error\n");
+			if (skip_offset >= 1024) {
+				skip_offset -= 1024;
+			} else if(curr_len) {
+				copy_len = spdk_min((1024 - skip_offset), curr_len);
+				listen_addr = allowed_listener->listen_addr;
+				spdk_nvmf_fill_discovery_log_entry(&tmp_entry, subsystem, listen_addr, numrec);
+				memcpy(curr_buffer, (char *)&tmp_entry + skip_offset, copy_len);
+				curr_buffer += copy_len;
+				curr_len -= copy_len;
+			} else if(skip_header) {
 				break;
 			}
-
-			listen_addr = allowed_listener->listen_addr;
-
-			disc_log = new_log_page;
-			cur_size = new_size;
-
-			entry = &disc_log->entries[numrec];
-			memset(entry, 0, sizeof(*entry));
-			entry->portid = numrec;
-			entry->cntlid = 0xffff;
-			entry->asqsz = g_nvmf_tgt.opts.max_aq_depth;
-			entry->subtype = subsystem->subtype;
-			snprintf((char *)entry->subnqn, sizeof(entry->subnqn), "%s", subsystem->subnqn);
-
-			transport = spdk_nvmf_transport_get(listen_addr->trname);
-			assert(transport != NULL);
-
-			transport->listen_addr_discover(listen_addr, entry);
-
 			numrec++;
 		}
 	}
 
-	disc_log->numrec = numrec;
-	disc_log->genctr = g_nvmf_tgt.discovery_genctr;
-
-	spdk_free(g_nvmf_tgt.discovery_log_page);
-
-	g_nvmf_tgt.discovery_log_page = disc_log;
-	g_nvmf_tgt.discovery_log_page_size = cur_size;
-}
-
-void
-spdk_nvmf_get_discovery_log_page(void *buffer, uint64_t offset, uint32_t length)
-{
-	size_t copy_len = 0;
-	size_t zero_len = length;
-
-	if (g_nvmf_tgt.discovery_log_page == NULL ||
-	    g_nvmf_tgt.discovery_log_page->genctr != g_nvmf_tgt.discovery_genctr) {
-		nvmf_update_discovery_log();
-	}
-
-	/* Copy the valid part of the discovery log page, if any */
-	if (g_nvmf_tgt.discovery_log_page && offset < g_nvmf_tgt.discovery_log_page_size) {
-		copy_len = spdk_min(g_nvmf_tgt.discovery_log_page_size - offset, length);
-		zero_len -= copy_len;
-		memcpy(buffer, (char *)g_nvmf_tgt.discovery_log_page + offset, copy_len);
+	/* Fill header if required */
+	if (!skip_header) {
+		log_header.numrec = numrec;
+		log_header.genctr = g_nvmf_tgt.discovery_genctr;
+		copy_len = spdk_min((1024 - offset), length);
+		memcpy(req->data, (char *)&log_header + offset, copy_len);
 	}
 
 	/* Zero out the rest of the buffer */
-	if (zero_len) {
-		memset((char *)buffer + copy_len, 0, zero_len);
+	if (curr_len) {
+		memset((char *)curr_buffer, 0, curr_len);
 	}
-
-	/* We should have copied or zeroed every byte of the output buffer. */
-	assert(copy_len + zero_len == length);
 }
 
 static inline uint32_t
@@ -198,7 +186,7 @@ nvmf_discovery_ctrlr_process_admin_cmd(struct spdk_nvmf_request *req)
 		}
 
 		if ((cmd->cdw10 & 0xFF) == SPDK_NVME_LOG_DISCOVERY) {
-			spdk_nvmf_get_discovery_log_page(req->data, log_page_offset, len);
+			spdk_nvmf_get_discovery_log_page(req, log_page_offset, len);
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		} else {
 			SPDK_ERRLOG("Unsupported log page %u\n", cmd->cdw10 & 0xFF);
