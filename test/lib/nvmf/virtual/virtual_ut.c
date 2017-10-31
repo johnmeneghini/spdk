@@ -41,6 +41,7 @@
 
 #include "virtual.c"
 
+struct spdk_nvmf_tgt g_nvmf_tgt;
 
 SPDK_LOG_REGISTER_TRACE_FLAG("nvmf", SPDK_TRACE_NVMF)
 
@@ -243,6 +244,8 @@ spdk_bdev_write_fini(struct spdk_bdev *bdev, struct iovec *iov, int32_t iovcnt, 
 {
 	return 0;
 }
+
+
 
 static void
 nvmf_test_nvmf_virtual_ctrlr_get_log_page(void)

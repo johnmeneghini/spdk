@@ -437,7 +437,7 @@ spdk_nvmf_subsystem_add_ns(struct spdk_nvmf_subsystem *subsystem, struct spdk_bd
 	if (!spdk_bdev_claim(bdev, spdk_nvmf_ctrlr_hot_remove, subsystem)) {
 		SPDK_ERRLOG("Subsystem %s: bdev %s is already claimed\n",
 			    subsystem->subnqn, bdev->name);
-		return -1;
+		return 0;
 	}
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Subsystem %s: bdev %s assigned nsid %" PRIu32 "\n",
@@ -448,6 +448,23 @@ spdk_nvmf_subsystem_add_ns(struct spdk_nvmf_subsystem *subsystem, struct spdk_bd
 	subsystem->dev.virt.ns_list[i] = bdev;
 	subsystem->dev.virt.ns_count++;
 	return nsid;
+}
+
+int
+spdk_nvmf_subsystem_set_pci_id(struct spdk_nvmf_subsystem *subsystem,
+			       struct spdk_pci_id *sub_pci_id)
+{
+	if (sub_pci_id == NULL) {
+		return -1;
+	}
+
+	if (subsystem->mode != NVMF_SUBSYSTEM_MODE_VIRTUAL) {
+		return -1;
+	}
+
+	memcpy(&subsystem->dev.virt.sub_pci_id, sub_pci_id, sizeof(struct spdk_pci_id));
+
+	return 0;
 }
 
 int

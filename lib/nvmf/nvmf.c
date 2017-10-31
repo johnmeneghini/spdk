@@ -48,19 +48,17 @@ SPDK_LOG_REGISTER_TRACE_FLAG("nvmf", SPDK_TRACE_NVMF)
 struct spdk_nvmf_tgt g_nvmf_tgt;
 
 int
-spdk_nvmf_tgt_init(uint16_t max_associations, uint16_t max_aq_depth,
-		   uint16_t max_queue_depth, uint16_t max_queues_per_sess,
-		   uint32_t in_capsule_data_size, uint32_t max_io_size, uint64_t lcore_mask)
+spdk_nvmf_tgt_opts_init(struct spdk_nvmf_tgt_opts *opts)
 {
 	int rc;
 
-	g_nvmf_tgt.lcore_mask = lcore_mask;
-	g_nvmf_tgt.max_associations = max_associations;
-	g_nvmf_tgt.max_aq_depth = max_aq_depth;
-	g_nvmf_tgt.max_queues_per_session = max_queues_per_sess;
-	g_nvmf_tgt.max_queue_depth = max_queue_depth;
-	g_nvmf_tgt.in_capsule_data_size = in_capsule_data_size;
-	g_nvmf_tgt.max_io_size = max_io_size;
+	if (!opts) {
+		SPDK_ERRLOG("Invalid config passed during NVMF target init\n");
+		return -1;
+	}
+
+	g_nvmf_tgt.opts = *opts;
+
 	g_nvmf_tgt.discovery_genctr = 0;
 	g_nvmf_tgt.discovery_log_page = NULL;
 	g_nvmf_tgt.discovery_log_page_size = 0;
@@ -68,11 +66,13 @@ spdk_nvmf_tgt_init(uint16_t max_associations, uint16_t max_aq_depth,
 	TAILQ_INIT(&g_nvmf_tgt.subsystems);
 	TAILQ_INIT(&g_nvmf_tgt.listen_addrs);
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max Associations: %d\n", max_associations);
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max Queues Per Session: %d\n", max_queues_per_sess);
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max Queue Depth: %d\n", max_queue_depth);
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max In Capsule Data: %d bytes\n", in_capsule_data_size);
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max I/O Size: %d bytes\n", max_io_size);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max Associations: %d\n", g_nvmf_tgt.opts.max_associations);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max Queues Per Session: %d\n",
+		      g_nvmf_tgt.opts.max_queues_per_session);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max Queue Depth: %d\n", g_nvmf_tgt.opts.max_queue_depth);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max In Capsule Data: %d bytes\n",
+		      g_nvmf_tgt.opts.in_capsule_data_size);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max I/O Size: %d bytes\n", g_nvmf_tgt.opts.max_io_size);
 
 	rc = spdk_nvmf_transport_init();
 	if (rc < 0) {
