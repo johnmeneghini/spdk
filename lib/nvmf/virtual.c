@@ -51,6 +51,7 @@
 #include "spdk_internal/bdev.h"
 #include "nvmf_internal.h"
 #include "spdk_internal/event.h"
+#include "nvmf/nvmf_internal.h"
 
 #define MODEL_NUMBER "SPDK Virtual Controller"
 #define FW_VERSION "FFFFFFFF"
@@ -99,19 +100,19 @@ nvmf_virtual_ctrlr_get_data(struct spdk_nvmf_session *session)
 	spdk_strcpy_pad(session->vcdata.fr, FW_VERSION, sizeof(session->vcdata.fr), ' ');
 	spdk_strcpy_pad(session->vcdata.mn, MODEL_NUMBER, sizeof(session->vcdata.mn), ' ');
 	spdk_strcpy_pad(session->vcdata.sn, subsys->dev.virt.sn, sizeof(session->vcdata.sn), ' ');
-	session->vcdata.rab = g_nvmf_tgt.config.rab;
-	memcpy(session->vcdata.ieee, g_nvmf_tgt.config.ieee, 3 * sizeof(uint8_t));
-	memcpy(&session->vcdata.cmic, &g_nvmf_tgt.config.cmic, sizeof(uint32_t));
-	memcpy(&session->vcdata.oaes, &g_nvmf_tgt.config.oaes, sizeof(uint32_t));
-	session->vcdata.acl = g_nvmf_tgt.config.acl;
-	session->vcdata.aerl = g_nvmf_tgt.config.aerl;
-	session->vcdata.elpe = g_nvmf_tgt.config.elpe;
-	session->vcdata.npss = g_nvmf_tgt.config.npss;
-	session->vcdata.kas = g_nvmf_tgt.config.kas;
-	memcpy(&session->vcdata.vwc, &g_nvmf_tgt.config.vwc, sizeof(uint8_t));
-	session->vcdata.awun = g_nvmf_tgt.config.awun;
-	session->vcdata.awupf = g_nvmf_tgt.config.awupf;
-	memcpy(&session->vcdata.sgls, &g_nvmf_tgt.config.sgls, sizeof(uint32_t));
+	session->vcdata.rab = g_nvmf_tgt.opts.rab;
+	memcpy(session->vcdata.ieee, g_nvmf_tgt.opts.ieee, 3 * sizeof(uint8_t));
+	memcpy(&session->vcdata.cmic, &g_nvmf_tgt.opts.cmic, sizeof(uint32_t));
+	memcpy(&session->vcdata.oaes, &g_nvmf_tgt.opts.oaes, sizeof(uint32_t));
+	session->vcdata.acl = g_nvmf_tgt.opts.acl;
+	session->vcdata.aerl = g_nvmf_tgt.opts.aerl;
+	session->vcdata.elpe = g_nvmf_tgt.opts.elpe;
+	session->vcdata.npss = g_nvmf_tgt.opts.npss;
+	session->vcdata.kas = g_nvmf_tgt.opts.kas;
+	memcpy(&session->vcdata.vwc, &g_nvmf_tgt.opts.vwc, sizeof(uint8_t));
+	session->vcdata.awun = g_nvmf_tgt.opts.awun;
+	session->vcdata.awupf = g_nvmf_tgt.opts.awupf;
+	memcpy(&session->vcdata.sgls, &g_nvmf_tgt.opts.sgls, sizeof(uint32_t));
 	session->vcdata.ver.bits.mjr = 1;
 	session->vcdata.ver.bits.mnr = 2;
 	session->vcdata.ver.bits.ter = 1;
@@ -123,7 +124,7 @@ nvmf_virtual_ctrlr_get_data(struct spdk_nvmf_session *session)
 	session->vcdata.sqes.max = 0x06;
 	session->vcdata.cqes.min = 0x04;
 	session->vcdata.cqes.max = 0x04;
-	session->vcdata.maxcmd = g_nvmf_tgt.config.max_queue_depth;
+	session->vcdata.maxcmd = g_nvmf_tgt.opts.max_queue_depth;
 	session->vcdata.nn = subsys->dev.virt.max_nsid;
 	session->vcdata.vwc.present = 1;
 	session->vcdata.sgls.supported = 1;

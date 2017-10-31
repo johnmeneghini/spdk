@@ -38,6 +38,7 @@
 
 #include "virtual.c"
 
+struct spdk_nvmf_tgt g_nvmf_tgt;
 
 SPDK_LOG_REGISTER_TRACE_FLAG("nvmf", SPDK_TRACE_NVMF)
 

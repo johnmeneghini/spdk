@@ -56,10 +56,9 @@ struct spdk_bdev;
 struct spdk_nvme_ctrlr;
 struct spdk_nvmf_request;
 struct spdk_nvmf_conn;
-struct spdk_nvmf_ctrlr_ops;
-struct spdk_nvmf_tgt_config;
+struct spdk_nvmf_tgt_opts;
 
-int spdk_nvmf_tgt_init(struct spdk_nvmf_tgt_config *config);
+int spdk_nvmf_tgt_opts_init(struct spdk_nvmf_tgt_opts *opts);
 
 int spdk_nvmf_tgt_fini(void);
 
@@ -189,13 +188,14 @@ struct spdk_nvmf_subsystem {
 	TAILQ_ENTRY(spdk_nvmf_subsystem)	entries;
 };
 
-struct spdk_nvmf_tgt_config {
+struct spdk_nvmf_tgt_opts {
 	uint16_t                                max_associations;
 	uint16_t				max_queue_depth;
 	uint16_t                                max_aq_depth;
 	uint16_t				max_queues_per_session;
 	uint32_t				in_capsule_data_size;
 	uint32_t				max_io_size;
+	uint64_t                                lcore_mask;
 	uint8_t                                 rab;
 	uint8_t                                 ieee[3];
 	uint8_t                                 cmic;
@@ -209,7 +209,6 @@ struct spdk_nvmf_tgt_config {
 	uint16_t                                awun;
 	uint16_t                                awupf;
 	uint32_t                                sgls;
-	uint64_t                                lcore_mask;
 };
 
 struct spdk_nvmf_subsystem *spdk_nvmf_create_subsystem(const char *nqn,

@@ -50,7 +50,7 @@
 static void
 nvmf_init_discovery_session_properties(struct spdk_nvmf_session *session)
 {
-	session->vcdata.maxcmd = g_nvmf_tgt.config.max_queue_depth;
+	session->vcdata.maxcmd = g_nvmf_tgt.opts.max_queue_depth;
 	/* extended data for get log page supportted */
 	session->vcdata.lpa.edlp = 1;
 	session->vcdata.cntlid = session->cntlid;
@@ -59,7 +59,7 @@ nvmf_init_discovery_session_properties(struct spdk_nvmf_session *session)
 	session->vcdata.nvmf_specific.icdoff = 0; /* offset starts directly after SQE */
 	session->vcdata.nvmf_specific.ctrattr.ctrlr_model = SPDK_NVMF_CTRLR_MODEL_DYNAMIC;
 	session->vcdata.nvmf_specific.msdbd = 1; /* target supports single SGL in capsule */
-	memcpy(&session->vcdata.sgls, &g_nvmf_tgt.config.sgls, sizeof(uint32_t));
+	memcpy(&session->vcdata.sgls, &g_nvmf_tgt.opts.sgls, sizeof(uint32_t));
 
 	strncpy((char *)session->vcdata.subnqn, SPDK_NVMF_DISCOVERY_NQN, sizeof(session->vcdata.subnqn));
 
@@ -88,17 +88,17 @@ nvmf_init_discovery_session_properties(struct spdk_nvmf_session *session)
 static void
 nvmf_init_nvme_session_properties(struct spdk_nvmf_session *session)
 {
-	assert((g_nvmf_tgt.config.max_io_size % 4096) == 0);
+	assert((g_nvmf_tgt.opts.max_io_size % 4096) == 0);
 
 	/* Init the controller details */
 	session->subsys->ops->ctrlr_get_data(session);
 
-	session->vcdata.aerl = g_nvmf_tgt.config.aerl;
+	session->vcdata.aerl = g_nvmf_tgt.opts.aerl;
 	session->vcdata.cntlid = session->cntlid;
-	session->vcdata.kas = g_nvmf_tgt.config.kas;
-	session->vcdata.maxcmd = g_nvmf_tgt.config.max_queue_depth;
-	session->vcdata.mdts = spdk_u32log2(g_nvmf_tgt.config.max_io_size / 4096);
-	memcpy(&session->vcdata.sgls, &g_nvmf_tgt.config.sgls, sizeof(uint32_t));
+	session->vcdata.kas = g_nvmf_tgt.opts.kas;
+	session->vcdata.maxcmd = g_nvmf_tgt.opts.max_queue_depth;
+	session->vcdata.mdts = spdk_u32log2(g_nvmf_tgt.opts.max_io_size / 4096);
+	memcpy(&session->vcdata.sgls, &g_nvmf_tgt.opts.sgls, sizeof(uint32_t));
 
 	session->vcdata.nvmf_specific.ioccsz = sizeof(struct spdk_nvme_cmd) / 16;
 	session->vcdata.nvmf_specific.iorcsz = sizeof(struct spdk_nvme_cpl) / 16;
@@ -107,7 +107,7 @@ nvmf_init_nvme_session_properties(struct spdk_nvmf_session *session)
 	session->vcdata.nvmf_specific.msdbd = 1; /* target supports single SGL in capsule */
 
 	/* TODO: this should be set by the transport */
-	// session->vcdata.nvmf_specific.ioccsz += g_nvmf_tgt.config.in_capsule_data_size / 16;
+	// session->vcdata.nvmf_specific.ioccsz += g_nvmf_tgt.opts.in_capsule_data_size / 16;
 
 	strncpy((char *)session->vcdata.subnqn, session->subsys->subnqn, sizeof(session->vcdata.subnqn));
 
@@ -264,9 +264,9 @@ spdk_nvmf_session_connect(struct spdk_nvmf_conn *conn,
 	 * SQSIZE is a 0-based value, so it must be at least 1 (minimum queue depth is 2) and
 	 *  strictly less than max_queue_depth.
 	 */
-	if (cmd->sqsize == 0 || cmd->sqsize >= g_nvmf_tgt.config.max_queue_depth) {
+	if (cmd->sqsize == 0 || cmd->sqsize >= g_nvmf_tgt.opts.max_queue_depth) {
 		SPDK_ERRLOG("Invalid SQSIZE %u (min 1, max %u)\n",
-			    cmd->sqsize, g_nvmf_tgt.config.max_queue_depth - 1);
+			    cmd->sqsize, g_nvmf_tgt.opts.max_queue_depth - 1);
 		INVALID_CONNECT_CMD(sqsize);
 		return;
 	}
@@ -306,7 +306,7 @@ spdk_nvmf_session_connect(struct spdk_nvmf_conn *conn,
 		session->async_event_config.raw = 0;
 		session->num_connections = 0;
 		session->subsys = subsystem;
-		session->max_connections_allowed = g_nvmf_tgt.config.max_queues_per_session;
+		session->max_connections_allowed = g_nvmf_tgt.opts.max_queues_per_session;
 
 		memcpy(session->hostid, data->hostid, sizeof(session->hostid));
 

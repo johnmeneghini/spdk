@@ -49,16 +49,16 @@ SPDK_LOG_REGISTER_TRACE_FLAG("nvmf", SPDK_TRACE_NVMF)
 struct spdk_nvmf_tgt g_nvmf_tgt;
 
 int
-spdk_nvmf_tgt_init(struct spdk_nvmf_tgt_config *config)
+spdk_nvmf_tgt_opts_init(struct spdk_nvmf_tgt_opts *opts)
 {
 	int rc;
 
-	if (!config) {
+	if (!opts) {
 		SPDK_ERRLOG("Invalid config passed during NVMF target init\n");
 		return -1;
 	}
 
-	g_nvmf_tgt.config = *config;
+	g_nvmf_tgt.opts = *opts;
 
 	g_nvmf_tgt.discovery_genctr = 0;
 	g_nvmf_tgt.discovery_log_page = NULL;
@@ -67,13 +67,13 @@ spdk_nvmf_tgt_init(struct spdk_nvmf_tgt_config *config)
 	TAILQ_INIT(&g_nvmf_tgt.subsystems);
 	TAILQ_INIT(&g_nvmf_tgt.listen_addrs);
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max Associations: %d\n", g_nvmf_tgt.config.max_associations);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max Associations: %d\n", g_nvmf_tgt.opts.max_associations);
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max Queues Per Session: %d\n",
-		      g_nvmf_tgt.config.max_queues_per_session);
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max Queue Depth: %d\n", g_nvmf_tgt.config.max_queue_depth);
+		      g_nvmf_tgt.opts.max_queues_per_session);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max Queue Depth: %d\n", g_nvmf_tgt.opts.max_queue_depth);
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max In Capsule Data: %d bytes\n",
-		      g_nvmf_tgt.config.in_capsule_data_size);
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max I/O Size: %d bytes\n", g_nvmf_tgt.config.max_io_size);
+		      g_nvmf_tgt.opts.in_capsule_data_size);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max I/O Size: %d bytes\n", g_nvmf_tgt.opts.max_io_size);
 
 	rc = spdk_nvmf_transport_init();
 	if (rc < 0) {

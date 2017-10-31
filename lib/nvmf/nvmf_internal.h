@@ -46,7 +46,7 @@
 #define SPDK_NVMF_DEFAULT_NUM_SESSIONS_PER_LCORE 1
 
 struct spdk_nvmf_tgt {
-	struct spdk_nvmf_tgt_config             config;
+	struct spdk_nvmf_tgt_opts               opts;
 	uint64_t				discovery_genctr;
 	TAILQ_HEAD(, spdk_nvmf_subsystem)	subsystems;
 	struct spdk_nvmf_discovery_log_page	*discovery_log_page;

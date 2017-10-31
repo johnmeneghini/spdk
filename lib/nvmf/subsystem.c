@@ -450,23 +450,6 @@ spdk_nvmf_subsystem_get_sn(const struct spdk_nvmf_subsystem *subsystem)
 }
 
 int
-spdk_nvmf_subsystem_set_pci_id(struct spdk_nvmf_subsystem *subsystem,
-			       struct spdk_pci_id *sub_pci_id)
-{
-	if (sub_pci_id == NULL) {
-		return -1;
-	}
-
-	if (subsystem->mode != NVMF_SUBSYSTEM_MODE_VIRTUAL) {
-		return -1;
-	}
-
-	memcpy(&subsystem->dev.virt.sub_pci_id, sub_pci_id, sizeof(struct spdk_pci_id));
-
-	return 0;
-}
-
-int
 spdk_nvmf_subsystem_set_sn(struct spdk_nvmf_subsystem *subsystem, const char *sn)
 {
 	size_t len, max_len;
@@ -484,6 +467,23 @@ spdk_nvmf_subsystem_set_sn(struct spdk_nvmf_subsystem *subsystem, const char *sn
 	}
 
 	snprintf(subsystem->dev.virt.sn, sizeof(subsystem->dev.virt.sn), "%s", sn);
+
+	return 0;
+}
+
+int
+spdk_nvmf_subsystem_set_pci_id(struct spdk_nvmf_subsystem *subsystem,
+			       struct spdk_pci_id *sub_pci_id)
+{
+	if (sub_pci_id == NULL) {
+		return -1;
+	}
+
+	if (subsystem->mode != NVMF_SUBSYSTEM_MODE_VIRTUAL) {
+		return -1;
+	}
+
+	memcpy(&subsystem->dev.virt.sub_pci_id, sub_pci_id, sizeof(struct spdk_pci_id));
 
 	return 0;
 }
