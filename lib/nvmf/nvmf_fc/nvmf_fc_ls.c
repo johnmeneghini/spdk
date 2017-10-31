@@ -129,7 +129,7 @@ static char *validation_errors[] = {
 	"Too many connections for association",
 	"Invalid subnqn or subsystem not found",
 	"Invalid hostnqn or subsystem doesn't allow host",
-	"SQ size = 0 or too big"
+	"SQ size = 0 or too big",
 	"No Remote Port"
 };
 
