@@ -574,14 +574,15 @@ ls_tests_init(void)
 {
 	uint16_t i;
 
-	g_nvmf_tgt.opts.max_associations = 4,
-			g_nvmf_tgt.opts.max_aq_depth = 32,
-					g_nvmf_tgt.opts.max_queue_depth = 1024,
-							g_nvmf_tgt.opts.max_queues_per_session = 4,
+	g_nvmf_tgt.opts.max_associations = 4;
+	g_nvmf_tgt.opts.max_aq_depth = 32;
+	g_nvmf_tgt.opts.max_queue_depth = 1024;
+	g_nvmf_tgt.opts.max_queues_per_session = 4;
 
-									spdk_nvmf_bcm_fc_ls_init();
+	spdk_nvmf_bcm_fc_ls_init();
 
 	fcport.max_io_queues = 16;
+
 	for (i = 0; i < fcport.max_io_queues; i++) {
 		fcport.io_queues[i].lcore_id = i;
 		fcport.io_queues[i].fc_port = &fcport;

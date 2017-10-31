@@ -181,7 +181,7 @@ ocs_alloc_lcore(void)
 
 	RTE_LCORE_FOREACH_SLAVE(i) {
 		/* If this is nvmf lcore skip */
-		if ((g_nvmf_tgt.lcore_mask >> i) & 0x1) {
+		if ((g_nvmf_tgt.opts.lcore_mask >> i) & 0x1) {
 			continue;
 		}
 

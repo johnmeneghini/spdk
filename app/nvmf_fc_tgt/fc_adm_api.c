@@ -59,7 +59,7 @@ nvmf_fc_tgt_get_next_lcore(uint32_t prev_core)
 {
 	int retries		= spdk_env_get_core_count() + 1;
 	uint32_t lcore_id	= 0;
-	uint64_t lcore_mask	= g_nvmf_tgt.lcore_mask;
+	uint64_t lcore_mask	= g_nvmf_tgt.opts.lcore_mask;
 
 	while (retries) {
 		retries --;
@@ -724,18 +724,18 @@ nvmf_fc_hw_port_init(void *arg1, void *arg2)
 	 */
 
 	if (ioq_depth_adj_needed) {
-		g_nvmf_tgt.max_queue_depth =
+		g_nvmf_tgt.opts.max_queue_depth =
 			spdk_nvmf_bcm_fc_calc_max_q_depth(
 				fc_port->max_io_queues,
 				fc_port->io_queues[0].queues.
 				rq_payload.num_buffers,
-				g_nvmf_tgt.max_associations,
-				g_nvmf_tgt.max_queues_per_session,
-				g_nvmf_tgt.max_aq_depth);
+				g_nvmf_tgt.opts.max_associations,
+				g_nvmf_tgt.opts.max_queues_per_session,
+				g_nvmf_tgt.opts.max_aq_depth);
 
 		ioq_depth_adj_needed = false;
 		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "MAX SQ size=%d.\n",
-			      g_nvmf_tgt.max_queue_depth);
+			      g_nvmf_tgt.opts.max_queue_depth);
 	}
 
 err:
