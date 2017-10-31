@@ -481,7 +481,7 @@ handle_cc_rsp(struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst)
 		if (acc_hdr->w0.ls_cmd == FCNVME_LS_RJT) {
 			struct nvmf_fc_ls_rjt *rjt =
 				(struct nvmf_fc_ls_rjt *)ls_rqst->rspbuf.virt;
-			if (g_create_conn_test_cnt == g_nvmf_tgt.max_queues_per_session) {
+			if (g_create_conn_test_cnt == g_nvmf_tgt.opts.max_queues_per_session) {
 				/* expected to get reject for too many connections */
 				CU_ASSERT(rjt->rjt.reason_code ==
 					  FCNVME_RJT_RC_INV_PARAM);
@@ -571,14 +571,15 @@ ls_tests_init(void)
 {
 	uint16_t i;
 
-	g_nvmf_tgt.max_associations = 4,
-		   g_nvmf_tgt.max_aq_depth = 32,
-			      g_nvmf_tgt.max_queue_depth = 1024,
-					 g_nvmf_tgt.max_queues_per_session = 4,
+	g_nvmf_tgt.opts.max_associations = 4;
+	g_nvmf_tgt.opts.max_aq_depth = 32;
+	g_nvmf_tgt.opts.max_queue_depth = 1024;
+	g_nvmf_tgt.opts.max_queues_per_session = 4;
 
-						    spdk_nvmf_bcm_fc_ls_init();
+	spdk_nvmf_bcm_fc_ls_init();
 
 	fcport.max_io_queues = 16;
+
 	for (i = 0; i < fcport.max_io_queues; i++) {
 		fcport.io_queues[i].lcore_id = i;
 		fcport.io_queues[i].fc_port = &fcport;
@@ -637,14 +638,14 @@ create_max_assoc_conns_test(void)
 	uint16_t i;
 
 	g_last_rslt = 0;
-	for (i = 0; i < g_nvmf_tgt.max_associations && g_last_rslt == 0; i++) {
+	for (i = 0; i < g_nvmf_tgt.opts.max_associations && g_last_rslt == 0; i++) {
 		g_test_run_type = TEST_RUN_TYPE_CREATE_ASSOC;
 		run_create_assoc_test(&tgtport);
 		if (g_last_rslt == 0) {
 			int j;
 			assoc_id[i] = g_curr_assoc_id;
 			g_test_run_type = TEST_RUN_TYPE_CREATE_CONN;
-			for (j = 1; j < g_nvmf_tgt.max_queues_per_session; j++) {
+			for (j = 1; j < g_nvmf_tgt.opts.max_queues_per_session; j++) {
 				if (g_last_rslt == 0) {
 					run_create_conn_test(&tgtport, g_curr_assoc_id);
 				}
@@ -673,7 +674,7 @@ direct_delete_assoc_test(void)
 
 		/* remove any remaining associations */
 		g_test_run_type = TEST_RUN_TYPE_DISCONNECT;
-		for (; i < g_nvmf_tgt.max_associations; i++) {
+		for (; i < g_nvmf_tgt.opts.max_associations; i++) {
 			run_disconn_test(&tgtport, assoc_id[i]);
 		}
 	}
