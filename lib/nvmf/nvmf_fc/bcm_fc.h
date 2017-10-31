@@ -93,14 +93,6 @@ typedef enum spdk_fc_hwqp_state_e {
 } spdk_fc_hwqp_state_t;
 
 /*
- * FC NPORT status.
- */
-typedef enum spdk_fc_nport_state_e {
-	SPDK_FC_NPORT_DOWN = 0,
-	SPDK_FC_NPORT_UP = 1,
-} spdk_fc_nport_state_t;
-
-/*
  * NVMF BCM FC Object state
  * Add all the generic states of the object here.
  * Specific object states can be added separately
@@ -237,7 +229,6 @@ struct spdk_nvmf_bcm_fc_nport {
 	uint16_t nport_hdl;
 	uint8_t port_hdl;
 	uint32_t d_id;
-	bool nport_status;
 	spdk_nvmf_bcm_fc_object_state_t nport_state;
 	struct spdk_nvmf_bcm_fc_wwn fc_nodename;
 	struct spdk_nvmf_bcm_fc_wwn fc_portname;
