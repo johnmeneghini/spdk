@@ -271,6 +271,9 @@ const char *spdk_nvmf_subsystem_get_nqn(struct spdk_nvmf_subsystem *subsystem);
 enum spdk_nvmf_subtype spdk_nvmf_subsystem_get_type(struct spdk_nvmf_subsystem *subsystem);
 enum spdk_nvmf_subsystem_mode spdk_nvmf_subsystem_get_mode(struct spdk_nvmf_subsystem *subsystem);
 
+/* XXX: Throwaway with spdk17.10. Leverage spdk17.10 containers */
+void spdk_nvmf_add_discovery_log_allowed_fn(void *fn);
+
 void spdk_nvmf_acceptor_poll(void);
 
 void spdk_nvmf_handle_connect(struct spdk_nvmf_request *req);

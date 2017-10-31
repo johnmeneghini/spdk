@@ -61,8 +61,9 @@ spdk_nvmf_tgt_opts_init(struct spdk_nvmf_tgt_opts *opts)
 	g_nvmf_tgt.opts = *opts;
 
 	g_nvmf_tgt.discovery_genctr = 0;
-	g_nvmf_tgt.discovery_log_page = NULL;
-	g_nvmf_tgt.discovery_log_page_size = 0;
+
+	/* XXX: Throwaway with spdk17.10. Leverage spdk17.10 containers */
+	g_nvmf_tgt.disc_log_allowed_fn = NULL;
 	g_nvmf_tgt.current_subsystem_id = 0;
 	TAILQ_INIT(&g_nvmf_tgt.subsystems);
 	TAILQ_INIT(&g_nvmf_tgt.listen_addrs);

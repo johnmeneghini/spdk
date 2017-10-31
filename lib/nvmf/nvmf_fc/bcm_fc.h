@@ -517,6 +517,8 @@ void spdk_nvmf_bcm_fc_port_list_add(struct spdk_nvmf_bcm_fc_port *fc_port);
 
 struct spdk_nvmf_bcm_fc_nport *spdk_nvmf_bcm_fc_nport_get(uint8_t port_hdl, uint16_t nport_hdl);
 
+struct spdk_nvmf_bcm_fc_nport *spdk_nvmf_bcm_req_fc_nport_get(struct spdk_nvmf_request *req);
+
 struct spdk_nvmf_bcm_fc_port *spdk_nvmf_bcm_fc_port_list_get(uint8_t port_hdl);
 
 void spdk_nvmf_bcm_fc_init_poller_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp);

@@ -176,6 +176,13 @@ spdk_nvmf_valid_nqn(const char *nqn)
 	return true;
 }
 
+/* XXX: Throwaway with spdk17.10. Leverage spdk17.10 containers */
+void
+spdk_nvmf_add_discovery_log_allowed_fn(void *fn)
+{
+	g_nvmf_tgt.disc_log_allowed_fn = (disc_log_allowed_fn_t) fn;
+}
+
 struct spdk_nvmf_subsystem *
 spdk_nvmf_create_subsystem(const char *nqn,
 			   enum spdk_nvmf_subtype type,

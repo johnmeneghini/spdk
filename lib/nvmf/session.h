@@ -93,6 +93,7 @@ struct spdk_nvmf_session {
 	} async_event_config;
 	struct spdk_nvmf_request *aer_req;
 	uint8_t hostid[16];
+	char hostnqn[SPDK_NVMF_NQN_MAX_LEN];
 	const struct spdk_nvmf_transport	*transport;
 
 	TAILQ_ENTRY(spdk_nvmf_session) 		link;

@@ -185,7 +185,6 @@ test_process_discovery_cmd(void)
 	ret = nvmf_discovery_ctrlr_process_admin_cmd(&req);
 	CU_ASSERT_EQUAL(req.rsp->nvme_cpl.status.sc, SPDK_NVME_SC_INVALID_FIELD);
 	CU_ASSERT_EQUAL(ret, SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE);
-
 	/* Invalid opcode return value check */
 	req.cmd->nvme_cmd.opc = 100;
 	ret = nvmf_discovery_ctrlr_process_admin_cmd(&req);
@@ -208,20 +207,39 @@ all_zero(const void *buf, size_t size)
 	return true;
 }
 
+/* XXX: Throwaway with spdk17.10. Leverage spdk17.10 containers */
+static bool
+discovery_log_allowed(struct spdk_nvmf_request *req, struct spdk_nvmf_subsystem *sub)
+{
+
+	/* Check for host access */
+	return spdk_nvmf_subsystem_host_allowed(sub, req->conn->sess->hostnqn);
+}
+
 static void
 test_discovery_log(void)
 {
-	struct spdk_nvmf_subsystem *subsystem;
+	struct spdk_nvmf_subsystem *subsystem, *subsystem2;
 	uint8_t buffer[8192];
 	struct spdk_nvmf_discovery_log_page *disc_log;
 	struct spdk_nvmf_discovery_log_page_entry *entry;
 	struct spdk_nvmf_listen_addr *listen_addr;
+	struct spdk_nvmf_request req = {0};
+	/* random request length value for testing */
+	//int	req_length = 122;
+	struct	spdk_nvmf_conn req_conn = {};
+	struct	spdk_nvmf_session req_sess = {};
+
+	/* XXX: Throwaway with spdk17.10. Leverage spdk17.10 containers */
+	spdk_nvmf_add_discovery_log_allowed_fn(discovery_log_allowed);
 
 	/* Reset discovery-related globals */
 	g_nvmf_tgt.discovery_genctr = 0;
-	free(g_nvmf_tgt.discovery_log_page);
-	g_nvmf_tgt.discovery_log_page = NULL;
-	g_nvmf_tgt.discovery_log_page_size = 0;
+	req.data = buffer;
+	//spdk_memcpy(req_sess.hostnqn, "test_host", strlen("test_host");
+	snprintf(req_sess.hostnqn, 223, "nqn.2017-07.com.netapp:num1");
+	req.conn = &req_conn;
+	req.conn->sess = &req_sess;
 
 	/* Add one subsystem and verify that the discovery log contains it */
 	subsystem = spdk_nvmf_create_subsystem("nqn.2016-06.io.spdk:subsystem1", SPDK_NVMF_SUBTYPE_NVME,
@@ -236,20 +254,20 @@ test_discovery_log(void)
 	/* Get only genctr (first field in the header) */
 	memset(buffer, 0xCC, sizeof(buffer));
 	disc_log = (struct spdk_nvmf_discovery_log_page *)buffer;
-	spdk_nvmf_get_discovery_log_page(buffer, 0, sizeof(disc_log->genctr));
+	spdk_nvmf_get_discovery_log_page(&req, 0, sizeof(disc_log->genctr));
 	CU_ASSERT(disc_log->genctr == 2); /* one added subsystem + one added listen address */
 
 	/* Get only the header, no entries */
 	memset(buffer, 0xCC, sizeof(buffer));
 	disc_log = (struct spdk_nvmf_discovery_log_page *)buffer;
-	spdk_nvmf_get_discovery_log_page(buffer, 0, sizeof(*disc_log));
+	spdk_nvmf_get_discovery_log_page(&req, 0, sizeof(*disc_log));
 	CU_ASSERT(disc_log->genctr == 2);
 	CU_ASSERT(disc_log->numrec == 1);
 
 	/* Offset 0, exact size match */
 	memset(buffer, 0xCC, sizeof(buffer));
 	disc_log = (struct spdk_nvmf_discovery_log_page *)buffer;
-	spdk_nvmf_get_discovery_log_page(buffer, 0, sizeof(*disc_log) + sizeof(disc_log->entries[0]));
+	spdk_nvmf_get_discovery_log_page(&req, 0, sizeof(*disc_log) + sizeof(disc_log->entries[0]));
 	CU_ASSERT(disc_log->genctr != 0);
 	CU_ASSERT(disc_log->numrec == 1);
 	CU_ASSERT(disc_log->entries[0].trtype == 42);
@@ -257,7 +275,7 @@ test_discovery_log(void)
 	/* Offset 0, oversize buffer */
 	memset(buffer, 0xCC, sizeof(buffer));
 	disc_log = (struct spdk_nvmf_discovery_log_page *)buffer;
-	spdk_nvmf_get_discovery_log_page(buffer, 0, sizeof(buffer));
+	spdk_nvmf_get_discovery_log_page(&req, 0, sizeof(buffer));
 	CU_ASSERT(disc_log->genctr != 0);
 	CU_ASSERT(disc_log->numrec == 1);
 	CU_ASSERT(disc_log->entries[0].trtype == 42);
@@ -267,10 +285,81 @@ test_discovery_log(void)
 	/* Get just the first entry, no header */
 	memset(buffer, 0xCC, sizeof(buffer));
 	entry = (struct spdk_nvmf_discovery_log_page_entry *)buffer;
-	spdk_nvmf_get_discovery_log_page(buffer,
+	spdk_nvmf_get_discovery_log_page(&req,
 					 offsetof(struct spdk_nvmf_discovery_log_page, entries[0]),
 					 sizeof(*entry));
 	CU_ASSERT(entry->trtype == 42);
+
+	/* New tests with dynamic discovery log page */
+	/* Add one more subsystem and verify that the discovery log contains it */
+	subsystem2 = spdk_nvmf_create_subsystem("nqn.2016-06.io.spdk:subsystem2", SPDK_NVMF_SUBTYPE_NVME,
+						NVMF_SUBSYSTEM_MODE_DIRECT, NULL, NULL, NULL);
+	SPDK_CU_ASSERT_FATAL(subsystem != NULL);
+
+	listen_addr = spdk_nvmf_tgt_listen("test_transport1", SPDK_NVMF_ADRFAM_IPV4, "12345", "56789");
+	SPDK_CU_ASSERT_FATAL(listen_addr != NULL);
+
+	SPDK_CU_ASSERT_FATAL(spdk_nvmf_subsystem_add_listener(subsystem2, listen_addr) == 0);
+
+	/* Get only the header, no entries */
+	memset(buffer, 0xCC, sizeof(buffer));
+	disc_log = (struct spdk_nvmf_discovery_log_page *)buffer;
+	spdk_nvmf_get_discovery_log_page(&req, 0, sizeof(*disc_log));
+	CU_ASSERT(disc_log->genctr == 4); /* 2 subsystems + 2 listeners */
+	CU_ASSERT(disc_log->numrec == 2); /* numrecs to be 2 */
+
+	spdk_nvmf_subsystem_add_host(subsystem, "nqn.2017-07.com.netapp:new");
+	spdk_nvmf_subsystem_add_host(subsystem2, "nqn.2017-07.com.netapp:num1");
+
+	/* Get only the header, no entries */
+	memset(buffer, 0xCC, sizeof(buffer));
+	disc_log = (struct spdk_nvmf_discovery_log_page *)buffer;
+	spdk_nvmf_get_discovery_log_page(&req, 0, sizeof(*disc_log));
+	CU_ASSERT(disc_log->genctr == 6); /* 2 subsystems + 2 listeners + 2 hosts */
+	CU_ASSERT(disc_log->numrec ==
+		  1); /* numrecs to be 1 since we added hosts which go through allowed check */
+
+	spdk_nvmf_subsystem_add_host(subsystem, "nqn.2017-07.com.netapp:num1");
+
+	/* Get only the header, no entries */
+	memset(buffer, 0xCC, sizeof(buffer));
+	disc_log = (struct spdk_nvmf_discovery_log_page *)buffer;
+	spdk_nvmf_get_discovery_log_page(&req, 0, sizeof(*disc_log));
+	CU_ASSERT(disc_log->genctr == 7); /* 2 subsystems + 2 listeners + 3 hosts */
+	CU_ASSERT(disc_log->numrec ==
+		  2); /* numrecs to be 2 since we added hosts which go through allowed check */
+
+	/* read buffer in parts */
+	/* Offset 0, oversize buffer */
+	memset(buffer, 0xCC, sizeof(buffer));
+	disc_log = (struct spdk_nvmf_discovery_log_page *)buffer;
+	req.data = buffer;
+	spdk_nvmf_get_discovery_log_page(&req, 0, 2);
+	req.data = buffer + 2;
+	spdk_nvmf_get_discovery_log_page(&req, 2, 1);
+	req.data = buffer + 3;
+	spdk_nvmf_get_discovery_log_page(&req, 3, 7);
+	req.data = buffer + 10;
+	spdk_nvmf_get_discovery_log_page(&req, 10, 100);
+	req.data = buffer + 110;
+	spdk_nvmf_get_discovery_log_page(&req, 110, 1024 - 110);
+	req.data = buffer + 1024;
+	spdk_nvmf_get_discovery_log_page(&req, 1024, 2);
+	req.data = buffer + 1026;
+	spdk_nvmf_get_discovery_log_page(&req, 1026, 1024 - 2);
+	req.data = buffer + 2048;
+	spdk_nvmf_get_discovery_log_page(&req, 2048, 1024);
+	req.data = buffer + 3072;
+	spdk_nvmf_get_discovery_log_page(&req, 3072, 1024);
+	CU_ASSERT(disc_log->genctr == 7);
+	CU_ASSERT(disc_log->numrec == 2);
+	CU_ASSERT(disc_log->entries[0].trtype == 42);
+	CU_ASSERT(disc_log->entries[1].trtype == 42);
+	CU_ASSERT(all_zero(buffer + sizeof(*disc_log) + 2 * sizeof(disc_log->entries[0]),
+			   sizeof(disc_log->entries[0])));
+	CU_ASSERT(!all_zero(buffer + sizeof(*disc_log) + 2 * sizeof(disc_log->entries[0]),
+			    sizeof(buffer) - (sizeof(*disc_log) + 3 * sizeof(disc_log->entries[0]))));
+
 	spdk_nvmf_delete_subsystem(subsystem);
 }
 

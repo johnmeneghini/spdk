@@ -45,12 +45,14 @@
 
 #define SPDK_NVMF_DEFAULT_NUM_SESSIONS_PER_LCORE 1
 
+/* XXX: Throwaway with spdk17.10. Leverage spdk17.10 containers */
+typedef bool (*disc_log_allowed_fn_t)(struct spdk_nvmf_request *, struct spdk_nvmf_subsystem *);
+
 struct spdk_nvmf_tgt {
 	struct spdk_nvmf_tgt_opts               opts;
 	uint64_t				discovery_genctr;
+	disc_log_allowed_fn_t                   disc_log_allowed_fn; /* XXX: Throwaway with spdk17.10 */
 	TAILQ_HEAD(, spdk_nvmf_subsystem)	subsystems;
-	struct spdk_nvmf_discovery_log_page	*discovery_log_page;
-	size_t					discovery_log_page_size;
 	TAILQ_HEAD(, spdk_nvmf_listen_addr)	listen_addrs;
 	uint32_t				current_subsystem_id;
 };
