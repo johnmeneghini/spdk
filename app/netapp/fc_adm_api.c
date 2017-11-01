@@ -33,6 +33,28 @@ static void nvmf_fc_abts_recv(void *arg1, void *arg2);
 static void nvmf_fc_hw_port_dump(void *arg1, void *arg2);
 static void nvmf_fc_hw_port_quiesce_dump_cb(void *ctx, spdk_err_t err);
 
+static uint32_t
+nvmf_fc_tgt_get_next_lcore(uint32_t prev_core)
+{
+	int retries		= spdk_env_get_core_count() + 1;
+	uint32_t lcore_id	= 0;
+	uint64_t lcore_mask	= g_nvmf_tgt.opts.lcore_mask;
+
+	while (retries) {
+		retries --;
+		lcore_id = spdk_env_get_next_core(prev_core);
+		if ((lcore_id == spdk_env_get_master_lcore()) ||
+		    (lcore_id == UINT32_MAX) ||
+		    (lcore_mask && (!((lcore_mask >> lcore_id) & 0x1)))) {
+			prev_core = lcore_id;
+			continue;
+		}
+		return lcore_id;
+	}
+
+	return UINT32_MAX;
+}
+
 /* ******************* PRIVATE HELPER FUNCTIONS - BEGIN ************** */
 
 /*
@@ -1114,17 +1136,18 @@ nvmf_fc_hw_port_init(void *arg1, void *arg2)
 	 */
 
 	if (ioq_depth_adj_needed) {
-		g_nvmf_tgt.max_queue_depth =
+		g_nvmf_tgt.opts.max_queue_depth =
 			spdk_nvmf_bcm_fc_calc_max_q_depth(
 				fc_port->max_io_queues,
 				fc_port->io_queues[0].queues.
 				rq_payload.num_buffers,
-				g_nvmf_tgt.max_associations,
-				g_nvmf_tgt.max_queues_per_session,
-				g_nvmf_tgt.max_aq_depth);
+				g_nvmf_tgt.opts.max_associations,
+				g_nvmf_tgt.opts.max_queues_per_session,
+				g_nvmf_tgt.opts.max_aq_depth);
 
 		ioq_depth_adj_needed = false;
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "MAX SQ size=%d.\n", g_nvmf_tgt.max_queue_depth);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "MAX SQ size=%d.\n",
+			      g_nvmf_tgt.opts.max_queue_depth);
 	}
 
 err:
