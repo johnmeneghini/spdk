@@ -46,6 +46,7 @@
 #include "spdk_internal/log.h"
 
 #define MIN_KEEP_ALIVE_TIMEOUT 10000
+#define SPDK_NVMF_BLOCK_SIZE 4096
 
 static void
 nvmf_init_discovery_session_properties(struct spdk_nvmf_session *session)
@@ -60,6 +61,7 @@ nvmf_init_discovery_session_properties(struct spdk_nvmf_session *session)
 	session->vcdata.nvmf_specific.ctrattr.ctrlr_model = SPDK_NVMF_CTRLR_MODEL_DYNAMIC;
 	session->vcdata.nvmf_specific.msdbd = 1; /* target supports single SGL in capsule */
 	memcpy(&session->vcdata.sgls, &g_nvmf_tgt.opts.sgls, sizeof(uint32_t));
+	session->vcdata.mdts = spdk_u32log2(g_nvmf_tgt.opts.max_io_size / SPDK_NVMF_BLOCK_SIZE);
 
 	strncpy((char *)session->vcdata.subnqn, SPDK_NVMF_DISCOVERY_NQN, sizeof(session->vcdata.subnqn));
 
@@ -72,6 +74,7 @@ nvmf_init_discovery_session_properties(struct spdk_nvmf_session *session)
 	session->vcprop.cap.bits.css_nvm = 1; /* NVM command set */
 	session->vcprop.cap.bits.mpsmin = 0; /* 2 ^ 12 + mpsmin == 4k */
 	session->vcprop.cap.bits.mpsmax = 0; /* 2 ^ 12 + mpsmax == 4k */
+
 
 	/* Version Supported: 1.2.1 */
 	session->vcprop.vs.bits.mjr = 1;
@@ -88,7 +91,7 @@ nvmf_init_discovery_session_properties(struct spdk_nvmf_session *session)
 static void
 nvmf_init_nvme_session_properties(struct spdk_nvmf_session *session)
 {
-	assert((g_nvmf_tgt.opts.max_io_size % 4096) == 0);
+	assert((g_nvmf_tgt.opts.max_io_size % SPDK_NVMF_BLOCK_SIZE) == 0);
 
 	/* Init the controller details */
 	session->subsys->ops->ctrlr_get_data(session);
@@ -97,7 +100,7 @@ nvmf_init_nvme_session_properties(struct spdk_nvmf_session *session)
 	session->vcdata.cntlid = session->cntlid;
 	session->vcdata.kas = g_nvmf_tgt.opts.kas;
 	session->vcdata.maxcmd = g_nvmf_tgt.opts.max_queue_depth;
-	session->vcdata.mdts = spdk_u32log2(g_nvmf_tgt.opts.max_io_size / 4096);
+	session->vcdata.mdts = spdk_u32log2(g_nvmf_tgt.opts.max_io_size / SPDK_NVMF_BLOCK_SIZE);
 	memcpy(&session->vcdata.sgls, &g_nvmf_tgt.opts.sgls, sizeof(uint32_t));
 
 	session->vcdata.nvmf_specific.ioccsz = sizeof(struct spdk_nvme_cmd) / 16;
