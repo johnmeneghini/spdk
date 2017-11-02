@@ -59,6 +59,8 @@ static void nvmf_fc_abts_recv(void *arg1, void *arg2);
 static void nvmf_fc_hw_port_dump(void *arg1, void *arg2);
 static void nvmf_fc_hw_port_quiesce_dump_cb(void *ctx, spdk_err_t err);
 
+/* ******************* PRIVATE HELPER FUNCTIONS - BEGIN ************** */
+
 static uint32_t
 nvmf_fc_tgt_get_next_lcore(uint32_t prev_core)
 {
@@ -80,8 +82,6 @@ nvmf_fc_tgt_get_next_lcore(uint32_t prev_core)
 
 	return UINT32_MAX;
 }
-
-/* ******************* PRIVATE HELPER FUNCTIONS - BEGIN ************** */
 
 /*
  * Re-initialize the FC-Port after an offline event.
@@ -145,8 +145,6 @@ nvmf_fc_tgt_hw_port_data_init(struct spdk_nvmf_bcm_fc_port *fc_port,
 	spdk_err_t                  err        = SPDK_SUCCESS;
 	int                         i, rc;
 	uint32_t                    lcore_id = UINT32_MAX ;
-
-	bzero(fc_port, sizeof(struct spdk_nvmf_bcm_fc_port));
 
 	fc_port->port_hdl       = args->port_handle;
 	fc_port->hw_port_status = SPDK_FC_PORT_OFFLINE;
@@ -222,10 +220,10 @@ nvmf_fc_tgt_hw_port_data_init(struct spdk_nvmf_bcm_fc_port *fc_port,
 		TAILQ_INIT(&fc_port->io_queues[i].connection_list);
 		TAILQ_INIT(&fc_port->io_queues[i].pending_xri_list);
 
-                lcore_id = nvmf_fc_tgt_get_next_lcore(lcore_id);
-                if (lcore_id == UINT32_MAX) {
-                        goto err;
-                }
+		lcore_id = nvmf_fc_tgt_get_next_lcore(lcore_id);
+		if (lcore_id == UINT32_MAX) {
+			goto err;
+		}
 
 		fc_port->io_queues[i].lcore_id  = lcore_id;
 		fc_port->io_queues[i].hwqp_id   = i;
@@ -345,7 +343,7 @@ nvmf_fc_tgt_hw_port_link_break_cb(uint8_t port_handle,
 out:
 	spdk_free(offline_cb_args);
 	sprintf(log_str, "port link break cb: port:%d evt_type:%d \
-num_nports:%d err:%d rc:%d.\n",
+num_nports:%d err:%d spdk_err:%d.\n",
 		port_handle, event_type, num_nports, err, spdk_err);
 	if (err != SPDK_SUCCESS) {
 		SPDK_ERRLOG("%s", log_str);
@@ -382,8 +380,6 @@ static void
 nvmf_fc_tgt_nport_data_init(struct spdk_nvmf_bcm_fc_nport *nport,
 			    spdk_nvmf_bcm_fc_nport_create_args_t *args)
 {
-	bzero(nport, sizeof(*nport));
-
 	nport->nport_hdl = args->nport_handle;
 	nport->port_hdl  = args->port_handle;
 	nport->nport_state  = SPDK_NVMF_BCM_FC_OBJECT_CREATED;
@@ -444,9 +440,7 @@ nvmf_fc_tgt_i_t_delete_cb(void *args, uint32_t err)
 	}
 
 out:
-	if (cb_data) {
-		spdk_free(cb_data);
-	}
+	spdk_free(cb_data);
 	sprintf(log_str, "IT delete assoc_cb on nport %d done, port_handle:%d s_id:%d d_id:%d rpi:%d "
 		"rport_assoc_count:%d rc = %d.\n",
 		nport_hdl, port_handle, s_id, d_id, rpi, assoc_count, err);
@@ -489,7 +483,7 @@ nvmf_fc_tgt_i_t_delete_assoc_cb(void *args, uint32_t err)
 	 * If this is the last association being deleted for the ITN,
 	 * execute the callback(s).
 	 */
-	if (nport && (0 == rport->assoc_count)) {
+	if (0 == rport->assoc_count) {
 		/* Remove the rport from the remote port list. */
 		if (spdk_nvmf_bcm_fc_nport_remove_rem_port(nport, rport) != SPDK_SUCCESS) {
 			SPDK_ERRLOG("Error while removing rport from list.\n");
@@ -509,7 +503,7 @@ nvmf_fc_tgt_i_t_delete_assoc_cb(void *args, uint32_t err)
 	}
 
 	sprintf(log_str, "IT delete assoc_cb on nport %d done, \
-s_id:%d d_id:%d rpi:%d rport_assoc_count:%d rc = %d.\n",
+s_id:%d d_id:%d rpi:%d rport_assoc_count:%d err = %d.\n",
 		nport_hdl, s_id, d_id, rpi, assoc_count, err);
 	if (err != SPDK_SUCCESS) {
 		SPDK_ERRLOG("%s", log_str);
@@ -552,13 +546,12 @@ nvmf_fc_tgt_i_t_delete_assoc(struct spdk_nvmf_bcm_fc_nport *nport,
 	 * Allocate memory for callback data.
 	 * This memory will be freed by the callback function.
 	 */
-	cb_data = spdk_malloc(sizeof(struct spdk_nvmf_bcm_fc_i_t_del_assoc_cb_data));
+	cb_data = spdk_calloc(1, sizeof(struct spdk_nvmf_bcm_fc_i_t_del_assoc_cb_data));
 	if (NULL == cb_data) {
 		SPDK_ERRLOG("Failed to allocate memory for cb_data on nport:%d.\n", nport->nport_hdl);
 		err = SPDK_ERR_NOMEM;
 		goto out;
 	}
-	bzero(cb_data, sizeof(*cb_data));
 	cb_data->nport       = nport;
 	cb_data->rport       = rport;
 	cb_data->port_handle = port_hdl;
@@ -614,8 +607,6 @@ static void
 nvmf_fc_tgt_rport_data_init(struct spdk_nvmf_bcm_fc_remote_port_info *rport,
 			    spdk_nvmf_bcm_fc_hw_i_t_add_args_t *args)
 {
-	bzero(rport, sizeof(*rport));
-
 	rport->s_id = args->s_id;
 	rport->rpi  = args->rpi;
 }
@@ -677,11 +668,16 @@ nvmf_tgt_fc_hw_queue_quiesce(struct spdk_nvmf_bcm_fc_hwqp *fc_hwqp, void *ctx,
 			     spdk_nvmf_bcm_fc_poller_api_cb cb_func)
 {
 	struct spdk_nvmf_bcm_fc_poller_api_quiesce_queue_args *args;
-	spdk_nvmf_bcm_fc_poller_api_ret_t                      rc  = 0;
+	spdk_nvmf_bcm_fc_poller_api_ret_t                      rc = SPDK_NVMF_BCM_FC_POLLER_API_SUCCESS;
 	spdk_err_t                                             err = SPDK_SUCCESS;
 
 	args = spdk_calloc(1, sizeof(struct spdk_nvmf_bcm_fc_poller_api_quiesce_queue_args));
 
+	if (args == NULL) {
+		err = SPDK_ERR_NOMEM;
+		SPDK_ERRLOG("Failed to allocate memory for poller quiesce args, hwqp:%d\n", fc_hwqp->hwqp_id);
+		goto done;
+	}
 	args->hwqp            = fc_hwqp;
 	args->ctx             = ctx;
 	args->cb_info.cb_func = cb_func;
@@ -695,6 +691,7 @@ nvmf_tgt_fc_hw_queue_quiesce(struct spdk_nvmf_bcm_fc_hwqp *fc_hwqp, void *ctx,
 		err = SPDK_ERR_INTERNAL;
 	}
 
+done:
 	return err;
 }
 
@@ -722,7 +719,14 @@ nvmf_tgt_fc_hw_port_quiesce(struct spdk_nvmf_bcm_fc_port *fc_port, void *ctx,
 	}
 
 	port_quiesce_ctx = spdk_calloc(1, sizeof(spdk_nvmf_bcm_fc_hw_port_quiesce_ctx_t));
-	bzero(port_quiesce_ctx, sizeof(spdk_nvmf_bcm_fc_hw_port_quiesce_ctx_t));
+
+	if (port_quiesce_ctx == NULL) {
+		err = SPDK_ERR_NOMEM;
+		SPDK_ERRLOG("Failed to allocate memory for LS queue quiesce ctx, port:%d\n",
+			    fc_port->port_hdl);
+		goto fail;
+	}
+
 	port_quiesce_ctx->quiesce_count = 0;
 	port_quiesce_ctx->ctx           = ctx;
 	port_quiesce_ctx->cb_func       = cb_func;
@@ -734,7 +738,6 @@ nvmf_tgt_fc_hw_port_quiesce(struct spdk_nvmf_bcm_fc_port *fc_port, void *ctx,
 					   nvmf_tgt_fc_queue_quiesce_cb);
 	if (err != SPDK_SUCCESS) {
 		SPDK_ERRLOG("Failed to quiesce the LS queue.\n");
-		err = SPDK_ERR_INTERNAL;
 		goto fail;
 	}
 	port_quiesce_ctx->quiesce_count++;
@@ -1087,7 +1090,7 @@ done:
 	if (err == SPDK_SUCCESS) {
 		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "Enqueue event %d done successfully \n", event_type);
 	} else {
-		SPDK_ERRLOG("Enqueue event %d failed, rc = %d\n", event_type, err);
+		SPDK_ERRLOG("Enqueue event %d failed, err = %d\n", event_type, err);
 	}
 
 	if (event) {
@@ -1123,7 +1126,7 @@ nvmf_fc_hw_port_init(void *arg1, void *arg2)
 	/*
 	 * 2. Get the memory to instantiate a fc port.
 	 */
-	fc_port = spdk_malloc(sizeof(struct spdk_nvmf_bcm_fc_port));
+	fc_port = spdk_calloc(1, sizeof(struct spdk_nvmf_bcm_fc_port));
 	if (fc_port == NULL) {
 		SPDK_ERRLOG("Failed to allocate memory for fc_port %d.\n", args->port_handle);
 		err = SPDK_ERR_NOMEM;
@@ -1201,7 +1204,7 @@ nvmf_fc_hw_port_online(void *arg1, void *arg2)
 		 */
 		err = spdk_nvmf_bcm_fc_port_set_online(fc_port);
 		if (err != SPDK_SUCCESS) {
-			SPDK_ERRLOG("Hw port %d online failed. rc = %d\n", fc_port->port_hdl, err);
+			SPDK_ERRLOG("Hw port %d online failed. err = %d\n", fc_port->port_hdl, err);
 			DEV_VERIFY(!"Hw port online failed");
 			goto out;
 		}
@@ -1259,7 +1262,7 @@ nvmf_fc_hw_port_offline(void *arg1, void *arg2)
 		 */
 		err = spdk_nvmf_bcm_fc_port_set_offline(fc_port);
 		if (err != SPDK_SUCCESS) {
-			SPDK_ERRLOG("Hw port %d already offline. rc = %d\n", fc_port->port_hdl, err);
+			SPDK_ERRLOG("Hw port %d already offline. err = %d\n", fc_port->port_hdl, err);
 			err = SPDK_SUCCESS;
 			goto out;
 		}
@@ -1335,7 +1338,7 @@ nvmf_fc_nport_create(void *arg1, void *arg2)
 	/*
 	 * 3. Get the memory to instantiate a fc nport.
 	 */
-	nport = spdk_malloc(sizeof(struct spdk_nvmf_bcm_fc_nport));
+	nport = spdk_calloc(1, sizeof(struct spdk_nvmf_bcm_fc_nport));
 	if (nport == NULL) {
 		SPDK_ERRLOG("Failed to allocate memory for nport %d.\n",
 			    args->nport_handle);
@@ -1474,7 +1477,7 @@ nvmf_fc_nport_delete(void *arg1, void *arg2)
 	/*
 	 * 2. Allocate memory for callback data.
 	 */
-	cb_data = spdk_malloc(sizeof(struct spdk_nvmf_bcm_fc_nport_del_cb_data));
+	cb_data = spdk_calloc(1, sizeof(struct spdk_nvmf_bcm_fc_nport_del_cb_data));
 	if (NULL == cb_data) {
 		SPDK_ERRLOG("Failed to allocate memory for cb_data %d.\n", args->nport_handle);
 		err = SPDK_ERR_NOMEM;
@@ -1532,7 +1535,16 @@ nvmf_fc_nport_delete(void *arg1, void *arg2)
 
 	TAILQ_FOREACH(rport_iter, &nport->rem_port_list, link) {
 		rport_cnt++;
-		it_del_args               = spdk_malloc(sizeof(spdk_nvmf_bcm_fc_hw_i_t_delete_args_t));
+		it_del_args               = spdk_calloc(1, sizeof(spdk_nvmf_bcm_fc_hw_i_t_delete_args_t));
+
+		if (it_del_args == NULL) {
+			err = SPDK_ERR_NOMEM;
+			SPDK_ERRLOG("SPDK_FC_IT_DELETE failed for rport with rpi:%d s_id:%d.\n",
+				    rport_iter->rpi, rport_iter->s_id);
+			DEV_VERIFY(!"SPDK_FC_IT_DELETE failed, cannot allocate memory");
+			continue;
+		}
+
 		it_del_args->port_handle  = nport->port_hdl;
 		it_del_args->nport_handle = nport->nport_hdl;
 		it_del_args->cb_ctx       = (void *)cb_data;
@@ -1612,7 +1624,7 @@ nvmf_fc_i_t_add(void *arg1, void *arg2)
 	/*
 	 * 3. Get the memory to instantiate the remote port
 	 */
-	rport = spdk_malloc(sizeof(struct spdk_nvmf_bcm_fc_remote_port_info));
+	rport = spdk_calloc(1, sizeof(struct spdk_nvmf_bcm_fc_remote_port_info));
 	if (rport == NULL) {
 		SPDK_ERRLOG("Memory allocation for rem port failed.\n");
 		err = SPDK_ERR_NOMEM;
@@ -1713,13 +1725,12 @@ nvmf_fc_i_t_delete(void *arg1, void *arg2)
 	/*
 	 * We have found exactly one rport. Allocate memory for callback data.
 	 */
-	cb_data = spdk_malloc(sizeof(struct spdk_nvmf_bcm_fc_i_t_del_cb_data));
+	cb_data = spdk_calloc(1, sizeof(struct spdk_nvmf_bcm_fc_i_t_del_cb_data));
 	if (NULL == cb_data) {
 		SPDK_ERRLOG("Failed to allocate memory for cb_data for nport:%d.\n", args->nport_handle);
 		rc = SPDK_ERR_NOMEM;
 		goto out;
 	}
-	bzero(cb_data, sizeof(*cb_data));
 	cb_data->nport       = nport;
 	cb_data->rport       = rport;
 	cb_data->port_handle = args->port_handle;
@@ -1833,11 +1844,15 @@ nvmf_fc_hw_port_quiesce_dump_cb(void *ctx, spdk_err_t err)
 	}
 
 	/*
-	 * Allocate memory for the dump  buffer.
+	 * Allocate memory for the dump buffer.
 	 * This memory will be freed by FCT.
 	 */
 	dump_buf = (char *)spdk_calloc(1, dump_buf_size);
-	bzero(dump_buf, dump_buf_size);
+	if (dump_buf == NULL) {
+		err = SPDK_ERR_NOMEM;
+		SPDK_ERRLOG("Memory allocation for dump buffer failed, SPDK FC port %d\n", args->port_handle);
+		goto out;
+	}
 	*args->dump_buf  = (uint32_t *)dump_buf;
 	dump_info.buffer = dump_buf;
 	dump_info.offset = 0;
@@ -1889,6 +1904,13 @@ nvmf_fc_hw_port_dump(void *arg1, void *arg2)
 	 * Save the dump event args and the callback in a context struct.
 	 */
 	ctx = spdk_calloc(1, sizeof(spdk_nvmf_bcm_fc_hw_port_dump_ctx_t));
+
+	if (ctx == NULL) {
+		err = SPDK_ERR_NOMEM;
+		SPDK_ERRLOG("Memory allocation for dump ctx failed, SPDK FC port %d\n", args->port_handle);
+		goto fail;
+	}
+
 	bzero(ctx, sizeof(spdk_nvmf_bcm_fc_hw_port_dump_ctx_t));
 	ctx->dump_args    = (void *)arg1;
 	ctx->dump_cb_func = cb_func;
