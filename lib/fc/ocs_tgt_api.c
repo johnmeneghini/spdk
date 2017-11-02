@@ -190,7 +190,7 @@ fail:
 bool
 spdk_fc_api_add_ig(struct spdk_fc_ig *ig)
 {
-	struct spdk_fc_ig *tmp = NULL, *tmp1, *new_ig;
+	struct spdk_fc_ig *tmp = NULL, *tmp1, *new_ig = NULL;
 	uint64_t wwn;
 	int i;
 	

@@ -92,3 +92,6 @@ C_SRCS     =  \
 
 LIBNAME = fc
 include $(SPDK_ROOT_DIR)/mk/spdk.lib.mk
+
+# Disable clang warning: passing an object that undergoes default argument promotion to 'va_start' has undefined behavior [-Wvarargs]
+CFLAGS += -Wno-varargs
