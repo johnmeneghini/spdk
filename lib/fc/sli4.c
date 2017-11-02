@@ -3840,7 +3840,7 @@ sli_get_config(sli4_t *sli4)
 		sli4->config.sgl_chaining_params.chain_sge_initial_value_hi =
 			parms->chain_sge_initial_value_hi;
 		/* Use the highest available WQE size. */
-		if (parms->wqe_sizes && SLI4_128BYTE_WQE_SUPPORT) {
+		if (parms->wqe_sizes & SLI4_128BYTE_WQE_SUPPORT) {
 			sli4->config.wqe_size = SLI4_WQE_EXT_BYTES;
 		} else {
 			sli4->config.wqe_size = SLI4_WQE_BYTES;
