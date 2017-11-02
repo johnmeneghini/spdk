@@ -284,7 +284,6 @@ nvmf_fc_tgt_nport_data_init(struct spdk_nvmf_bcm_fc_nport *nport,
 
 	nport->nport_hdl = args->nport_handle;
 	nport->port_hdl  = args->port_handle;
-	nport->nport_status = false;
 	nport->nport_state  = SPDK_NVMF_BCM_FC_OBJECT_CREATED;
 	nport->fc_nodename  = args->fc_nodename;
 	nport->fc_portname  = args->fc_portname;
