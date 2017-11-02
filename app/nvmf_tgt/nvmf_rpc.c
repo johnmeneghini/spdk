@@ -115,7 +115,7 @@ dump_nvmf_subsystem(struct spdk_json_write_ctx *w, struct nvmf_tgt_subsystem *tg
 			spdk_json_write_string(w, subsystem->dev.virt.sn);
 			spdk_json_write_name(w, "namespaces");
 			spdk_json_write_array_begin(w);
-			for (i = 0; i < subsystem->dev.virt.ns_count; i++) {
+			for (i = 0; i < subsystem->dev.virt.max_nsid; i++) {
 				spdk_json_write_object_begin(w);
 				spdk_json_write_name(w, "nsid");
 				spdk_json_write_int32(w, i + 1);

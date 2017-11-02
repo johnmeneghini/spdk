@@ -660,7 +660,7 @@ spdk_nvmf_construct_subsystem(const char *name,
 			goto error;
 		}
 
-		subsystem->dev.virt.ns_count = 0;
+		subsystem->dev.virt.max_nsid = 0;
 		snprintf(subsystem->dev.virt.sn, MAX_SN_LEN, "%s", sn);
 
 		for (i = 0; i < num_devs; i++) {
