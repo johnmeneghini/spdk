@@ -740,6 +740,41 @@ enum spdk_nvmf_ctrlr_model {
 	SPDK_NVMF_CTRLR_MODEL_STATIC			= 1,
 };
 
+/** AER Types and Info for each AER Type */
+enum aer_type {
+	AER_TYPE_ERROR_STATUS    = 0,
+	AER_TYPE_SMART_STATUS    = 1,
+	AER_TYPE_NOTICE          = 2,
+	AER_TYPE_CMD_SET_STATUS  = 6,
+	AER_TYPE_VENDOR_SPECIFIC = 7,
+};
+
+enum aer_err_status_info {
+	AER_ERR_INFO_WR_INV_DRBELL_REG = 0,
+	AER_ERR_INFO_INV_DRBELL_WR     = 1,
+	AER_ERR_INFO_DIAG_FAILURE      = 2,
+	AER_ERR_INFO_PERS_INTERNAL_ERR = 3,
+	AER_ERR_INFO_TRAN_INTERNAL_ERR = 4,
+	AER_ERR_INFO_FW_IMG_LOAD_ERR   = 5,
+};
+
+enum aer_smart_status_info {
+	AER_SMART_INFO_NVM_SUBSYS_REL = 0,
+	AER_SMART_INFO_TEMP_THRSHLD   = 1,
+	AER_SMART_INFO_SPARE_THRSHLD  = 2,
+};
+
+enum aer_notice_info {
+	AER_NOTICE_INFO_NS_ATTR_CHANGED   = 0,
+	AER_NOTICE_INFO_FW_ACTIV_STARTING = 1,
+	AER_NOTICE_INFO_TEL_LOG_CHANGED   = 2,
+};
+
+enum aer_cmd_set_info {
+	AER_CMD_SET_INFO_RESV_LOG_AVBL    = 0,
+	AER_CMD_SET_INFO_SANITIZE_OP_CMPL = 1,
+};
+
 struct __attribute__((packed)) spdk_nvme_ctrlr_data {
 	/* bytes 0-255: controller capabilities and features */
 

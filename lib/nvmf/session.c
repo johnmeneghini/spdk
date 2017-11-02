@@ -309,6 +309,9 @@ spdk_nvmf_session_connect(struct spdk_nvmf_conn *conn,
 		session->num_connections = 0;
 		session->subsys = subsystem;
 		session->max_connections_allowed = g_nvmf_tgt.opts.max_queues_per_session;
+		session->aer_ctxt.is_aer_pending = false;
+		session->aer_ctxt.aer_rsp_cdw0 = 0;
+		session->aer_req = NULL;
 
 		memcpy(session->hostid, data->hostid, sizeof(session->hostid));
 		memcpy(session->hostnqn, data->hostnqn, sizeof(session->hostnqn));
@@ -800,6 +803,23 @@ spdk_nvmf_session_async_event_request(struct spdk_nvmf_request *req)
 	}
 
 	session->aer_req = req;
+
+	/* Check if an AER is pending and if so respond right away */
+	if (session->aer_ctxt.is_aer_pending) {
+		rsp->cdw0 = session->aer_ctxt.aer_rsp_cdw0;
+		rsp->status.sct = SPDK_NVME_SCT_GENERIC;
+		rsp->status.sc = SPDK_NVME_SC_SUCCESS;
+
+		/* reset the flag & other fields */
+		session->aer_req = NULL;
+		session->aer_ctxt.is_aer_pending = false;
+		session->aer_ctxt.aer_rsp_cdw0 = 0;
+
+		SPDK_TRACELOG(SPDK_TRACE_NVMF, "Responding for pending AER, cdw0 0x%08x\n",
+			      rsp->cdw0);
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+	}
+
 	return SPDK_NVMF_REQUEST_EXEC_STATUS_ASYNCHRONOUS;
 }
 
@@ -850,5 +870,56 @@ spdk_nvmf_populate_io_queue_depths(struct spdk_nvmf_session *session,
 
 		max_io_queue_depths[curr_q_index] = conn->sq_head_max;
 		curr_q_index++;
+	}
+}
+
+void
+spdk_nvmf_queue_aer_rsp(struct spdk_nvmf_subsystem *subsystem,
+			enum aer_type aer_type,
+			uint8_t aer_info)
+{
+	struct spdk_nvmf_session *session, *session_tmp;
+	uint32_t aer_rsp_cdw0 = aer_info;
+
+	if (!subsystem) {
+		return ;
+	}
+
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "AER RSP for Subsystem NQN %s, AER type = 0x%x\n",
+		      subsystem->subnqn, aer_type);
+
+	/* Check if the aer_type is supported */
+	if (aer_type == AER_TYPE_NOTICE) {
+		/* set the AER info as appropriate
+		 * set the log page when supported
+		 */
+		aer_rsp_cdw0 = (aer_rsp_cdw0 << 8) | aer_type;
+	} else {
+		/* unsupported AER type */
+		SPDK_ERRLOG("Unsupported AER type: %d\n", aer_type);
+		return;
+	}
+
+	TAILQ_FOREACH_SAFE(session, &subsystem->sessions, link, session_tmp) {
+		/* Issue AER if available for each session */
+		if (session->aer_req) {
+			struct spdk_nvmf_request *aer = session->aer_req;
+			struct spdk_nvme_cpl *rsp = &aer->rsp->nvme_cpl;
+			rsp->cdw0 = aer_rsp_cdw0;
+			rsp->status.sct = SPDK_NVME_SCT_GENERIC;
+			rsp->status.sc  = SPDK_NVME_SC_SUCCESS;
+			(void)spdk_nvmf_request_complete(aer);
+			session->aer_req = NULL;
+		} else if (!session->aer_ctxt.is_aer_pending) {
+			/*
+			 * Set the pending flag if unset
+			 * Currently only NS attributes changed AER is
+			 * supported ;
+			 * coagulating different AER types will come in
+			 * when other AER types are supported
+			 */
+			session->aer_ctxt.is_aer_pending = true;
+			session->aer_ctxt.aer_rsp_cdw0 = aer_rsp_cdw0;
+		}
 	}
 }
