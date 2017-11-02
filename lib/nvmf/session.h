@@ -62,6 +62,11 @@ struct spdk_nvmf_conn {
 	TAILQ_ENTRY(spdk_nvmf_conn) 		link;
 };
 
+struct spdk_nvmf_aer_ctxt {
+	bool is_aer_pending;
+	uint32_t aer_rsp_cdw0;
+};
+
 /*
  * This structure maintains the NVMf virtual controller session
  * state. Each NVMf session permits some number of connections.
@@ -92,6 +97,7 @@ struct spdk_nvmf_session {
 		} bits;
 	} async_event_config;
 	struct spdk_nvmf_request *aer_req;
+	struct spdk_nvmf_aer_ctxt aer_ctxt;
 	uint8_t hostid[16];
 	char hostnqn[SPDK_NVMF_NQN_MAX_LEN];
 	const struct spdk_nvmf_transport	*transport;

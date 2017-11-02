@@ -41,6 +41,7 @@
 #include "spdk/stdinc.h"
 
 #include "spdk/env.h"
+#include "spdk/nvme_spec.h"
 #include "spdk/nvmf_spec.h"
 #include "spdk/queue.h"
 
@@ -279,5 +280,9 @@ void spdk_nvmf_acceptor_poll(void);
 void spdk_nvmf_handle_connect(struct spdk_nvmf_request *req);
 
 void spdk_nvmf_session_disconnect(struct spdk_nvmf_conn *conn);
+
+void spdk_nvmf_queue_aer_rsp(struct spdk_nvmf_subsystem *subsystem,
+			     enum aer_type aer_type,
+			     uint8_t aer_info);
 
 #endif
