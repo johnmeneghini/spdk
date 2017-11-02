@@ -322,9 +322,11 @@ nvmf_fc_tgt_hw_port_link_break_cb(uint8_t port_handle,
 
 out:
 	spdk_free(offline_cb_args);
-	sprintf(log_str, "port link break cb: port:%d evt_type:%d \
-num_nports:%d err:%d spdk_err:%d.\n",
-		port_handle, event_type, num_nports, err, spdk_err);
+
+	snprintf(log_str, SPDK_NVMF_FC_LOG_STR_SIZE,
+		 "port link break cb: port:%d evt_type:%d num_nports:%d err:%d spdk_err:%d.\n",
+		 port_handle, event_type, num_nports, err, spdk_err);
+
 	if (err != SPDK_SUCCESS) {
 		SPDK_ERRLOG("%s", log_str);
 	} else {
@@ -362,13 +364,13 @@ nvmf_fc_tgt_nport_data_init(struct spdk_nvmf_bcm_fc_nport *nport,
 {
 	nport->nport_hdl = args->nport_handle;
 	nport->port_hdl  = args->port_handle;
-	nport->nport_status = false;
 	nport->nport_state  = SPDK_NVMF_BCM_FC_OBJECT_CREATED;
 	nport->fc_nodename  = args->fc_nodename;
 	nport->fc_portname  = args->fc_portname;
 	nport->d_id         = args->d_id;
 	nport->fc_port      = spdk_nvmf_bcm_fc_port_list_get(args->port_handle);
 
+	(void)spdk_nvmf_bcm_fc_nport_set_state(nport, SPDK_NVMF_BCM_FC_OBJECT_CREATED);
 	TAILQ_INIT(&nport->rem_port_list);
 	nport->rport_count = 0;
 	TAILQ_INIT(&nport->fc_associations);
@@ -422,9 +424,11 @@ nvmf_fc_tgt_i_t_delete_cb(void *args, uint32_t err)
 
 out:
 	spdk_free(cb_data);
-	sprintf(log_str, "IT delete assoc_cb on nport %d done, port_handle:%d s_id:%d d_id:%d rpi:%d "
-		"rport_assoc_count:%d rc = %d.\n",
-		nport_hdl, port_handle, s_id, d_id, rpi, assoc_count, err);
+
+	snprintf(log_str, SPDK_NVMF_FC_LOG_STR_SIZE,
+		 "IT delete assoc_cb on nport %d done, port_handle:%d s_id:%d d_id:%d rpi:%d rport_assoc_count:%d rc = %d.\n",
+		 nport_hdl, port_handle, s_id, d_id, rpi, assoc_count, err);
+
 	if (err != SPDK_SUCCESS) {
 		SPDK_ERRLOG("%s", log_str);
 	} else {
@@ -483,9 +487,10 @@ nvmf_fc_tgt_i_t_delete_assoc_cb(void *args, uint32_t err)
 		spdk_free(args);
 	}
 
-	sprintf(log_str, "IT delete assoc_cb on nport %d done, \
-s_id:%d d_id:%d rpi:%d rport_assoc_count:%d err = %d.\n",
-		nport_hdl, s_id, d_id, rpi, assoc_count, err);
+	snprintf(log_str, SPDK_NVMF_FC_LOG_STR_SIZE,
+		 "IT delete assoc_cb on nport %d done, s_id:%d d_id:%d rpi:%d rport_assoc_count:%d err = %d.\n",
+		 nport_hdl, s_id, d_id, rpi, assoc_count, err);
+
 	if (err != SPDK_SUCCESS) {
 		SPDK_ERRLOG("%s", log_str);
 	} else {
@@ -516,12 +521,6 @@ nvmf_fc_tgt_i_t_delete_assoc(struct spdk_nvmf_bcm_fc_nport *nport,
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "IT delete associations on nport:%d begin.\n",
 		      nport->nport_hdl);
-
-	if (spdk_nvmf_bcm_fc_rport_set_state(rport, SPDK_NVMF_BCM_FC_OBJECT_TO_BE_DELETED) !=
-	    SPDK_SUCCESS) {
-		DEV_VERIFY(!"Err while setting rport state");
-		goto out;
-	}
 
 	/*
 	 * Allocate memory for callback data.
@@ -574,9 +573,11 @@ out:
 		nvmf_fc_tgt_i_t_delete_assoc_cb(cb_data, SPDK_SUCCESS);
 	}
 
-	sprintf(log_str, "IT delete associations on nport:%d end. "
-		"s_id:%d rpi:%d assoc_count:%d assoc:%d assoc_del_scheduled:%d rc:%d.\n",
-		port_hdl, s_id, rpi, assoc_count, num_assoc, num_assoc_del_scheduled, err);
+	snprintf(log_str, SPDK_NVMF_FC_LOG_STR_SIZE,
+		 "IT delete associations on nport:%d end. "
+		 "s_id:%d rpi:%d assoc_count:%d assoc:%d assoc_del_scheduled:%d rc:%d.\n",
+		 port_hdl, s_id, rpi, assoc_count, num_assoc, num_assoc_del_scheduled, err);
+
 	if (err == SPDK_SUCCESS) {
 		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "%s", log_str);
 	} else {
@@ -588,6 +589,7 @@ static void
 nvmf_fc_tgt_rport_data_init(struct spdk_nvmf_bcm_fc_remote_port_info *rport,
 			    spdk_nvmf_bcm_fc_hw_i_t_add_args_t *args)
 {
+	(void)spdk_nvmf_bcm_fc_rport_set_state(rport, SPDK_NVMF_BCM_FC_OBJECT_CREATED);
 	rport->s_id = args->s_id;
 	rport->rpi  = args->rpi;
 }
@@ -1415,8 +1417,10 @@ nvmf_fc_tgt_delete_nport_cb(uint8_t port_handle, spdk_fc_event_t event_type,
 		spdk_free(cb_data);
 	}
 out:
-	sprintf(log_str, "port:%d nport:%d delete cb exit, evt_type:%d rc:%d.\n", port_handle, nport_hdl,
-		event_type, spdk_err);
+	snprintf(log_str, SPDK_NVMF_FC_LOG_STR_SIZE,
+		 "port:%d nport:%d delete cb exit, evt_type:%d rc:%d.\n",
+		 port_handle, nport_hdl, event_type, spdk_err);
+
 	if (err != SPDK_SUCCESS) {
 		SPDK_ERRLOG("%s", log_str);
 	} else {
@@ -1462,17 +1466,23 @@ nvmf_fc_nport_delete(void *arg1, void *arg2)
 		goto out;
 	}
 
+	cb_data->nport       = nport;
+	cb_data->port_handle = args->port_handle;
+	cb_data->fc_cb_func  = cb_func;
+	cb_data->fc_cb_ctx   = args->cb_ctx;
+
 	/*
 	 * 3. Begin nport tear down
 	 */
 	if (nport->nport_state == SPDK_NVMF_BCM_FC_OBJECT_CREATED) {
-		err = spdk_nvmf_bcm_fc_nport_set_state(nport, SPDK_NVMF_BCM_FC_OBJECT_TO_BE_DELETED);
+		(void)spdk_nvmf_bcm_fc_nport_set_state(nport, SPDK_NVMF_BCM_FC_OBJECT_TO_BE_DELETED);
 	} else if (nport->nport_state == SPDK_NVMF_BCM_FC_OBJECT_TO_BE_DELETED) {
 		/*
 		 * Deletion of this nport already in progress. Register callback
 		 * and return.
 		 */
-		// TODO: Register callback in callback vector.
+		// TODO: Register callback in callback vector. For now, set the error and return.
+		err = SPDK_ERR_INTERNAL;
 		goto out;
 	} else {
 		/* nport partially created/deleted */
@@ -1493,11 +1503,6 @@ nvmf_fc_nport_delete(void *arg1, void *arg2)
 			    nport->nport_hdl);
 		goto out;
 	}
-
-	cb_data->nport       = nport;
-	cb_data->port_handle = args->port_handle;
-	cb_data->fc_cb_func  = cb_func;
-	cb_data->fc_cb_ctx   = args->cb_ctx;
 
 	/*
 	 * 5. Delete all the remote ports (if any) for the nport
@@ -1709,11 +1714,33 @@ nvmf_fc_i_t_delete(void *arg1, void *arg2)
 		rc = SPDK_ERR_NOMEM;
 		goto out;
 	}
+
 	cb_data->nport       = nport;
 	cb_data->rport       = rport;
 	cb_data->port_handle = args->port_handle;
 	cb_data->fc_cb_func  = cb_func;
 	cb_data->fc_cb_ctx   = args->cb_ctx;
+
+	/*
+	 * Validate rport object state.
+	 */
+	if (rport->rport_state == SPDK_NVMF_BCM_FC_OBJECT_CREATED) {
+		(void)spdk_nvmf_bcm_fc_rport_set_state(rport, SPDK_NVMF_BCM_FC_OBJECT_TO_BE_DELETED);
+	} else if (rport->rport_state == SPDK_NVMF_BCM_FC_OBJECT_TO_BE_DELETED) {
+		/*
+		 * Deletion of this rport already in progress. Register callback
+		 * and return.
+		 */
+		// TODO: Register callback in callback vector. For now, set the error and return.
+		rc = SPDK_ERR_INTERNAL;
+		goto out;
+	} else {
+		/* rport partially created/deleted */
+		DEV_VERIFY(rport->rport_state == SPDK_NVMF_BCM_FC_OBJECT_ZOMBIE);
+		DEV_VERIFY(!"Invalid rport_state");
+		rc = SPDK_ERR_INTERNAL; /* Revisit this error */
+		goto out;
+	}
 
 	/*
 	 * We have successfully found a rport to delete. Call
@@ -1732,13 +1759,18 @@ out:
 		 * nvmf_fc_tgt_i_t_delete_assoc() for further IT-delete
 		 * processing. Therefore, execute the callback function now.
 		 */
+		if (cb_data) {
+			spdk_free(cb_data);
+		}
 		if (cb_func != NULL) {
 			(void)cb_func(args->port_handle, SPDK_FC_IT_DELETE, args->cb_ctx, rc);
 		}
 	}
 
-	sprintf(log_str, "IT delete on nport:%d end. num_rport:%d rc = %d.\n",
-		args->nport_handle, num_rport, rc);
+	snprintf(log_str, SPDK_NVMF_FC_LOG_STR_SIZE,
+		 "IT delete on nport:%d end. num_rport:%d rc = %d.\n",
+		 args->nport_handle, num_rport, rc);
+
 	if (rc != SPDK_SUCCESS) {
 		SPDK_ERRLOG("%s", log_str);
 	} else {
@@ -2034,9 +2066,10 @@ out:
 		(void)cb_func(args->port_handle, SPDK_FC_LINK_BREAK, args->cb_ctx, err);
 	}
 
-	sprintf(log_str, "port link break done: port:%d \
-nport_deletes_sent:%d nport_deletes_skipped:%d rc:%d.\n", args->port_handle,
-		nport_deletes_sent, nport_deletes_skipped, err);
+	snprintf(log_str, SPDK_NVMF_FC_LOG_STR_SIZE,
+		 "port link break done: port:%d nport_deletes_sent:%d nport_deletes_skipped:%d rc:%d.\n",
+		 args->port_handle, nport_deletes_sent, nport_deletes_skipped, err);
+
 	if (err != SPDK_SUCCESS) {
 		SPDK_ERRLOG("%s", log_str);
 	} else {
