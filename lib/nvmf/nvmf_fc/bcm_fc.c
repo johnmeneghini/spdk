@@ -167,7 +167,7 @@ nvmf_fc_abts_handled_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
 
 	ctx->hwqps_responded ++;
 
-	if (ctx->hwqps_responded < NVMF_FC_MAX_IO_QUEUES) {
+	if (ctx->hwqps_responded < ctx->num_hwqps) {
 		return; /* Wait for all pollers to complete. */
 	}
 
@@ -193,8 +193,30 @@ spdk_nvmf_bcm_fc_handle_abts_frame(struct spdk_nvmf_bcm_fc_nport *nport, uint16_
 {
 	fc_abts_ctx_t *ctx = NULL;
 	struct spdk_nvmf_bcm_fc_poller_api_abts_recvd_args *args = NULL, *poller_arg;
+	struct spdk_nvmf_bcm_fc_association *assoc = NULL;
+	struct spdk_nvmf_bcm_fc_conn *conn = NULL;
+	uint64_t hwqp_map = 0;
+	uint32_t hwqp_cnt = 0, j = 0;
 
-	args = calloc(NVMF_FC_MAX_IO_QUEUES,
+	assert(NVMF_FC_MAX_IO_QUEUES <= 64);
+
+	TAILQ_FOREACH(assoc, &nport->fc_associations, link) {
+		TAILQ_FOREACH(conn, &assoc->fc_conns, assoc_link) {
+			if (conn->rpi != rpi) {
+				continue;
+			}
+			if (!((hwqp_map >> conn->hwqp->hwqp_id) & 0x1)) {
+				hwqp_map |= (0x1 << conn->hwqp->hwqp_id);
+				hwqp_cnt ++;
+			}
+		}
+	}
+
+	if (!hwqp_cnt) {
+		goto bls_rej;
+	}
+
+	args = calloc(hwqp_cnt,
 		      sizeof(struct spdk_nvmf_bcm_fc_poller_api_abts_recvd_args));
 	if (!args) {
 		goto bls_rej;
@@ -204,15 +226,18 @@ spdk_nvmf_bcm_fc_handle_abts_frame(struct spdk_nvmf_bcm_fc_nport *nport, uint16_
 	if (!ctx) {
 		goto bls_rej;
 	}
-	ctx->rpi  = rpi;
-	ctx->oxid = oxid;
-	ctx->rxid = rxid;
-	ctx->nport = nport;
-	ctx->free_args = args;
+	ctx->rpi	= rpi;
+	ctx->oxid	= oxid;
+	ctx->rxid	= rxid;
+	ctx->nport	= nport;
+	ctx->free_args	= args;
+	ctx->num_hwqps	= hwqp_cnt;
 
-	/* Post ABTS to all HWQPs */
 	for (int i = 0; i < NVMF_FC_MAX_IO_QUEUES; i ++) {
-		poller_arg = args + i;
+		if (!((hwqp_map >> i) & 0x1)) {
+			continue;
+		}
+		poller_arg = args + j;
 		poller_arg->hwqp = &nport->fc_port->io_queues[i];
 		poller_arg->cb_info.cb_func = nvmf_fc_abts_handled_cb;
 		poller_arg->cb_info.cb_data = ctx;
@@ -221,6 +246,7 @@ spdk_nvmf_bcm_fc_handle_abts_frame(struct spdk_nvmf_bcm_fc_nport *nport, uint16_
 		spdk_nvmf_bcm_fc_poller_api(poller_arg->hwqp->lcore_id,
 					    SPDK_NVMF_BCM_FC_POLLER_API_ABTS_RECEIVED,
 					    poller_arg);
+		j ++;
 	}
 
 	return;

@@ -277,8 +277,7 @@ spdk_nvmf_request_cleanup(struct spdk_nvmf_request *req)
 
 		subsystem = session->subsys;
 
-		if ((req->conn->type != CONN_TYPE_AQ) && req->iovcnt &&
-		    subsystem->ops->io_cleanup) {
+		if ((req->conn->type != CONN_TYPE_AQ) && subsystem->ops->io_cleanup) {
 			subsystem->ops->io_cleanup(req);
 		}
 	}

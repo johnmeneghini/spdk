@@ -51,9 +51,6 @@
   # Maximum admin queue depth
   MaxAqDepth 32
 
-  # Set the maximum number of submission and completion queues per session.
-  # Setting this to '8', for example, allows for 8 submission and 8 completion queues
-  # per session.
   # For FC this is the maximum number of connections per association
   MaxQueuesPerSession 4
 
@@ -63,21 +60,6 @@
   # Set the maximum number of outstanding I/O per queue.
   #MaxQueueDepth 128
 
-  # Set the maximum in-capsule data size. Must be a multiple of 16.
-  #InCapsuleDataSize 4096
-
-  # Set the maximum I/O size. Must be a multiple of 4096.
-  #MaxIOSize 131072
-
-  # Set the global acceptor lcore ID, lcores are numbered starting at 0.
-  #AcceptorCore 0
-
-  # Set how often the acceptor polls for incoming connections. The acceptor is also
-  # responsible for polling existing connections that have gone idle. 0 means continuously
-  # poll. Units in microseconds.
-  # Not used for FC
-  #AcceptorPollRate 10000
-
   # Set the arbitration burst: maximum number of commands, indicated as a power of 2, picked
   # up from a submission queue at one time.
   # Ex: Specifying 6 would result in arbitration burst being 64.
@@ -85,53 +67,53 @@
 
   # Organizations IEEE OUI identifier. This is a 3 byte value.
   # Each ID indicates value for 1 byte.
-#IEEEOUI0 0
-#IEEEOUI1 0
-#IEEEOUI2 0
+  #IEEEOUI0 0
+  #IEEEOUI1 0
+  #IEEEOUI2 0
 
   # Controller Multi-Path IO and Namespace Sharing capabilites
   # Refer Identify Controller Data Structure in NVM Express base spec
-#CMIC 0
+  #CMIC 0
 
   # Optional AER Support: Indicates Optional Asynchronous events supported
   # by a controller
-#OptAerSupport 0
+  #OptAerSupport 0
 
   # Abort Limit: Indicates the maximum number of concurrent Abort commands
   # supported by the controller
-#AbortLimit 0
+  #AbortLimit 0
 
   # AER Limit: Indicates the maximum number of concurrently outstanding AER commands
   # supported by the controller
-#AerLimit 0
+  #AerLimit 0
 
   # Error Log Page Entries: Indicates the maximum number of Error Log Page entries
   # stored by the controller
-#ErrLogEntries 127
+  #ErrLogEntries 127
 
   # Number of Power States: Indicates the number of NVM Express power states supported
   # by the controller
-#NumPowerStates 1
+  #NumPowerStates 1
 
   # Keep Alive Interval: Indicates the granularity of Keep Alive timer in 100ms units.
   # 0 indicates keep alive is not supported
-#KeepAliveInt 10
+  #KeepAliveInt 10
 
   # Volatile Write Cache: Volatile Write Cache attributes.
   # Refer to Identify Controller Datastructure in NVM Express base spec.
-#VolatileWriteCache 1
+  #VolatileWriteCache 1
 
   # Atomic Write Unit Normal: Refer to Identify Controller Datastructure in NVM Express
   # base spec
-#AtomicWriteNormal 1
+  #AtomicWriteNormal 1
 
   # Atomic Write Unit Power Fail: Refer to Identify Controller Datastructure in NVM Express
   # base spec
-#AtomicWritePowerFail 1
+  #AtomicWritePowerFail 1
 
   # SGL Support: Refer to Identify Controller Datastructure in NVM Express
   # base spec
-#SGLSupport 5
+  #SGLSupport 5
 
 [Nvme]
   # NVMe Device Whitelist

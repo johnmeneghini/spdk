@@ -381,7 +381,7 @@ spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 
 	if (spdk_nvmf_bcm_fc_req_in_bdev(fc_req)) {
 		/* Notify bdev */
-		if ((fc_req->fc_conn->conn.qid == CONN_TYPE_AQ) ||
+		if ((fc_req->fc_conn->conn.type == CONN_TYPE_AQ) ||
 		    (fc_req->req.cmd->nvme_cmd.opc == SPDK_NVME_OPC_FABRIC)) {
 			/* Switch to master lcore */
 			event = spdk_event_allocate(spdk_env_get_master_lcore(),
@@ -961,11 +961,8 @@ spdk_nvmf_bcm_fc_free_req(struct spdk_nvmf_bcm_fc_request *fc_req, bool xri_acti
 
 	if (fc_req->req.data) {
 		spdk_dma_free(fc_req->req.data);
-		fc_req->req.data = NULL;
-	} else if (fc_req->req.iovcnt) {
-		/* Release BDEV IOV if acquired */
+	} else if (fc_req->req.iovcnt || fc_req->req.bdev_io) {
 		spdk_nvmf_request_cleanup(&fc_req->req);
-		fc_req->req.iovcnt = 0;
 	}
 
 	/* Release RQ buffer */
@@ -1075,7 +1072,7 @@ nvmf_fc_io_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 
 		spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_WRITE_BDEV);
 
-		if ((fc_conn->conn.qid == CONN_TYPE_AQ) ||
+		if ((fc_conn->conn.type == CONN_TYPE_AQ) ||
 		    (cmd->opc == SPDK_NVME_OPC_FABRIC)) {
 			/* Switch to master lcore for AQ cmds */
 			event = spdk_event_allocate(spdk_env_get_master_lcore(),
@@ -1139,9 +1136,9 @@ nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req)
 	/* If xfer, Create buffers for required. */
 	if (fc_req->req.length) {
 		/* Except for IO Read/Write create dma memory  */
-		if (fc_conn->conn.qid == CONN_TYPE_AQ ||
+		if (fc_conn->conn.type == CONN_TYPE_AQ ||
 		    cmd->opc == SPDK_NVME_OPC_FABRIC ||
-		    (fc_conn->conn.qid == CONN_TYPE_IOQ &&
+		    (fc_conn->conn.type == CONN_TYPE_IOQ &&
 		     cmd->opc != SPDK_NVME_OPC_READ &&
 		     cmd->opc != SPDK_NVME_OPC_WRITE)) {
 
@@ -1196,7 +1193,7 @@ nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req)
 		} else {
 			spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_NONE_BDEV);
 		}
-		if ((fc_conn->conn.qid == CONN_TYPE_AQ) || (cmd->opc == SPDK_NVME_OPC_FABRIC)) {
+		if ((fc_conn->conn.type == CONN_TYPE_AQ) || (cmd->opc == SPDK_NVME_OPC_FABRIC)) {
 			/* Switch to master lcore for admin queue commands. */
 			event = spdk_event_allocate(spdk_env_get_master_lcore(),
 						    nvmf_fc_post_nvme_rqst, (void *)fc_req, NULL);

@@ -395,24 +395,20 @@ disconnect_assoc_cb(void *cb_data, uint32_t err)
 
 static void
 run_direct_disconn_test(struct spdk_nvmf_bcm_fc_nport *tgtport,
-			uint64_t assoc_id, bool send_disconn, bool send_abts)
+			uint64_t assoc_id, bool send_abts)
 {
 	int ret;
 
 	g_spdk_nvmf_bcm_fc_xmt_srsr_req = false;
 
 	ret = spdk_nvmf_bcm_fc_delete_association(tgtport, assoc_id,
-			send_disconn, send_abts,
+			send_abts,
 			disconnect_assoc_cb, 0);
 
 	CU_ASSERT(ret == 0);
 	if (ret == 0) {
-		if (send_disconn) {
-			CU_ASSERT(g_spdk_nvmf_bcm_fc_xmt_srsr_req);
-		} else {
-			/* should not have called xmt_srsr_req */
-			CU_ASSERT(!g_spdk_nvmf_bcm_fc_xmt_srsr_req);
-		}
+		/* check that LS disconnect was sent */
+		CU_ASSERT(g_spdk_nvmf_bcm_fc_xmt_srsr_req);
 	}
 }
 
@@ -447,7 +443,7 @@ handle_ca_rsp(struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst)
 			g_create_conn_test_cnt++;
 			return 0;
 		} else {
-			CU_FAIL("Reject response for create association");
+			CU_FAIL("Unexpected reject response for create association");
 		}
 	} else {
 		CU_FAIL("Response not for create association");
@@ -491,7 +487,7 @@ handle_cc_rsp(struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst)
 				CU_ASSERT(rjt->rjt.reason_explanation ==
 					  FCNVME_RJT_EXP_INV_Q_ID);
 			} else {
-				CU_FAIL("Unexpected reject response for create connection");
+				CU_FAIL("Unexpected reject response create connection");
 			}
 		} else {
 			CU_FAIL("Unexpected response code for create connection");
@@ -664,21 +660,11 @@ direct_delete_assoc_test(void)
 
 	if (g_last_rslt == 0) {
 		/* remove associations by calling delete directly */
-		i = 0;
 		g_test_run_type = TEST_RUN_TYPE_DIR_DISCONN_CALL;
-		run_direct_disconn_test(&tgtport, from_be64(&assoc_id[i++]),
-					false, false);
-		run_direct_disconn_test(&tgtport, from_be64(&assoc_id[i++]),
-					true, false);
-		run_direct_disconn_test(&tgtport, from_be64(&assoc_id[i++]),
-					false, true);
-		run_direct_disconn_test(&tgtport, from_be64(&assoc_id[i++]),
-					true, true);
-
-		/* remove any remaining associations */
-		g_test_run_type = TEST_RUN_TYPE_DISCONNECT;
-		for (; i < g_nvmf_tgt.opts.max_associations; i++) {
-			run_disconn_test(&tgtport, assoc_id[i]);
+		for (i = 0; i < g_nvmf_tgt.opts.max_associations; i++) {
+			run_direct_disconn_test(&tgtport,
+						from_be64(&assoc_id[i]),
+						true);
 		}
 	}
 }
