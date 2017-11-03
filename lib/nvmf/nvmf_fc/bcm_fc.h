@@ -503,7 +503,7 @@ void spdk_nvmf_bcm_fc_ls_fini(void);
 typedef void (*spdk_nvmf_fc_del_assoc_cb)(void *arg, uint32_t err);
 
 int spdk_nvmf_bcm_fc_delete_association(struct spdk_nvmf_bcm_fc_nport *tgtport,
-					uint64_t assoc_id, bool send_disconn, bool send_abts,
+					uint64_t assoc_id, bool send_abts,
 					spdk_nvmf_fc_del_assoc_cb del_assoc_cb,
 					void *cb_data);
 void spdk_nvmf_bcm_fc_handle_ls_rqst(uint32_t s_id,

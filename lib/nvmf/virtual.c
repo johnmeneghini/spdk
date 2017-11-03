@@ -153,12 +153,12 @@ nvmf_virtual_ctrlr_complete_cmd(struct spdk_bdev_io *bdev_io, enum spdk_bdev_io_
 	 * BDEV IO is freed as part of request cleanup function call.
 	 */
 	if (bdev_io->type == SPDK_BDEV_IO_TYPE_READ) {
-		req->bdev_io = bdev_io;
 		req->iovcnt = bdev_io->u.read.iovcnt;
 	} else {
-		req->bdev_io = bdev_io;
 		req->iovcnt = bdev_io->u.write.iovcnt;
 	}
+	req->bdev_io = bdev_io;
+
 	spdk_nvmf_request_complete(req);
 }
 

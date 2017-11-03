@@ -377,6 +377,7 @@ typedef struct fc_abts_ctx {
 	uint16_t rxid;
 	struct spdk_nvmf_bcm_fc_nport *nport;
 	void *free_args;
+	int num_hwqps;
 } fc_abts_ctx_t;
 
 /* Caller context */
