@@ -340,6 +340,10 @@ nvmf_fc_ls_new_association(uint32_t s_id,
 		TAILQ_INSERT_TAIL(&tgtport->fc_associations, assoc, link);
 		tgtport->assoc_count++;
 		rport->assoc_count++;
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "New Association %p created:\n", assoc);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\thostnqn:%s\n", assoc->host_nqn);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\tsubnqn:%s\n", assoc->sub_nqn);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\twwpn:0x%lx\n", tgtport->fc_portname.u.wwn);
 	} else {
 		SPDK_ERRLOG("out of associations\n");
 	}
@@ -387,8 +391,15 @@ nvmf_fc_ls_new_connection(struct spdk_nvmf_bcm_fc_association *assoc,
 		fc_conn->esrp_ratio = esrp_ratio;
 		fc_conn->fc_assoc = assoc;
 		fc_conn->rpi = rpi;
-
 		TAILQ_INIT(&fc_conn->pending_queue);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "New Connection %p for Association %p created:\n", fc_conn,
+			      assoc);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\tQueue id:0x%x\n", fc_conn->conn.qid);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\tQueue size requested:0x%x\n", max_q_size);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\tMax admin queue size supported:0x%x\n",
+			      g_nvmf_tgt.opts.max_aq_depth);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\tMax IO queue size supported:0x%x\n",
+			      g_nvmf_tgt.opts.max_queue_depth);
 	} else {
 		SPDK_ERRLOG("out of connections\n");
 	}
