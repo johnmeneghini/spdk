@@ -79,13 +79,15 @@ spdk_nvmf_get_discovery_log_page(struct spdk_nvmf_request *req, uint64_t offset,
 	bool skip_header;
 	uint64_t copy_len = 0, curr_len = length;
 	char *curr_buffer = (char *)req->data;
+	uint64_t log_size = sizeof(struct spdk_nvmf_discovery_log_page);
+	uint64_t entry_size = sizeof(struct spdk_nvmf_discovery_log_page_entry);
 
-	if (skip_offset >= 1024) {
+	if (skip_offset >= log_size) {
 		/* Skip header */
-		skip_offset -= 1024;
+		skip_offset -= log_size;
 		skip_header = true;
 	} else {
-		copy_len = spdk_min((1024 - skip_offset), curr_len);
+		copy_len = spdk_min((log_size - skip_offset), curr_len);
 		memset((char *)curr_buffer, 0, copy_len);
 		curr_buffer += copy_len;
 		curr_len -= copy_len;
@@ -94,16 +96,19 @@ spdk_nvmf_get_discovery_log_page(struct spdk_nvmf_request *req, uint64_t offset,
 	}
 
 	TAILQ_FOREACH(subsystem, &g_nvmf_tgt.subsystems, entries) {
+		if (subsystem->subtype == SPDK_NVMF_SUBTYPE_DISCOVERY) {
+			continue;
+		}
 		/* XXX: If block can change to host allowed check alone with spdk17.10. Leverage spdk17.10 containers */
 		if (g_nvmf_tgt.disc_log_allowed_fn && !g_nvmf_tgt.disc_log_allowed_fn(req, subsystem)) {
 			continue;
 		}
 		TAILQ_FOREACH(allowed_listener, &subsystem->allowed_listeners, link) {
 
-			if (skip_offset >= 1024) {
-				skip_offset -= 1024;
+			if (skip_offset >= entry_size) {
+				skip_offset -= entry_size;
 			} else if(curr_len) {
-				copy_len = spdk_min((1024 - skip_offset), curr_len);
+				copy_len = spdk_min((entry_size - skip_offset), curr_len);
 				listen_addr = allowed_listener->listen_addr;
 				spdk_nvmf_fill_discovery_log_entry(&tmp_entry, subsystem, listen_addr, numrec);
 				memcpy(curr_buffer, (char *)&tmp_entry + skip_offset, copy_len);
@@ -120,7 +125,7 @@ spdk_nvmf_get_discovery_log_page(struct spdk_nvmf_request *req, uint64_t offset,
 	if (!skip_header) {
 		log_header.numrec = numrec;
 		log_header.genctr = g_nvmf_tgt.discovery_genctr;
-		copy_len = spdk_min((1024 - offset), length);
+		copy_len = spdk_min((log_size - offset), length);
 		memcpy(req->data, (char *)&log_header + offset, copy_len);
 	}
 
