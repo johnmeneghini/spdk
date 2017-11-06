@@ -513,6 +513,13 @@ nvmf_fc_get_fc_req(struct spdk_nvmf_request *req)
 	       ((uintptr_t)req - offsetof(struct spdk_nvmf_bcm_fc_request, req));
 }
 
+struct spdk_nvmf_bcm_fc_nport *
+spdk_nvmf_bcm_req_fc_nport_get(struct spdk_nvmf_request *req)
+{
+	struct spdk_nvmf_bcm_fc_request *fc_req = nvmf_fc_get_fc_req(req);
+	return fc_req->fc_conn->fc_assoc->tgtport;
+}
+
 void
 spdk_nvmf_bcm_fc_port_list_add(struct spdk_nvmf_bcm_fc_port *fc_port)
 {
