@@ -184,14 +184,14 @@ test_spdk_nvmf_subsystem_add_ns(void)
 	/* Request a specific NSID */
 	nsid = spdk_nvmf_subsystem_add_ns(&subsystem, &bdev2, 5);
 	CU_ASSERT(nsid == 5);
-	CU_ASSERT(subsystem.dev.virt.max_nsid == 2);
+	CU_ASSERT(subsystem.dev.virt.max_nsid == 5);
 	CU_ASSERT(subsystem.dev.virt.ns_list[nsid - 1] == &bdev2);
 
 	/* Request an NSID that is already in use */
 	nsid = spdk_nvmf_subsystem_add_ns(&subsystem, &bdev2, 5);
 	CU_ASSERT(nsid == 0);
 	/* max_nsid should be unchanged */
-	CU_ASSERT(subsystem.dev.virt.max_nsid == 2);
+	CU_ASSERT(subsystem.dev.virt.max_nsid == 5);
 }
 
 static void
