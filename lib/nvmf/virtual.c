@@ -443,8 +443,8 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 			req->iov[0].iov_base = req->data;
 			req->iov[0].iov_len  = req->length;
 
-			if (spdk_bdev_read(bdev, ch, req->data, offset, req->length,
-					   nvmf_virtual_ctrlr_complete_cmd, req) == NULL) {
+			if ((req->bdev_io = spdk_bdev_read(bdev, ch, req->data, offset, req->length,
+							   nvmf_virtual_ctrlr_complete_cmd, req)) == NULL) {
 				response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 			}
@@ -454,8 +454,8 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 			if (error < 0) {
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING;
 			} else if (error == 0) {
-				if (spdk_bdev_readv(bdev, ch, req->iov, req->iovcnt, offset, req->length,
-						    nvmf_virtual_ctrlr_complete_cmd, req) == NULL) {
+				if ((req->bdev_io = spdk_bdev_readv(bdev, ch, req->iov, req->iovcnt, offset, req->length,
+								    nvmf_virtual_ctrlr_complete_cmd, req)) == NULL) {
 					response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
 					return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 				}
@@ -467,14 +467,14 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 		if (req->data) {
 			spdk_bdev_write_init(bdev, req->length, req->iov, &req->iovcnt, &req->iovctx);
 			bcopy(req->data, req->iov[0].iov_base, req->length); // TODO: bcopy each elements
-			if (spdk_bdev_writev(bdev, ch, req->iov, req->iovcnt, offset, req->length,
-					     nvmf_virtual_ctrlr_complete_cmd, req) == NULL) {
+			if ((req->bdev_io = spdk_bdev_writev(bdev, ch, req->iov, req->iovcnt, offset, req->length,
+							     nvmf_virtual_ctrlr_complete_cmd, req)) == NULL) {
 				response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 			}
 		} else if (req->iovcnt) {
-			if (spdk_bdev_writev(bdev, ch, req->iov, req->iovcnt, offset, req->length,
-					     nvmf_virtual_ctrlr_complete_cmd, req) == NULL) {
+			if ((req->bdev_io = spdk_bdev_writev(bdev, ch, req->iov, req->iovcnt, offset, req->length,
+							     nvmf_virtual_ctrlr_complete_cmd, req)) == NULL) {
 				response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 			}
@@ -626,12 +626,13 @@ nvmf_virtual_ctrlr_process_io_abort(struct spdk_nvmf_request *req)
 					    nvmf_virtual_ctrlr_queue_request_complete,
 					    (void *)req, NULL);
 		spdk_event_call(event);
+	} else if (req->bdev_io) {
+		spdk_bdev_io_abort(req->bdev_io, NULL);
+	} else if (req->conn->type != CONN_TYPE_AQ) {
+		/* TODO: Add an Error counter */
+		assert(req->bdev_io != NULL);
+		SPDK_ERRLOG("Unable to start the IO abort process\n");
 	}
-
-	/*
-	 * NOTE: bdev ios abort handlers should not call request complete
-	 * in this context. They need to shedule for later.
-	 */
 }
 
 static void

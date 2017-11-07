@@ -153,6 +153,9 @@ struct spdk_bdev_fn_table {
 	 * (most likely another nested object).
 	 */
 	int (*dump_config_json)(void *ctx, struct spdk_json_write_ctx *w);
+
+	/* Abort a given IO. */
+	void (*abort_request)(struct spdk_bdev_io *, void *abt_ctx);
 };
 
 void spdk_bdev_register(struct spdk_bdev *bdev);
