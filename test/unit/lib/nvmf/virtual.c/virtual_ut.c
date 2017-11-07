@@ -303,6 +303,11 @@ spdk_bdev_write_fini(struct spdk_bdev_io *bdev_io, struct iovec *iov, int32_t io
 	return 0;
 }
 
+void
+spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io, void *abt_ctx)
+{
+	return;
+}
 
 
 static void

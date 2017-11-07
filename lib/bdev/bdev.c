@@ -40,6 +40,7 @@
 #include "spdk/io_channel.h"
 #include "spdk/likely.h"
 #include "spdk/util.h"
+#include "spdk/likely.h"
 #include "spdk/queue.h"
 #include "spdk/nvme_spec.h"
 #include "spdk/scsi_spec.h"
@@ -1221,8 +1222,6 @@ bdev_io_deferred_completion(void *arg1, void *arg2)
 	struct spdk_bdev_io *bdev_io = arg1;
 	enum spdk_bdev_io_status status = (enum spdk_bdev_io_status)arg2;
 
-	assert(bdev_io->in_submit_request == false);
-
 	spdk_bdev_io_complete(bdev_io, status);
 }
 
@@ -1762,6 +1761,17 @@ spdk_bdev_write_fini(struct spdk_bdev_io *bdev_io, struct iovec *iov, int32_t io
 		return bdev_io->bdev->fn_table->fini_write(iov, iovcnt, iovctx);
 	} else {
 		return spdk_bdev_put_buff(bdev_io, iov, iovcnt);
+	}
+}
+
+void
+spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io, void *abt_ctx)
+{
+	struct spdk_bdev *bdev = bdev_io->bdev;
+	if (spdk_likely(bdev->fn_table->abort_request)) {
+		bdev->fn_table->abort_request(bdev_io, abt_ctx);
+	} else {
+		SPDK_ERRLOG("Bdev abort_request not plugged in\n");
 	}
 }
 

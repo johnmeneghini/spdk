@@ -142,6 +142,7 @@ struct spdk_nvmf_bcm_fc_errors {
 	uint32_t fcp_rsp_failure;
 	uint32_t write_failed;
 	uint32_t read_failed;
+	uint32_t rport_invalid;
 };
 
 /*
@@ -598,4 +599,8 @@ uint32_t spdk_nvmf_bcm_fc_get_num_assocs_in_subsystem(uint8_t port_hdl, uint16_t
 bool spdk_nvmf_bcm_fc_is_spdk_session_on_nport(uint8_t port_hdl, uint16_t nport_hdl,
 		struct spdk_nvmf_session *session);
 
+spdk_err_t
+spdk_nvmf_bcm_fc_find_rport_from_sid(uint32_t s_id,
+				     struct spdk_nvmf_bcm_fc_nport *tgtport,
+				     struct spdk_nvmf_bcm_fc_remote_port_info **rport);
 #endif

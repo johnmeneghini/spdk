@@ -346,7 +346,25 @@ static void
 nvmf_fc_req_bdev_abort(void *arg1, void *arg2)
 {
 	struct spdk_nvmf_bcm_fc_request *fc_req = arg1;
-
+	/* Initial release - we don't have to abort Admin Queue or
+	 * Fabric commands. The AQ commands supported at this time are
+	 * Get-Log-Page,
+	 * Identify
+	 * Set Features
+	 * Get Features
+	 * AER -> Special case and handled differently.
+	 * Every one of the above Admin commands (except AER) run
+	 * to completion and so an Abort of such commands doesn't
+	 * make sense.
+	 */
+	/* Note that fabric commands are also not aborted via this
+	 * mechanism. That check is present in the spdk_nvmf_request_abort
+	 * function. The Fabric commands supported are
+	 * Property Set
+	 * Property Get
+	 * Connect -> Special case (async. handling). Not sure how to
+	 * handle at this point. Let it run to completion.
+	 */
 	spdk_nvmf_request_abort(&fc_req->req);
 }
 
@@ -961,7 +979,7 @@ spdk_nvmf_bcm_fc_free_req(struct spdk_nvmf_bcm_fc_request *fc_req, bool xri_acti
 
 	if (fc_req->req.data) {
 		spdk_dma_free(fc_req->req.data);
-	} else if (fc_req->req.iovcnt || fc_req->req.bdev_io) {
+	} else if (fc_req->req.iovcnt && fc_req->req.bdev_io) {
 		spdk_nvmf_request_cleanup(&fc_req->req);
 	}
 
@@ -1275,6 +1293,12 @@ nvmf_fc_handle_nvme_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_frame_hdr
 		goto abort;
 	}
 
+	/* If association/connection is being deleted - return */
+	if (fc_conn->fc_assoc->assoc_state !=  SPDK_NVMF_BCM_FC_OBJECT_CREATED) {
+		SPDK_ERRLOG("Association state not valid\n");
+		goto abort;
+	}
+
 	/* allocate a request buffer */
 	fc_req = nvmf_fc_alloc_req_buf(hwqp);
 	if (fc_req == NULL) {
@@ -1311,11 +1335,12 @@ static int
 nvmf_fc_process_frame(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t buff_idx, fc_frame_hdr_t *frame,
 		      bcm_buffer_desc_t *buffer, uint32_t plen)
 {
-	int rc;
+	int rc = SPDK_SUCCESS;
 	uint32_t s_id, d_id;
 	uint16_t rpi;
-	struct spdk_nvmf_bcm_fc_nport *nport;
+	struct spdk_nvmf_bcm_fc_nport *nport = NULL;
 	struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst;
+	struct spdk_nvmf_bcm_fc_remote_port_info *rport = NULL;
 
 	s_id = (uint32_t)frame->s_id;
 	d_id = (uint32_t)frame->d_id;
@@ -1330,6 +1355,30 @@ nvmf_fc_process_frame(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t buff_idx, fc_
 		hwqp->counters.nport_invalid++;
 		return rc;
 	}
+
+	/*
+	 * Add checks here to make sure we can accept the new command.
+	 */
+	if (nport->nport_state != SPDK_NVMF_BCM_FC_OBJECT_CREATED) {
+		SPDK_ERRLOG("%s Nport state not created. Dropping\n", __func__);
+		return -1;
+	}
+
+	rc = spdk_nvmf_bcm_fc_find_rport_from_sid(s_id, nport, &rport);
+	if (rc) {
+		/* TEMP CODE. Need Brcm to evaluate/rework this - the LS code for example
+		 * handles this in a better way instead of dropping.
+		 */
+		SPDK_ERRLOG("%s Rport not found. Dropping\n", __func__);
+		hwqp->counters.rport_invalid++;
+		return rc;
+	}
+
+	if (rport->rport_state != SPDK_NVMF_BCM_FC_OBJECT_CREATED) {
+		SPDK_ERRLOG("%s Rport state not created. Dropping\n", __func__);
+		return -1;
+	}
+
 
 	if ((frame->r_ctl == NVME_FC_R_CTL_LS_REQUEST) &&
 	    (frame->type == NVME_FC_TYPE_NVMF_DATA)) {

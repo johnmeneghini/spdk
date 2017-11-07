@@ -733,6 +733,24 @@ spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 	return;
 }
 
+spdk_err_t
+spdk_nvmf_bcm_fc_find_rport_from_sid(uint32_t s_id,
+				     struct spdk_nvmf_bcm_fc_nport *tgtport,
+				     struct spdk_nvmf_bcm_fc_remote_port_info **rport)
+{
+	int rc = SPDK_ERR_INTERNAL;
+	struct spdk_nvmf_bcm_fc_remote_port_info *rem_port = NULL;
+
+	TAILQ_FOREACH(rem_port, &tgtport->rem_port_list, link) {
+		if (rem_port->s_id == s_id) {
+			*rport = rem_port;
+			rc = SPDK_SUCCESS;
+			break;
+		}
+	}
+	return rc;
+}
+
 int main(int argc, char **argv)
 {
 	unsigned int	num_failures = 0;

@@ -252,24 +252,6 @@ nvmf_fc_ls_format_rjt(void *buf, uint16_t buflen, uint8_t ls_cmd,
 	return sizeof(struct nvmf_fc_ls_rjt);
 }
 
-static spdk_err_t
-nvmf_fc_ls_find_rport_from_sid(uint32_t s_id,
-			       struct spdk_nvmf_bcm_fc_nport *tgtport,
-			       struct spdk_nvmf_bcm_fc_remote_port_info **rport)
-{
-	int rc = SPDK_ERR_INTERNAL;
-	struct spdk_nvmf_bcm_fc_remote_port_info *rem_port = NULL;
-
-	TAILQ_FOREACH(rem_port, &tgtport->rem_port_list, link) {
-		if (rem_port->s_id == s_id) {
-			*rport = rem_port;
-			rc = SPDK_SUCCESS;
-			break;
-		}
-	}
-	return rc;
-}
-
 /* ************************************************** */
 /* Allocators/Deallocators (assocations, connections, */
 /* poller API data)                                   */
@@ -947,7 +929,7 @@ nvmf_fc_ls_process_cass(uint32_t s_id,
 		ec = FCNVME_RJT_EXP_SQ_SIZE;
 	} else {
 		/* new association w/ admin queue */
-		err = nvmf_fc_ls_find_rport_from_sid(s_id, tgtport, &rport);
+		err = spdk_nvmf_bcm_fc_find_rport_from_sid(s_id, tgtport, &rport);
 		if (err != SPDK_SUCCESS) {
 			SPDK_ERRLOG("Remote port not found.\n");
 			errmsg_ind = VERR_NO_RPORT;

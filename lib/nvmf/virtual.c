@@ -711,12 +711,13 @@ nvmf_virtual_ctrlr_process_io_abort(struct spdk_nvmf_request *req)
 					    nvmf_virtual_ctrlr_queue_request_complete,
 					    (void *)req, NULL);
 		spdk_event_call(event);
+	} else if (req->bdev_io) {
+		spdk_bdev_io_abort(req->bdev_io, NULL);
+	} else if (req->conn->type != CONN_TYPE_AQ) {
+		/* TODO: Add an Error counter */
+		assert(req->bdev_io != NULL);
+		SPDK_ERRLOG("Unable to start the IO abort process\n");
 	}
-
-	/*
-	 * NOTE: bdev ios abort handlers should not call request complete
-	 * in this context. They need to shedule for later.
-	 */
 }
 
 static void

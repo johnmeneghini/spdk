@@ -168,6 +168,9 @@ struct spdk_bdev_fn_table {
 	 *  Optional - may be NULL.
 	 */
 	uint64_t (*get_spin_time)(struct spdk_io_channel *ch);
+
+	/* Abort a given IO. */
+	void (*abort_request)(struct spdk_bdev_io *, void *abt_ctx);
 };
 
 /** bdev I/O completion status */

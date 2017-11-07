@@ -608,6 +608,25 @@ spdk_nvmf_bcm_fc_is_spdk_session_on_nport(uint8_t port_hdl, uint16_t nport_hdl,
 	return false;
 }
 
+spdk_err_t
+spdk_nvmf_bcm_fc_find_rport_from_sid(uint32_t s_id,
+				     struct spdk_nvmf_bcm_fc_nport *tgtport,
+				     struct spdk_nvmf_bcm_fc_remote_port_info **rport)
+{
+	int rc = SPDK_ERR_INTERNAL;
+	struct spdk_nvmf_bcm_fc_remote_port_info *rem_port = NULL;
+
+	TAILQ_FOREACH(rem_port, &tgtport->rem_port_list, link) {
+		if (rem_port->s_id == s_id) {
+			*rport = rem_port;
+			rc = SPDK_SUCCESS;
+			break;
+		}
+	}
+	return rc;
+}
+
+
 /* Transport API callbacks begin here */
 
 static int
