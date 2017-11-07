@@ -546,7 +546,6 @@ nvmf_fc_tgt_i_t_delete_assoc(struct spdk_nvmf_bcm_fc_nport *nport,
 		if (assoc->s_id == s_id) {
 			assoc_err = spdk_nvmf_bcm_fc_delete_association(nport,
 					assoc->assoc_id,
-					true /* send discon */,
 					false /* send abts */,
 					nvmf_fc_tgt_i_t_delete_assoc_cb, cb_data);
 			if (SPDK_SUCCESS != assoc_err) {
