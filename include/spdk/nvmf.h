@@ -247,6 +247,10 @@ int
 spdk_nvmf_subsystem_add_host(struct spdk_nvmf_subsystem *subsystem,
 			     const char *host_nqn);
 
+void
+spdk_nvmf_subsystem_remove_host(struct spdk_nvmf_subsystem *subsystem,
+				const char *host_nqn);
+
 int
 nvmf_subsystem_add_ctrlr(struct spdk_nvmf_subsystem *subsystem,
 			 struct spdk_nvme_ctrlr *ctrlr, const struct spdk_pci_addr *pci_addr);
