@@ -88,6 +88,7 @@ static spdk_err_t
 nvmf_fc_tgt_hw_port_reinit_validate(struct spdk_nvmf_bcm_fc_port *fc_port,
 				    spdk_nvmf_bcm_fc_hw_port_init_args_t *args)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	spdk_err_t err = SPDK_SUCCESS;
 	int        i;
 
@@ -129,6 +130,7 @@ static spdk_err_t
 nvmf_fc_tgt_hw_port_data_init(struct spdk_nvmf_bcm_fc_port *fc_port,
 			      spdk_nvmf_bcm_fc_hw_port_init_args_t *args)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	/* Used a high number for the LS HWQP so that it does not clash with the
 	 * IO HWQP's and immediately shows a LS queue during tracing.
 	 */
@@ -268,6 +270,7 @@ static void
 nvmf_fc_tgt_hw_port_link_break_cb(uint8_t port_handle,
 				  spdk_fc_event_t event_type, void *cb_args, spdk_err_t spdk_err)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	spdk_nvmf_bcm_fc_port_link_break_cb_data_t   *offline_cb_args = cb_args;
 	spdk_nvmf_bcm_hw_port_link_break_args_t      *offline_args = NULL;
 	spdk_nvmf_bcm_fc_callback                     cb_func      = NULL;
@@ -359,6 +362,7 @@ out:
 static void
 nvmf_fc_tgt_hw_port_offline_nport_delete(struct spdk_nvmf_bcm_fc_port *fc_port)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	struct spdk_nvmf_bcm_fc_nport *nport = NULL;
 	/* All nports must have been deleted at this point for this fc port */
 	DEV_VERIFY(fc_port && TAILQ_EMPTY(&fc_port->nport_list));
@@ -380,6 +384,7 @@ static void
 nvmf_fc_tgt_nport_data_init(struct spdk_nvmf_bcm_fc_nport *nport,
 			    spdk_nvmf_bcm_fc_nport_create_args_t *args)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	nport->nport_hdl = args->nport_handle;
 	nport->port_hdl  = args->port_handle;
 	nport->nport_state  = SPDK_NVMF_BCM_FC_OBJECT_CREATED;
@@ -402,18 +407,21 @@ nvmf_fc_tgt_nport_data_init(struct spdk_nvmf_bcm_fc_nport *nport,
 static nvmf_tgt_error_t
 nvmf_tgt_fc_nport_add_listen_addr(spdk_nvmf_bcm_fc_nport_create_args_t *nport)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	return nvmf_tgt_add_tgt_port(NVMF_BCM_FC_TRANSPORT_NAME, nport);
 }
 
 static nvmf_tgt_error_t
 nvmf_tgt_fc_nport_remove_listen_addr(struct spdk_nvmf_bcm_fc_nport *nport)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	return nvmf_tgt_remove_tgt_port(NVMF_BCM_FC_TRANSPORT_NAME, nport);
 }
 
 static void
 nvmf_fc_tgt_i_t_delete_cb(void *args, uint32_t err)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	struct spdk_nvmf_bcm_fc_i_t_del_cb_data  *cb_data     = args;
 	struct spdk_nvmf_bcm_fc_nport            *nport       = cb_data->nport;
 	struct spdk_nvmf_bcm_fc_remote_port_info *rport       = cb_data->rport;
@@ -457,6 +465,7 @@ out:
 static void
 nvmf_fc_tgt_i_t_delete_assoc_cb(void *args, uint32_t err)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	struct spdk_nvmf_bcm_fc_i_t_del_assoc_cb_data *cb_data     = args;
 	struct spdk_nvmf_bcm_fc_nport                 *nport       = cb_data->nport;
 	struct spdk_nvmf_bcm_fc_remote_port_info      *rport       = cb_data->rport;
@@ -525,6 +534,7 @@ nvmf_fc_tgt_i_t_delete_assoc(struct spdk_nvmf_bcm_fc_nport *nport,
 			     spdk_nvmf_bcm_fc_i_t_delete_assoc_cb_fn cb_func,
 			     void *cb_ctx)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	spdk_err_t                                 err                     = SPDK_SUCCESS;
 	struct spdk_nvmf_bcm_fc_association       *assoc                   = NULL;
 	int                                        assoc_err               = 0;
@@ -606,6 +616,7 @@ static void
 nvmf_fc_tgt_rport_data_init(struct spdk_nvmf_bcm_fc_remote_port_info *rport,
 			    spdk_nvmf_bcm_fc_hw_i_t_add_args_t *args)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	(void)spdk_nvmf_bcm_fc_rport_set_state(rport, SPDK_NVMF_BCM_FC_OBJECT_CREATED);
 	rport->s_id = args->s_id;
 	rport->rpi  = args->rpi;
@@ -614,6 +625,7 @@ nvmf_fc_tgt_rport_data_init(struct spdk_nvmf_bcm_fc_remote_port_info *rport,
 static void
 nvmf_tgt_fc_queue_quiesce_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	struct spdk_nvmf_bcm_fc_poller_api_quiesce_queue_args *quiesce_api_data = NULL;
 	spdk_nvmf_bcm_fc_hw_port_quiesce_ctx_t                     *port_quiesce_ctx = NULL;
 	struct spdk_nvmf_bcm_fc_hwqp                          *hwqp             = NULL;
@@ -640,11 +652,11 @@ nvmf_tgt_fc_queue_quiesce_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t re
 		return;
 	}
 
-	if (fc_port->hw_port_status == SPDK_FC_PORT_QUIESCED) {
+	if (fc_port->hw_port_status == SPDK_FC_PORT_QUIESCED_FOR_DUMP) {
 		SPDK_ERRLOG("Port %d already in quiesced state.\n", fc_port->port_hdl);
 	} else {
 		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "HW port %d  quiesced.\n", fc_port->port_hdl);
-		fc_port->hw_port_status = SPDK_FC_PORT_QUIESCED;
+		fc_port->hw_port_status = SPDK_FC_PORT_QUIESCED_FOR_DUMP;
 	}
 
 	if (cb_func) {
@@ -667,6 +679,7 @@ static spdk_err_t
 nvmf_tgt_fc_hw_queue_quiesce(struct spdk_nvmf_bcm_fc_hwqp *fc_hwqp, void *ctx,
 			     spdk_nvmf_bcm_fc_poller_api_cb cb_func)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	struct spdk_nvmf_bcm_fc_poller_api_quiesce_queue_args *args;
 	spdk_nvmf_bcm_fc_poller_api_ret_t                      rc = SPDK_NVMF_BCM_FC_POLLER_API_SUCCESS;
 	spdk_err_t                                             err = SPDK_SUCCESS;
@@ -702,13 +715,14 @@ static spdk_err_t
 nvmf_tgt_fc_hw_port_quiesce(struct spdk_nvmf_bcm_fc_port *fc_port, void *ctx,
 			    spdk_nvmf_bcm_fc_hw_port_quiesce_cb_fn cb_func)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	struct spdk_nvmf_bcm_fc_hw_port_quiesce_ctx *port_quiesce_ctx = NULL;
 	int                                     i                = 0;
 	spdk_err_t                              err              = SPDK_SUCCESS;
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "HW port:%d is being quiesced.\n", fc_port->port_hdl);
 
-	if (fc_port->hw_port_status == SPDK_FC_PORT_QUIESCED) {
+	if (fc_port->hw_port_status == SPDK_FC_PORT_QUIESCED_FOR_DUMP) {
 		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "Port %d already in quiesced state.\n",
 			      fc_port->port_hdl);
 		/*
@@ -769,6 +783,7 @@ fail:
 static void
 nvmf_tgt_fc_dump_buf_print(spdk_nvmf_bcm_fc_queue_dump_info_t *dump_info, char *fmt, ...)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	va_list ap;
 	int32_t avail;
 	int32_t written;
@@ -798,6 +813,7 @@ nvmf_tgt_fc_dump_buffer(spdk_nvmf_bcm_fc_queue_dump_info_t *dump_info, const cha
 			void *buffer,
 			uint32_t size)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	uint32_t *dword;
 	uint32_t  i;
 	uint32_t  count;
@@ -832,6 +848,7 @@ nvmf_tgt_fc_dump_buffer(spdk_nvmf_bcm_fc_queue_dump_info_t *dump_info, const cha
 static void
 nvmf_tgt_fc_dump_queue_entries(spdk_nvmf_bcm_fc_queue_dump_info_t *dump_info, bcm_sli_queue_t *q)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 #define NVMF_TGT_FC_QDUMP_RADIUS 1
 	char     name[64];
 	int32_t  index = 0;
@@ -870,6 +887,7 @@ static void
 nvmf_tgt_fc_dump_sli_queue(spdk_nvmf_bcm_fc_queue_dump_info_t *dump_info, char *name,
 			   bcm_sli_queue_t *q)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	nvmf_tgt_fc_dump_buf_print(dump_info,
 				   "\nname:%s, head:%" PRIu16 ", tail:%" PRIu16 ", used:%" PRIu16 ", "
 				   "posted_limit:%" PRIu32 ", processed_limit:%" PRIu32 ", "
@@ -887,6 +905,7 @@ nvmf_tgt_fc_dump_sli_queue(spdk_nvmf_bcm_fc_queue_dump_info_t *dump_info, char *
 static void
 nvmf_tgt_fc_dump_eventq(spdk_nvmf_bcm_fc_queue_dump_info_t *dump_info, char *name, fc_eventq_t *eq)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	nvmf_tgt_fc_dump_sli_queue(dump_info, name, &eq->q);
 }
 
@@ -896,6 +915,7 @@ nvmf_tgt_fc_dump_eventq(spdk_nvmf_bcm_fc_queue_dump_info_t *dump_info, char *nam
 static void
 nvmf_tgt_fc_dump_wrkq(spdk_nvmf_bcm_fc_queue_dump_info_t *dump_info, char *name, fc_wrkq_t *wq)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	nvmf_tgt_fc_dump_sli_queue(dump_info, name, &wq->q);
 }
 
@@ -905,6 +925,7 @@ nvmf_tgt_fc_dump_wrkq(spdk_nvmf_bcm_fc_queue_dump_info_t *dump_info, char *name,
 static void
 nvmf_tgt_fc_dump_rcvq(spdk_nvmf_bcm_fc_queue_dump_info_t *dump_info, char *name, fc_rcvq_t *rq)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	nvmf_tgt_fc_dump_sli_queue(dump_info, name, &rq->q);
 }
 
@@ -915,6 +936,7 @@ static void
 nvmf_tgt_fc_dump_hwqp(spdk_nvmf_bcm_fc_queue_dump_info_t         *dump_info,
 		      struct spdk_nvmf_bcm_fc_hw_queues *hw_queue)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	/*
 	 * Dump the EQ.
 	 */
@@ -953,6 +975,7 @@ static void
 nvmf_tgt_fc_dump_all_queues(struct spdk_nvmf_bcm_fc_port *fc_port,
 			    spdk_nvmf_bcm_fc_queue_dump_info_t    *dump_info)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	struct spdk_nvmf_bcm_fc_hwqp *ls_queue;
 	struct spdk_nvmf_bcm_fc_hwqp *io_queue;
 	int                           i = 0;
@@ -977,6 +1000,7 @@ nvmf_tgt_fc_dump_all_queues(struct spdk_nvmf_bcm_fc_port *fc_port,
 spdk_err_t
 nvmf_tgt_fc_notify_error(spdk_err_t err)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	return fct_mapi_notify_nvmf_error(err);
 }
 
@@ -1112,6 +1136,7 @@ done:
 static void
 nvmf_fc_hw_port_init(void *arg1, void *arg2)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	struct spdk_nvmf_bcm_fc_port         *fc_port  = NULL;
 	spdk_nvmf_bcm_fc_hw_port_init_args_t *args     = (spdk_nvmf_bcm_fc_hw_port_init_args_t *)arg1;
 	spdk_nvmf_bcm_fc_callback             cb_func  = (spdk_nvmf_bcm_fc_callback)arg2;
@@ -1194,6 +1219,7 @@ err:
 static void
 nvmf_fc_hw_port_online(void *arg1, void *arg2)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	struct spdk_nvmf_bcm_fc_port           *fc_port = NULL;
 	struct spdk_nvmf_bcm_fc_hwqp           *hwqp    = NULL;
 	spdk_nvmf_bcm_fc_hw_port_online_args_t *args    = (spdk_nvmf_bcm_fc_hw_port_online_args_t *) arg1;
@@ -1252,6 +1278,7 @@ out:
 static void
 nvmf_fc_hw_port_offline(void *arg1, void *arg2)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	struct spdk_nvmf_bcm_fc_port *fc_port = NULL;
 	struct spdk_nvmf_bcm_fc_hwqp *hwqp    = NULL;
 	spdk_nvmf_bcm_fc_hw_port_offline_args_t *args    = (spdk_nvmf_bcm_fc_hw_port_offline_args_t *)arg1;
@@ -1315,6 +1342,7 @@ out:
 static void
 nvmf_fc_nport_create(void *arg1, void *arg2)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	spdk_nvmf_bcm_fc_nport_create_args_t *args    = (spdk_nvmf_bcm_fc_nport_create_args_t *)arg1;
 	spdk_nvmf_bcm_fc_callback             cb_func = (spdk_nvmf_bcm_fc_callback)arg2;
 	struct spdk_nvmf_bcm_fc_nport         *nport   = NULL;
@@ -1382,6 +1410,7 @@ static void
 nvmf_fc_tgt_delete_nport_cb(uint8_t port_handle, spdk_fc_event_t event_type,
 			    void *cb_args, spdk_err_t spdk_err)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	struct spdk_nvmf_bcm_fc_nport_del_cb_data *cb_data     = cb_args;
 	struct spdk_nvmf_bcm_fc_nport             *nport       = cb_data->nport;
 	spdk_nvmf_bcm_fc_callback                  cb_func     = cb_data->fc_cb_func;
@@ -1451,6 +1480,7 @@ out:
 static void
 nvmf_fc_nport_delete(void *arg1, void *arg2)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	spdk_nvmf_bcm_fc_nport_delete_args_t      *args        = arg1;
 	spdk_nvmf_bcm_fc_callback                  cb_func     = arg2;
 	struct spdk_nvmf_bcm_fc_nport             *nport       = NULL;
@@ -1592,6 +1622,7 @@ out:
 static void
 nvmf_fc_i_t_add(void *arg1, void *arg2)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	spdk_nvmf_bcm_fc_hw_i_t_add_args_t       *args       = arg1;
 	spdk_nvmf_bcm_fc_callback                 cb_func    = (spdk_nvmf_bcm_fc_callback) arg2;
 	struct spdk_nvmf_bcm_fc_nport            *nport      = NULL;
@@ -1673,6 +1704,7 @@ out:
 static void
 nvmf_fc_i_t_delete(void *arg1, void *arg2)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	spdk_err_t                                 rc        = SPDK_SUCCESS;
 	spdk_nvmf_bcm_fc_hw_i_t_delete_args_t     *args      = NULL;
 	spdk_nvmf_bcm_fc_callback                  cb_func   = NULL;
@@ -1801,6 +1833,7 @@ out:
 static void
 nvmf_fc_abts_recv(void *arg1, void *arg2)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	spdk_nvmf_bcm_fc_abts_args_t  *args    = arg1;
 	spdk_nvmf_bcm_fc_callback              cb_func = (spdk_nvmf_bcm_fc_callback)arg2;
 	struct spdk_nvmf_bcm_fc_nport *nport   = NULL;
@@ -1842,6 +1875,7 @@ out:
 static void
 nvmf_fc_hw_port_quiesce_dump_cb(void *ctx, spdk_err_t err)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	spdk_nvmf_bcm_fc_hw_port_dump_ctx_t   *dump_ctx = (spdk_nvmf_bcm_fc_hw_port_dump_ctx_t *)ctx;
 	spdk_nvmf_bcm_fc_hw_port_dump_args_t     *args     = dump_ctx->dump_args;
 	spdk_nvmf_bcm_fc_callback                   cb_func  = dump_ctx->dump_cb_func;
@@ -1909,6 +1943,7 @@ out:
 static void
 nvmf_fc_hw_port_dump(void *arg1, void *arg2)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	struct spdk_nvmf_bcm_fc_port *fc_port = NULL;
 	spdk_nvmf_bcm_fc_hw_port_dump_args_t     *args    = (spdk_nvmf_bcm_fc_hw_port_dump_args_t *)arg1;
 	spdk_nvmf_bcm_fc_callback     cb_func = (spdk_nvmf_bcm_fc_callback)arg2;
@@ -1975,6 +2010,7 @@ out:
 static void
 nvmf_fc_hw_port_link_break(void *arg1, void *arg2)
 {
+	ASSERT_SPDK_FC_MASTER_THREAD();
 	struct spdk_nvmf_bcm_fc_port   *fc_port = NULL;
 	struct spdk_nvmf_bcm_fc_hwqp   *hwqp    = NULL;
 	spdk_nvmf_bcm_hw_port_link_break_args_t *args    = (spdk_nvmf_bcm_hw_port_link_break_args_t *)arg1;
