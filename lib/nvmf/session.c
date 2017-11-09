@@ -721,22 +721,40 @@ spdk_nvmf_session_set_features_number_of_queues(struct spdk_nvmf_request *req)
 {
 	struct spdk_nvmf_session *session = req->conn->sess;
 	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
-	uint32_t nr_io_queues;
+	uint32_t nsqr, ncqr;
 
+	/* Get the requested number of completion queues and submission queues.
+	   Both are zero based values */
+	nsqr = (req->cmd->nvme_cmd.cdw11 & 0xffff) + 1;
+	ncqr = (req->cmd->nvme_cmd.cdw11 >> 16) + 1;
+
+	/* Number of queues requested are zero based values */
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Set Features - Number of Queues Requested, sub:0x%x, compl:0x%x\n",
-		      req->cmd->nvme_cmd.cdw11 & 0xffff, req->cmd->nvme_cmd.cdw11 >> 16);
+		      nsqr - 1, ncqr - 1);
 
-	/* Extra 1 connection for Admin queue */
-	nr_io_queues = session->max_connections_allowed - 1;
+	/* 1 completion queue is mapped to 1 submission queue in nvmf */
+	if (nsqr != ncqr) {
+		SPDK_ERRLOG("Number of submission queues requested not the same as completion queues requested\n");
+		rsp->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+	}
 
 	/* verify that the contoller is ready to process commands */
 	if (session->num_connections > 1) {
 		SPDK_TRACELOG(SPDK_TRACE_NVMF, "Queue pairs already active!\n");
 		rsp->status.sc = SPDK_NVME_SC_COMMAND_SEQUENCE_ERROR;
 	} else {
+		/* We cannot configure more than what we support */
+		if (nsqr > (uint32_t)(session->max_connections_allowed - 1)) {
+			nsqr = session->max_connections_allowed - 1;
+		}
+
+		/* Extra 1 connection for Admin queue */
+		session->max_connections_allowed = nsqr + 1;
+
 		/* Number of IO queues has a zero based value */
-		rsp->cdw0 = ((nr_io_queues - 1) << 16) |
-			    (nr_io_queues - 1);
+		rsp->cdw0 = ((nsqr - 1) << 16) |
+			    (nsqr - 1);
 		SPDK_TRACELOG(SPDK_TRACE_NVMF,
 			      "Set Features - Number of Queues Configured, cdw0 sub:0x%x, compl:0x%x\n",
 			      rsp->cdw0 & 0xffff, rsp->cdw0 >> 16);
