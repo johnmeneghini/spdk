@@ -339,6 +339,10 @@ spdk_nvmf_bcm_fc_req_abort_complete(void *arg1, void *arg2)
 		free(ctx);
 	}
 
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
+		      "FC Request(%p) in state :%s aborted", fc_req,
+		      fc_req_state_strs[fc_req->state]);
+
 	spdk_nvmf_bcm_fc_free_req(fc_req, false);
 }
 
@@ -375,6 +379,7 @@ spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 {
 	fc_caller_ctx_t *ctx = NULL;
 	struct spdk_event *event = NULL;
+	bool kill_req = false;
 
 	/* Add the cb to list */
 	if (cb) {
@@ -387,6 +392,16 @@ spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 		ctx->cb_args = cb_args;
 
 		TAILQ_INSERT_TAIL(&fc_req->abort_cbs, ctx, link);
+	}
+
+	/* If the port is quiesced because of an adapter dump
+	 * we kill the outstanding commands */
+	kill_req = (fc_req->hwqp->fc_port->hw_port_status == SPDK_FC_PORT_QUIESCED_FOR_DUMP) ? true : false;
+	if (kill_req && spdk_nvmf_bcm_fc_req_in_xfer(fc_req)) {
+		/* Execute callback if the request is in transfer state and has
+		 * to be aborted. */
+		fc_req->is_aborted = true;
+		goto complete;
 	}
 
 	/* Check if the request is already marked for deletion */
@@ -425,6 +440,7 @@ spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 
 	return;
 complete:
+	spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_ABORTED);
 	event = spdk_event_allocate(fc_req->poller_lcore,
 				    spdk_nvmf_bcm_fc_req_abort_complete, (void *)fc_req, NULL);
 	spdk_event_call(event);
