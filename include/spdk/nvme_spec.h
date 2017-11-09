@@ -1752,6 +1752,10 @@ enum spdk_nvme_nidt {
 	SPDK_NVME_NIDT_UUID		= 0x03,
 };
 
+#define SPDK_NVME_NIDL_EUI64 0x8
+#define SPDK_NVME_NIDL_NGUID 0x10
+#define SPDK_NVME_NIDL_UUID 0x10
+
 struct spdk_nvme_ns_id_desc {
 	/** Namespace identifier type */
 	uint8_t nidt;
