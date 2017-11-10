@@ -91,6 +91,7 @@ void append_cf_section(struct spdk_conf *cp, struct spdk_conf_section *sp);
 struct spdk_conf_item *find_cf_nitem(struct spdk_conf_section *sp, const char *key, int idx);
 void append_cf_item(struct spdk_conf_section *sp, struct spdk_conf_item *ip);
 void append_cf_value(struct spdk_conf_item *ip, struct spdk_conf_value *vp);
+void free_conf_section(struct spdk_conf_section *sp);
 
 void spdk_conf_set_as_default(struct spdk_conf *cp);
 

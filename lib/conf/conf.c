@@ -114,7 +114,7 @@ free_all_conf_item(struct spdk_conf_item *ip)
 	}
 }
 
-static void
+void
 free_conf_section(struct spdk_conf_section *sp)
 {
 	if (sp == NULL) {
