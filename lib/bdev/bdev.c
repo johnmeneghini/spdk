@@ -228,7 +228,7 @@ spdk_bdev_io_set_buf(struct spdk_bdev_io *bdev_io, void *buf)
 	bdev_io->u.read.iovs[0].iov_len = bdev_io->u.read.len;
 	bdev_io->u.read.iovcnt = 1;
 	bdev_io->u.read.put_rbuf = true;
-	bdev_io->get_rbuf_cb(bdev_io);
+	bdev_io->get_buf_cb(bdev_io->ch->channel, bdev_io);
 }
 
 static void
