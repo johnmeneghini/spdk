@@ -265,7 +265,7 @@ uint32_t spdk_env_get_next_core(uint32_t prev_core);
 
 #define SPDK_ENV_FOREACH_CORE(i)		\
 	for (i = spdk_env_get_first_core();	\
-	     i < UINT32_MAX;			\
+	     i < SPDK_MAX_LCORE;			\
 	     i = spdk_env_get_next_core(i))
 
 /**
