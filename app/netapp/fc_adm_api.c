@@ -15,6 +15,8 @@
 
 #include <ontap/scsitarget/fct_nvmf_mapi.h>
 
+#define FC_LS_HWQP_ID 0xff
+
 #ifndef DEV_VERIFY
 #define DEV_VERIFY assert
 #endif
@@ -58,6 +60,23 @@ nvmf_fc_tgt_get_next_lcore(uint32_t prev_core)
 	return UINT32_MAX;
 }
 #endif
+
+/* Global hwqp_id and helper functions */
+static uint32_t g_hwqp_id;
+
+static inline uint32_t
+nvmf_tgt_fc_get_hwqp_id(void)
+{
+	uint32_t hwqp_id = g_hwqp_id;
+	g_hwqp_id++;
+	DEV_VERIFY(g_hwqp_id < FC_LS_HWQP_ID);
+	return hwqp_id;
+}
+uint32_t
+nvmf_tgt_fc_get_curr_hwqp_id(void)
+{
+	return g_hwqp_id;
+}
 
 /*
  * Re-initialize the FC-Port after an offline event.
@@ -113,7 +132,6 @@ nvmf_fc_tgt_hw_port_data_init(struct spdk_nvmf_bcm_fc_port *fc_port,
 	/* Used a high number for the LS HWQP so that it does not clash with the
 	 * IO HWQP's and immediately shows a LS queue during tracing.
 	 */
-#define FC_LS_HWQP_ID 0xff
 	uint32_t                    poweroftwo = 1;
 	char                        poolname[32];
 	struct spdk_nvmf_bcm_fc_xri *ring_xri     = NULL;
@@ -205,8 +223,8 @@ nvmf_fc_tgt_hw_port_data_init(struct spdk_nvmf_bcm_fc_port *fc_port,
 			}
 		} while (lcore_id == spdk_env_get_master_lcore());
 
-		fc_port->io_queues[i].lcore_id  = lcore_id;
-		fc_port->io_queues[i].hwqp_id   = i;
+		fc_port->io_queues[i].lcore_id = lcore_id;
+		fc_port->io_queues[i].hwqp_id  = nvmf_tgt_fc_get_hwqp_id();
 		fc_port->io_queues[i].send_frame_xri = fc_port->xri_base + 1 + i;
 
 		spdk_nvmf_bcm_fc_init_poller(fc_port, &fc_port->io_queues[i]);
