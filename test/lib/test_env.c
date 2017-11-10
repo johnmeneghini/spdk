@@ -235,3 +235,27 @@ spdk_env_get_core_count(void)
 {
 	return 1;
 }
+
+uint32_t spdk_env_get_current_core(void)
+{
+	return 0;
+}
+
+uint32_t
+spdk_env_get_first_core(void)
+{
+	return spdk_env_get_next_core(UINT32_MAX);
+}
+
+uint32_t
+spdk_env_get_next_core(uint32_t prev_core)
+{
+	unsigned lcore = prev_core;
+
+	lcore++;
+
+	if (lcore >= spdk_env_get_core_count()) {
+		return UINT32_MAX;
+	}
+	return lcore;
+}
