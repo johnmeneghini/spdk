@@ -288,7 +288,7 @@ test_discovery_log(void)
 	/* New tests with dynamic discovery log page */
 	/* Add one more subsystem and verify that the discovery log contains it */
 	subsystem2 = spdk_nvmf_create_subsystem("nqn.2016-06.io.spdk:subsystem2", SPDK_NVMF_SUBTYPE_NVME,
-					       NVMF_SUBSYSTEM_MODE_DIRECT, NULL, NULL, NULL);
+						NVMF_SUBSYSTEM_MODE_DIRECT, NULL, NULL, NULL);
 	SPDK_CU_ASSERT_FATAL(subsystem != NULL);
 
 	listen_addr = spdk_nvmf_tgt_listen("test_transport1", "12345", "56789");
@@ -305,13 +305,14 @@ test_discovery_log(void)
 
 	spdk_nvmf_subsystem_add_host(subsystem, "nqn.2017-07.com.netapp:new");
 	spdk_nvmf_subsystem_add_host(subsystem2, "nqn.2017-07.com.netapp:num1");
-	
+
 	/* Get only the header, no entries */
 	memset(buffer, 0xCC, sizeof(buffer));
 	disc_log = (struct spdk_nvmf_discovery_log_page *)buffer;
 	spdk_nvmf_get_discovery_log_page(&req, 0, sizeof(*disc_log));
 	CU_ASSERT(disc_log->genctr == 6); /* 2 subsystems + 2 listeners + 2 hosts */
-	CU_ASSERT(disc_log->numrec == 1); /* numrecs to be 1 since we added hosts which go through allowed check */
+	CU_ASSERT(disc_log->numrec ==
+		  1); /* numrecs to be 1 since we added hosts which go through allowed check */
 
 	spdk_nvmf_subsystem_add_host(subsystem, "nqn.2017-07.com.netapp:num1");
 
@@ -320,7 +321,8 @@ test_discovery_log(void)
 	disc_log = (struct spdk_nvmf_discovery_log_page *)buffer;
 	spdk_nvmf_get_discovery_log_page(&req, 0, sizeof(*disc_log));
 	CU_ASSERT(disc_log->genctr == 7); /* 2 subsystems + 2 listeners + 3 hosts */
-	CU_ASSERT(disc_log->numrec == 2); /* numrecs to be 2 since we added hosts which go through allowed check */
+	CU_ASSERT(disc_log->numrec ==
+		  2); /* numrecs to be 2 since we added hosts which go through allowed check */
 
 	/* read buffer in parts */
 	/* Offset 0, oversize buffer */
@@ -351,7 +353,7 @@ test_discovery_log(void)
 	CU_ASSERT(all_zero(buffer + sizeof(*disc_log) + 2 * sizeof(disc_log->entries[0]),
 			   sizeof(disc_log->entries[0])));
 	CU_ASSERT(!all_zero(buffer + sizeof(*disc_log) + 2 * sizeof(disc_log->entries[0]),
-			   sizeof(buffer) - (sizeof(*disc_log) + 3 * sizeof(disc_log->entries[0]))));
+			    sizeof(buffer) - (sizeof(*disc_log) + 3 * sizeof(disc_log->entries[0]))));
 
 	spdk_nvmf_delete_subsystem(subsystem);
 }

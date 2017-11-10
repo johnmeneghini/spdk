@@ -107,14 +107,14 @@ spdk_nvmf_get_discovery_log_page(struct spdk_nvmf_request *req, uint64_t offset,
 
 			if (skip_offset >= entry_size) {
 				skip_offset -= entry_size;
-			} else if(curr_len) {
+			} else if (curr_len) {
 				copy_len = spdk_min((entry_size - skip_offset), curr_len);
 				listen_addr = allowed_listener->listen_addr;
 				spdk_nvmf_fill_discovery_log_entry(&tmp_entry, subsystem, listen_addr, numrec);
 				memcpy(curr_buffer, (char *)&tmp_entry + skip_offset, copy_len);
 				curr_buffer += copy_len;
 				curr_len -= copy_len;
-			} else if(skip_header) {
+			} else if (skip_header) {
 				break;
 			}
 			numrec++;
