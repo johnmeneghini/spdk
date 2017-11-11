@@ -291,7 +291,7 @@ run_create_assoc_test(
 		sizeof(struct nvmf_fc_lsdesc_cr_assoc_cmd) -
 		(2 * sizeof(uint32_t)));
 	to_be16(&ca_rqst.assoc_cmd.ersp_ratio, 5);
-	to_be16(&ca_rqst.assoc_cmd.sqsize, 32);
+	to_be16(&ca_rqst.assoc_cmd.sqsize, 31);
 
 	ls_rqst.rqstbuf.virt = &ca_rqst;
 	ls_rqst.rspbuf.virt = respbuf;
@@ -326,7 +326,8 @@ run_create_conn_test(struct spdk_nvmf_bcm_fc_nport *tgtport,
 		sizeof(struct nvmf_fc_lsdesc_cr_conn_cmd) -
 		(2 * sizeof(uint32_t)));
 	to_be16(&cc_rqst.connect_cmd.ersp_ratio, 20);
-	to_be16(&cc_rqst.connect_cmd.sqsize, 1024);
+	to_be16(&cc_rqst.connect_cmd.sqsize,
+		g_nvmf_tgt.opts.max_queue_depth - 1);
 
 	/* fill in association id descriptor */
 	to_be32(&cc_rqst.assoc_id.desc_tag, FCNVME_LSDESC_ASSOC_ID),
@@ -567,36 +568,40 @@ ls_tests_init(void)
 {
 	uint16_t i;
 
-	g_nvmf_tgt.opts.max_associations = 4;
-	g_nvmf_tgt.opts.max_aq_depth = 32;
-	g_nvmf_tgt.opts.max_queue_depth = 1024;
-	g_nvmf_tgt.opts.max_queues_per_session = 4;
+	bzero(&g_nvmf_tgt, sizeof(g_nvmf_tgt));
+	g_nvmf_tgt.opts.max_aq_depth = 32,
+			g_nvmf_tgt.opts.max_queue_depth = 128,
+					g_nvmf_tgt.opts.max_queues_per_session = 4,
 
-	spdk_nvmf_bcm_fc_ls_init();
-
+							bzero(&fcport, sizeof(struct spdk_nvmf_bcm_fc_port));
+	fcport.hw_port_status = SPDK_FC_PORT_ONLINE;
 	fcport.max_io_queues = 16;
-
 	for (i = 0; i < fcport.max_io_queues; i++) {
 		fcport.io_queues[i].lcore_id = i;
 		fcport.io_queues[i].fc_port = &fcport;
 		fcport.io_queues[i].num_conns = 0;
 		fcport.io_queues[i].cid_cnt = 0;
+		fcport.io_queues[i].free_q_slots = 1024;
+		fcport.io_queues[i].queues.rq_payload.num_buffers = 1024;
 		TAILQ_INIT(&fcport.io_queues[i].connection_list);
 		TAILQ_INIT(&fcport.io_queues[i].in_use_reqs);
 	}
 
+	spdk_nvmf_bcm_fc_ls_init(&fcport);
+
+	bzero(&tgtport, sizeof(struct spdk_nvmf_bcm_fc_nport));
 	tgtport.fc_port = &fcport;
 	TAILQ_INIT(&tgtport.rem_port_list);
 	TAILQ_INIT(&tgtport.fc_associations);
 
-	memset(&rport, 0, sizeof(struct spdk_nvmf_bcm_fc_remote_port_info));
+	bzero(&rport, sizeof(struct spdk_nvmf_bcm_fc_remote_port_info));
 	TAILQ_INSERT_TAIL(&tgtport.rem_port_list, &rport, link);
 }
 
 static void
 ls_tests_fini(void)
 {
-	spdk_nvmf_bcm_fc_ls_fini();
+	spdk_nvmf_bcm_fc_ls_fini(&fcport);
 }
 
 static void
@@ -634,7 +639,8 @@ create_max_assoc_conns_test(void)
 	uint16_t i;
 
 	g_last_rslt = 0;
-	for (i = 0; i < g_nvmf_tgt.opts.max_associations && g_last_rslt == 0; i++) {
+	for (i = 0; i < fcport.ls_rsrc_pool.assocs_count &&
+	     g_last_rslt == 0; i++) {
 		g_test_run_type = TEST_RUN_TYPE_CREATE_ASSOC;
 		run_create_assoc_test(&tgtport);
 		if (g_last_rslt == 0) {
@@ -658,7 +664,7 @@ direct_delete_assoc_test(void)
 	if (g_last_rslt == 0) {
 		/* remove associations by calling delete directly */
 		g_test_run_type = TEST_RUN_TYPE_DIR_DISCONN_CALL;
-		for (i = 0; i < g_nvmf_tgt.opts.max_associations; i++) {
+		for (i = 0; i < fcport.ls_rsrc_pool.assocs_count; i++) {
 			run_direct_disconn_test(&tgtport,
 						from_be64(&assoc_id[i]),
 						true);

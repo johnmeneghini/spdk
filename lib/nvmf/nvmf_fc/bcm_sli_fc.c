@@ -414,16 +414,7 @@ spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 
 	if (spdk_nvmf_bcm_fc_req_in_bdev(fc_req)) {
 		/* Notify bdev */
-		if ((fc_req->fc_conn->conn.type == CONN_TYPE_AQ) ||
-		    (fc_req->req.cmd->nvme_cmd.opc == SPDK_NVME_OPC_FABRIC)) {
-			/* Switch to master lcore */
-			event = spdk_event_allocate(spdk_env_get_master_lcore(),
-						    nvmf_fc_req_bdev_abort,
-						    (void *)fc_req, NULL);
-			spdk_event_call(event);
-		} else {
-			nvmf_fc_req_bdev_abort(fc_req, NULL);
-		}
+		nvmf_fc_req_bdev_abort(fc_req, NULL);
 	} else if (spdk_nvmf_bcm_fc_req_in_xfer(fc_req)) {
 		/* Notify hw */
 		spdk_nvmf_bcm_fc_issue_abort(fc_req->hwqp, fc_req->xri,
@@ -1078,8 +1069,6 @@ static void
 nvmf_fc_io_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 {
 	struct spdk_nvmf_bcm_fc_request *fc_req = arg;
-	struct spdk_nvmf_bcm_fc_conn *fc_conn = fc_req->fc_conn;
-	struct spdk_nvme_cmd *cmd = &fc_req->req.cmd->nvme_cmd;
 	cqe_t *cqe_entry = (cqe_t *)cqe;
 	bool xri_active;
 
@@ -1100,22 +1089,11 @@ nvmf_fc_io_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 
 	/* Write Tranfer done */
 	if (fc_req->state == SPDK_NVMF_BCM_FC_REQ_WRITE_XFER) {
-		struct spdk_event *event = NULL;
-
 		fc_req->transfered_len = cqe_entry->u.generic.word1.total_data_placed;
 
 		spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_WRITE_BDEV);
 
-		if ((fc_conn->conn.type == CONN_TYPE_AQ) ||
-		    (cmd->opc == SPDK_NVME_OPC_FABRIC)) {
-			/* Switch to master lcore for AQ cmds */
-			event = spdk_event_allocate(spdk_env_get_master_lcore(),
-						    nvmf_fc_post_nvme_rqst,
-						    (void *)fc_req, NULL);
-			spdk_event_call(event);
-		} else {
-			nvmf_fc_post_nvme_rqst(fc_req, NULL);
-		}
+		nvmf_fc_post_nvme_rqst(fc_req, NULL);
 		return;
 	}
 	/* Read Tranfer done */
@@ -1159,7 +1137,6 @@ nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req)
 {
 	struct spdk_nvme_cmd *cmd = &fc_req->req.cmd->nvme_cmd;
 	struct spdk_nvmf_bcm_fc_conn *fc_conn = fc_req->fc_conn;
-	struct spdk_event *event = NULL;
 
 	/* Allocate an XRI */
 	fc_req->xri = spdk_nvmf_bcm_fc_get_xri(fc_req->hwqp);
@@ -1227,14 +1204,8 @@ nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req)
 		} else {
 			spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_NONE_BDEV);
 		}
-		if ((fc_conn->conn.type == CONN_TYPE_AQ) || (cmd->opc == SPDK_NVME_OPC_FABRIC)) {
-			/* Switch to master lcore for admin queue commands. */
-			event = spdk_event_allocate(spdk_env_get_master_lcore(),
-						    nvmf_fc_post_nvme_rqst, (void *)fc_req, NULL);
-			spdk_event_call(event);
-		} else {
-			nvmf_fc_post_nvme_rqst(fc_req, NULL);
-		}
+
+		nvmf_fc_post_nvme_rqst(fc_req, NULL);
 	}
 
 	return 0;

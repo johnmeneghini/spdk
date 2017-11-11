@@ -116,7 +116,8 @@ spdk_nvmf_bcm_fc_init_poller(struct spdk_nvmf_bcm_fc_port *fc_port,
 }
 
 void
-spdk_nvmf_bcm_fc_add_poller(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
+spdk_nvmf_bcm_fc_add_poller(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
+			    uint64_t period_microseconds)
 {
 	assert(hwqp);
 
@@ -126,7 +127,7 @@ spdk_nvmf_bcm_fc_add_poller(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 
 	spdk_poller_register(&hwqp->poller, nvmf_fc_queue_poller,
 			     (void *)hwqp, hwqp->lcore_id,
-			     NVMF_BCM_FC_HWQP_POLLER_INTERVAL);
+			     period_microseconds);
 }
 
 
@@ -370,6 +371,9 @@ spdk_nvmf_bcm_fc_hwqp_port_set_online(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 {
 	if (hwqp && (hwqp->state != SPDK_FC_HWQP_ONLINE)) {
 		hwqp->state = SPDK_FC_HWQP_ONLINE;
+		/* reset some queue counters */
+		hwqp->free_q_slots = hwqp->queues.rq_payload.num_buffers;
+		hwqp->num_conns = 0;
 		return SPDK_SUCCESS;
 	} else {
 		return SPDK_ERR_INTERNAL;
@@ -629,17 +633,18 @@ static int
 nvmf_fc_init(uint16_t max_queue_depth, uint32_t max_io_size,
 	     uint32_t in_capsule_data_size)
 {
-	SPDK_NOTICELOG("*** FC Transport Init ***\n");
-
-	spdk_nvmf_bcm_fc_ls_init();
-
 	return 0;
 }
 
 static int
 nvmf_fc_fini(void)
 {
-	spdk_nvmf_bcm_fc_ls_fini();
+	struct spdk_nvmf_bcm_fc_port *fc_port = NULL;
+
+	TAILQ_FOREACH(fc_port, &g_spdk_nvmf_bcm_fc_port_list, link) {
+		spdk_nvmf_bcm_fc_ls_fini(fc_port);
+	}
+
 	return 0;
 }
 
