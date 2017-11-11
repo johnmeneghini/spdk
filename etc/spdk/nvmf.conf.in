@@ -55,9 +55,6 @@
 
 # Define NVMf protocol global options
 [Nvmf]
-  # Maximum number of associations for the system 
-  MaxAssociations 8
- 
   # Maximum admin queue depth
   MaxAqDepth 32
 

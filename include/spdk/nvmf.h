@@ -187,26 +187,25 @@ struct spdk_nvmf_subsystem {
 };
 
 struct spdk_nvmf_tgt_opts {
-	uint16_t                                max_associations;
 	uint16_t				max_queue_depth;
-	uint16_t                                max_aq_depth;
+	uint16_t				max_aq_depth;
 	uint16_t				max_queues_per_session;
 	uint32_t				in_capsule_data_size;
 	uint32_t				max_io_size;
-	uint64_t                                lcore_mask;
-	uint8_t                                 rab;
-	uint8_t                                 ieee[3];
-	uint8_t                                 cmic;
-	uint32_t                                oaes;
-	uint8_t                                 acl;
-	uint8_t                                 aerl;
-	uint8_t                                 elpe;
-	uint8_t                                 npss;
-	uint16_t                                kas;
-	uint8_t                                 vwc;
-	uint16_t                                awun;
-	uint16_t                                awupf;
-	uint32_t                                sgls;
+	uint64_t				lcore_mask;
+	uint8_t					rab;
+	uint8_t					ieee[3];
+	uint8_t					cmic;
+	uint32_t				oaes;
+	uint8_t					acl;
+	uint8_t					aerl;
+	uint8_t					elpe;
+	uint8_t					npss;
+	uint16_t				kas;
+	uint8_t					vwc;
+	uint16_t				awun;
+	uint16_t				awupf;
+	uint32_t				sgls;
 };
 
 struct spdk_nvmf_subsystem *spdk_nvmf_create_subsystem(const char *nqn,

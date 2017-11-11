@@ -55,10 +55,6 @@ struct spdk_nvmf_probe_ctx {
 	struct spdk_nvme_transport_id	trid;
 };
 
-#define SPDK_NVMF_CONFIG_ASSOC_DEFAULT 8
-#define SPDK_NVMF_CONFIG_ASSOC_MIN 2
-#define SPDK_NVMF_CONFIG_ASSOC_MAX 65535
-
 #define SPDK_NVMF_CONFIG_AQ_DEPTH_DEFAULT 32
 #define SPDK_NVMF_CONFIG_AQ_DEPTH_MIN 32
 #define SPDK_NVMF_CONFIG_AQ_DEPTH_MAX 1024
@@ -127,13 +123,6 @@ spdk_nvmf_parse_nvmf_tgt(void)
 	}
 	opts.max_queue_depth = spdk_max(intval, SPDK_NVMF_CONFIG_QUEUE_DEPTH_MIN);
 	opts.max_queue_depth = spdk_min(intval, SPDK_NVMF_CONFIG_QUEUE_DEPTH_MAX);
-
-	intval = spdk_conf_section_get_intval(sp, "MaxAssociations");
-	if (intval < 0) {
-		intval = SPDK_NVMF_CONFIG_ASSOC_DEFAULT;
-	}
-	opts.max_associations = spdk_max(intval, SPDK_NVMF_CONFIG_ASSOC_MIN);
-	opts.max_associations = spdk_min(intval, SPDK_NVMF_CONFIG_ASSOC_MAX);
 
 	intval = spdk_conf_section_get_intval(sp, "MaxAqDepth");
 	if (intval < 0) {
