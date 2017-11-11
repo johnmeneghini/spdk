@@ -68,7 +68,6 @@ spdk_nvmf_tgt_opts_init(struct spdk_nvmf_tgt_opts *opts)
 	TAILQ_INIT(&g_nvmf_tgt.subsystems);
 	TAILQ_INIT(&g_nvmf_tgt.listen_addrs);
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max Associations: %d\n", g_nvmf_tgt.opts.max_associations);
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max Queues Per Session: %d\n",
 		      g_nvmf_tgt.opts.max_queues_per_session);
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max Queue Depth: %d\n", g_nvmf_tgt.opts.max_queue_depth);
