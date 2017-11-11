@@ -53,7 +53,6 @@
 
 #define NVMF_BCM_FC_TRANSPORT_NAME       "bcm_nvmf_fc"
 #define NVMF_FC_MAX_IO_QUEUES            16
-#define NVMF_BCM_FC_HWQP_POLLER_INTERVAL 0
 
 /*
  * End of FC-NVMe Spec. Defintions
@@ -165,10 +164,10 @@ struct spdk_nvmf_bcm_fc_hwqp {
 	struct spdk_poller *poller;
 
 	TAILQ_HEAD(, spdk_nvmf_bcm_fc_conn) connection_list;
-	/* num_conns and cid_cnt used by master to generate (unique) connection IDs */
-	uint32_t num_conns;
-	uint16_t cid_cnt;
-	spdk_fc_hwqp_state_t state;  /* Poller state SPDK_FC_HWQP_OFFLINE, SPDK_FC_HWQP_ONLINE  */
+	uint32_t num_conns; /* number of connections to queue */
+	uint16_t cid_cnt;   /* used to generate unique conn. id for RQ */
+	uint32_t free_q_slots; /* free q slots available for connections  */
+	spdk_fc_hwqp_state_t state;  /* Poller state (e.g. online, offline) */
 
 	/* Internal */
 	struct spdk_mempool *fc_request_pool;
@@ -179,6 +178,56 @@ struct spdk_nvmf_bcm_fc_hwqp {
 	struct spdk_nvmf_bcm_fc_errors counters;
 	uint32_t send_frame_xri;
 	uint8_t send_frame_seqid;
+
+};
+
+/*
+ *  Send Single Request/Response Sequence.
+ */
+struct spdk_nvmf_bcm_fc_send_srsr {
+	bcm_buffer_desc_t rqst;
+	bcm_buffer_desc_t rsp;
+	bcm_buffer_desc_t sgl; /* Note: Len = (2 * bcm_sge_t) */
+	uint16_t rpi;
+};
+
+/*
+ * NVMF FC Association
+ */
+struct spdk_nvmf_bcm_fc_association {
+	uint64_t assoc_id;
+	uint32_t s_id;
+	struct spdk_nvmf_bcm_fc_nport *tgtport;
+	struct spdk_nvmf_bcm_fc_remote_port_info *rport;
+	struct spdk_nvmf_subsystem *subsystem;
+	spdk_nvmf_bcm_fc_object_state_t assoc_state;
+
+	char host_id[SPDK_NVMF_FC_HOST_ID_LEN];
+	char host_nqn[SPDK_NVMF_FC_NQN_MAX_LEN];
+	char sub_nqn[SPDK_NVMF_FC_NQN_MAX_LEN];
+
+	uint16_t conn_count;
+	TAILQ_HEAD(, spdk_nvmf_bcm_fc_conn) fc_conns;
+
+	TAILQ_ENTRY(spdk_nvmf_bcm_fc_association) link;
+
+	/* for port's association free list */
+	TAILQ_ENTRY(spdk_nvmf_bcm_fc_association) port_free_assoc_list_link;
+
+	void *ls_del_op_ctx; /* delete assoc. callback list */
+
+	/* req/resp buffers used to send disconnect to initiator */
+	struct spdk_nvmf_bcm_fc_send_srsr snd_disconn_bufs;
+};
+
+struct spdk_nvmf_bcm_fc_ls_rsrc_pool {
+	void *assocs_mptr;
+	uint32_t assocs_count;
+	TAILQ_HEAD(, spdk_nvmf_bcm_fc_association) assoc_free_list;
+
+	void *conns_mptr;
+	uint32_t conns_count;
+	TAILQ_HEAD(, spdk_nvmf_bcm_fc_conn) fc_conn_free_list;
 };
 
 /*
@@ -199,6 +248,8 @@ struct spdk_nvmf_bcm_fc_port {
 	TAILQ_HEAD(, spdk_nvmf_bcm_fc_nport)nport_list;
 	int	num_nports;
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_port) link;
+
+	struct spdk_nvmf_bcm_fc_ls_rsrc_pool ls_rsrc_pool;
 };
 
 /*
@@ -331,6 +382,9 @@ struct spdk_nvmf_bcm_fc_conn {
 	/* for association's connection list */
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_conn) assoc_link;
 
+	/* for port's free connection list */
+	TAILQ_ENTRY(spdk_nvmf_bcm_fc_conn) port_free_conn_list_link;
+
 	/* for hwqp's connection list */
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_conn) link;
 };
@@ -409,43 +463,6 @@ struct spdk_nvmf_bcm_fc_poller_api_abts_recvd_args {
 	struct spdk_nvmf_bcm_fc_poller_api_cb_info cb_info;
 };
 
-
-/*
- *  Send Single Request/Response Sequence.
- */
-struct spdk_nvmf_bcm_fc_send_srsr {
-	bcm_buffer_desc_t rqst;
-	bcm_buffer_desc_t rsp;
-	bcm_buffer_desc_t sgl; /* Note: Len = (2 * bcm_sge_t) */
-	uint16_t rpi;
-};
-
-/*
- * NVMF FC Association
- */
-struct spdk_nvmf_bcm_fc_association {
-	uint64_t assoc_id;
-	uint32_t s_id;
-	struct spdk_nvmf_bcm_fc_nport *tgtport;
-	struct spdk_nvmf_bcm_fc_remote_port_info *rport;
-	struct spdk_nvmf_subsystem *subsystem;
-	spdk_nvmf_bcm_fc_object_state_t assoc_state;
-
-	char host_id[SPDK_NVMF_FC_HOST_ID_LEN];
-	char host_nqn[SPDK_NVMF_FC_NQN_MAX_LEN];
-	char sub_nqn[SPDK_NVMF_FC_NQN_MAX_LEN];
-
-	uint16_t conn_count;
-	TAILQ_HEAD(fc_conns, spdk_nvmf_bcm_fc_conn) fc_conns;
-
-	TAILQ_ENTRY(spdk_nvmf_bcm_fc_association) link;
-
-	void *ls_del_op_ctx; /* delete assoc. callback list */
-
-	/* req/resp buffers used to send disconnect to initiator */
-	struct spdk_nvmf_bcm_fc_send_srsr snd_disconn_bufs;
-};
-
 /*
  * NVMF LS request structure
  */
@@ -498,9 +515,11 @@ spdk_nvmf_bcm_fc_poller_api_ret_t spdk_nvmf_bcm_fc_poller_api(uint32_t lcore,
 		spdk_nvmf_bcm_fc_poller_api_t api,
 		void *api_args);
 
-void spdk_nvmf_bcm_fc_ls_init(void);
+//void spdk_nvmf_bcm_fc_ls_init(void);
+void spdk_nvmf_bcm_fc_ls_init(struct spdk_nvmf_bcm_fc_port *fc_port);
 
-void spdk_nvmf_bcm_fc_ls_fini(void);
+//void spdk_nvmf_bcm_fc_ls_fini(void);
+void spdk_nvmf_bcm_fc_ls_fini(struct spdk_nvmf_bcm_fc_port *fc_port);
 
 typedef void (*spdk_nvmf_fc_del_assoc_cb)(void *arg, uint32_t err);
 
@@ -528,7 +547,8 @@ void spdk_nvmf_bcm_fc_init_poller_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
 void spdk_nvmf_bcm_fc_init_poller(struct spdk_nvmf_bcm_fc_port *fc_port,
 				  struct spdk_nvmf_bcm_fc_hwqp *hwqp);
 
-void spdk_nvmf_bcm_fc_add_poller(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
+void spdk_nvmf_bcm_fc_add_poller(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
+				 uint64_t period_microseconds);
 
 void spdk_nvmf_bcm_fc_delete_poller(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
 
@@ -583,9 +603,6 @@ bool spdk_nvmf_bcm_fc_nport_remove_rem_port(struct spdk_nvmf_bcm_fc_nport *nport
 		struct spdk_nvmf_bcm_fc_remote_port_info *rem_port);
 
 uint32_t spdk_nvmf_bcm_fc_get_prli_service_params(void);
-
-uint32_t spdk_nvmf_bcm_fc_calc_max_q_depth(uint32_t nRQ, uint32_t RQsz, uint32_t mA,
-		uint32_t mAC, uint32_t AQsz);
 
 spdk_err_t spdk_nvmf_bcm_fc_rport_set_state(struct spdk_nvmf_bcm_fc_remote_port_info *rport,
 		spdk_nvmf_bcm_fc_object_state_t state);

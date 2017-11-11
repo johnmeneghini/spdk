@@ -116,7 +116,8 @@ spdk_nvmf_bcm_fc_init_poller(struct spdk_nvmf_bcm_fc_port *fc_port,
 }
 
 void
-spdk_nvmf_bcm_fc_add_poller(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
+spdk_nvmf_bcm_fc_add_poller(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
+			    uint64_t period_microseconds)
 {
 	assert(hwqp);
 
@@ -126,7 +127,7 @@ spdk_nvmf_bcm_fc_add_poller(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 
 	spdk_poller_register(&hwqp->poller, nvmf_fc_queue_poller,
 			     (void *)hwqp, hwqp->lcore_id,
-			     NVMF_BCM_FC_HWQP_POLLER_INTERVAL);
+			     period_microseconds);
 }
 
 
@@ -374,6 +375,9 @@ spdk_nvmf_bcm_fc_hwqp_port_set_online(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 {
 	if (hwqp && (hwqp->state != SPDK_FC_HWQP_ONLINE)) {
 		hwqp->state = SPDK_FC_HWQP_ONLINE;
+		/* reset some queue counters */
+		hwqp->free_q_slots = hwqp->queues.rq_payload.num_buffers;
+		hwqp->num_conns = 0;
 		return SPDK_SUCCESS;
 	} else {
 		return SPDK_ERR_INTERNAL;
@@ -539,22 +543,6 @@ spdk_nvmf_bcm_fc_port_list_get(uint8_t port_hdl)
 	return NULL;
 }
 
-/*
- * Function to calculate maximum queue depth (reported in mqes)
- */
-uint32_t
-spdk_nvmf_bcm_fc_calc_max_q_depth(uint32_t nRQ, uint32_t RQsz,
-				  uint32_t mA, uint32_t mAC,
-				  uint32_t AQsz)
-{
-	/* adjusted max. AQ's is rounded up to neareset mult. of nRQ */
-	uint32_t adj_mA = mA % nRQ == 0 ? mA : ((mA / nRQ) * nRQ) + nRQ;
-	uint32_t mAQpRQ = adj_mA / nRQ; /* maximum AQ's per RQ */
-	uint32_t mIOQ = (mAC - 1) * mA; /* maximum IOQ's */
-	return ((RQsz - (mAQpRQ * AQsz)) / ((mIOQ / nRQ) +
-					    (mIOQ % nRQ == 0 ? 0 : 1)));
-}
-
 uint32_t
 spdk_nvmf_bcm_fc_get_num_assocs_in_subsystem(uint8_t port_hdl, uint16_t nport_hdl,
 		struct spdk_nvmf_subsystem *subsys)
@@ -633,17 +621,18 @@ static int
 nvmf_fc_init(uint16_t max_queue_depth, uint32_t max_io_size,
 	     uint32_t in_capsule_data_size)
 {
-	SPDK_NOTICELOG("*** FC Transport Init ***\n");
-
-	spdk_nvmf_bcm_fc_ls_init();
-
 	return 0;
 }
 
 static int
 nvmf_fc_fini(void)
 {
-	spdk_nvmf_bcm_fc_ls_fini();
+	struct spdk_nvmf_bcm_fc_port *fc_port = NULL;
+
+	TAILQ_FOREACH(fc_port, &g_spdk_nvmf_bcm_fc_port_list, link) {
+		spdk_nvmf_bcm_fc_ls_fini(fc_port);
+	}
+
 	return 0;
 }
 
