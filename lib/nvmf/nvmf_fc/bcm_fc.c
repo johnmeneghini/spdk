@@ -539,22 +539,6 @@ spdk_nvmf_bcm_fc_port_list_get(uint8_t port_hdl)
 	return NULL;
 }
 
-/*
- * Function to calculate maximum queue depth (reported in mqes)
- */
-uint32_t
-spdk_nvmf_bcm_fc_calc_max_q_depth(uint32_t nRQ, uint32_t RQsz,
-				  uint32_t mA, uint32_t mAC,
-				  uint32_t AQsz)
-{
-	/* adjusted max. AQ's is rounded up to neareset mult. of nRQ */
-	uint32_t adj_mA = mA % nRQ == 0 ? mA : ((mA / nRQ) * nRQ) + nRQ;
-	uint32_t mAQpRQ = adj_mA / nRQ; /* maximum AQ's per RQ */
-	uint32_t mIOQ = (mAC - 1) * mA; /* maximum IOQ's */
-	return ((RQsz - (mAQpRQ * AQsz)) / ((mIOQ / nRQ) +
-					    (mIOQ % nRQ == 0 ? 0 : 1)));
-}
-
 uint32_t
 spdk_nvmf_bcm_fc_get_num_assocs_in_subsystem(uint8_t port_hdl, uint16_t nport_hdl,
 		struct spdk_nvmf_subsystem *subsys)

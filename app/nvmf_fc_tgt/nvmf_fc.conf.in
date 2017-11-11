@@ -45,14 +45,16 @@
 
 # Define NVMf protocol global options
 [Nvmf]
-  # Maximum number of associations for the system 
-  MaxAssociations 8
- 
   # Maximum admin queue depth
   MaxAqDepth 32
 
-  # For FC this is the maximum number of connections per association
-  MaxQueuesPerSession 4
+  # Set the maximum number of outstanding I/O per queue.
+  # Note should divide evenly into 1024
+  MaxQueueDepth 256
+
+  # MaxQueuesPerSession is the maximum number of connections per association.
+  # Includes create association connection (i.e. max. SQs=MaxQueuesPerSession-1)
+  MaxQueuesPerSession 5
 
   # Dont use master and lcore 1(reserved for FCT driver) 
   NvmfReactorMask 0xFC
@@ -170,17 +172,24 @@
 
 # Multiple subsystems are allowed.
 [Subsystem1]
-  NQN nqn.2016-06.io.spdk:cnode2
+  NQN nqn.2016-06.io.spdk:cnode1
   Mode Virtual
   SN SPDK00000000000001
   Namespace Malloc0
   Namespace Malloc1
 
+[Subsystem2]
+  NQN nqn.2016-06.io.spdk:cnode2
+  Mode Virtual
+  SN SPDK00000000000002
+  Namespace Malloc2
+  Namespace Malloc3
+
 # Group of FC initiators WWN.
 [InitiatorGroup0]
   WWN ALL
 
-# FCHbaPort section contains the information related to physical FC
+# HbaPort section contains the information related to physical FC
 # ports in the system.
 [HBAPort0]
   #WWPN 10:00:00:10:c9:12:96:02
