@@ -41,6 +41,8 @@
 #include <spdk/log.h>
 #include <spdk/string.h>
 
+#define FC_LS_HWQP_ID 0xff
+
 #ifndef DEV_VERIFY
 #define DEV_VERIFY assert
 #endif
@@ -60,6 +62,20 @@ static void nvmf_fc_hw_port_dump(void *arg1, void *arg2);
 static void nvmf_fc_hw_port_quiesce_dump_cb(void *ctx, spdk_err_t err);
 
 /* ******************* PRIVATE HELPER FUNCTIONS - BEGIN ************** */
+
+static void
+nvmf_fc_tgt_hw_port_init_hwqp(struct spdk_nvmf_bcm_fc_port *fc_port,
+			      struct spdk_nvmf_bcm_fc_hwqp *hwqp,
+			      uint32_t qp_id,
+			      uint32_t lcore_id)
+{
+	TAILQ_INIT(&hwqp->connection_list);
+	TAILQ_INIT(&hwqp->pending_xri_list);
+	hwqp->lcore_id  = lcore_id;
+	hwqp->hwqp_id = qp_id;
+	hwqp->send_frame_xri = fc_port->xri_base + 1 + qp_id;
+	spdk_nvmf_bcm_fc_init_poller(fc_port, hwqp);
+}
 
 static uint32_t
 nvmf_fc_tgt_get_next_lcore(uint32_t prev_core)
@@ -81,6 +97,23 @@ nvmf_fc_tgt_get_next_lcore(uint32_t prev_core)
 	}
 
 	return UINT32_MAX;
+}
+
+/* Global hwqp_id and helper functions */
+static uint32_t g_hwqp_id;
+
+static inline uint32_t
+nvmf_tgt_fc_get_hwqp_id(void)
+{
+	uint32_t hwqp_id = g_hwqp_id;
+	g_hwqp_id++;
+	DEV_VERIFY(g_hwqp_id < FC_LS_HWQP_ID);
+	return hwqp_id;
+}
+uint32_t
+nvmf_tgt_fc_get_curr_hwqp_id(void)
+{
+	return g_hwqp_id;
 }
 
 /*
@@ -137,7 +170,6 @@ nvmf_fc_tgt_hw_port_data_init(struct spdk_nvmf_bcm_fc_port *fc_port,
 	/* Used a high number for the LS HWQP so that it does not clash with the
 	 * IO HWQP's and immediately shows a LS queue during tracing.
 	 */
-#define FC_LS_HWQP_ID 0xff
 	uint32_t                    poweroftwo = 1;
 	char                        poolname[32];
 	struct spdk_nvmf_bcm_fc_xri *ring_xri     = NULL;
@@ -210,28 +242,34 @@ nvmf_fc_tgt_hw_port_data_init(struct spdk_nvmf_bcm_fc_port *fc_port,
 	 */
 	spdk_nvmf_bcm_fc_init_poller(fc_port, &fc_port->ls_queue);
 
+
+	/*
+	 * Initialize admin queue (i.e. hwqp[0]) on master core
+	 */
+	fc_port->io_queues[0].queues = args->io_queues[0];
+
+	nvmf_fc_tgt_hw_port_init_hwqp(fc_port, &fc_port->io_queues[0], 0, spdk_env_get_master_lcore());
+
 	/*
 	 * Initialize the IO queues.
 	 */
-	for (i = 0; i < NVMF_FC_MAX_IO_QUEUES; i++) {
+	for (i = 1; i < NVMF_FC_MAX_IO_QUEUES; i++) {
+
 		fc_port->io_queues[i].queues = args->io_queues[i];
-
-		/* Initialize the session list on this FC HW Q */
-		TAILQ_INIT(&fc_port->io_queues[i].connection_list);
-		TAILQ_INIT(&fc_port->io_queues[i].pending_xri_list);
-
 		lcore_id = nvmf_fc_tgt_get_next_lcore(lcore_id);
 		if (lcore_id == UINT32_MAX) {
 			goto err;
 		}
 
-		fc_port->io_queues[i].lcore_id  = lcore_id;
-		fc_port->io_queues[i].hwqp_id   = i;
-		fc_port->io_queues[i].send_frame_xri = fc_port->xri_base + 1 + i;
-
-		spdk_nvmf_bcm_fc_init_poller(fc_port, &fc_port->io_queues[i]);
+		nvmf_fc_tgt_hw_port_init_hwqp(fc_port, &fc_port->io_queues[i], i, lcore_id);
 	}
+
 	fc_port->max_io_queues = NVMF_FC_MAX_IO_QUEUES;
+
+	/*
+	 * Initialize the LS processing for port
+	 */
+	spdk_nvmf_bcm_fc_ls_init(fc_port);
 
 	/*
 	 * Initialize the list of nport on this HW port.
@@ -1113,7 +1151,6 @@ nvmf_fc_hw_port_init(void *arg1, void *arg2)
 	spdk_nvmf_bcm_fc_hw_port_init_args_t *args     = (spdk_nvmf_bcm_fc_hw_port_init_args_t *)arg1;
 	spdk_nvmf_bcm_fc_callback             cb_func  = (spdk_nvmf_bcm_fc_callback)arg2;
 	spdk_err_t                            err      = SPDK_SUCCESS;
-	static bool                           ioq_depth_adj_needed = true;
 
 	/*
 	 * 1. Check for duplicate initialization.
@@ -1150,26 +1187,6 @@ nvmf_fc_hw_port_init(void *arg1, void *arg2)
 	 * 4. Add this port to the global fc port list in the library.
 	 */
 	spdk_nvmf_bcm_fc_port_list_add(fc_port);
-
-	/*
-	 * 5. Update the g_nvmf_tgt.max_queue_depth (if necessary)
-	 *    max_queue_depth is used to set MQES property
-	 */
-
-	if (ioq_depth_adj_needed) {
-		g_nvmf_tgt.opts.max_queue_depth =
-			spdk_nvmf_bcm_fc_calc_max_q_depth(
-				fc_port->max_io_queues,
-				fc_port->io_queues[0].queues.
-				rq_payload.num_buffers,
-				g_nvmf_tgt.opts.max_associations,
-				g_nvmf_tgt.opts.max_queues_per_session,
-				g_nvmf_tgt.opts.max_aq_depth);
-
-		ioq_depth_adj_needed = false;
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "MAX SQ size=%d.\n",
-			      g_nvmf_tgt.opts.max_queue_depth);
-	}
 
 err:
 	if (err && fc_port) {
@@ -1216,16 +1233,23 @@ nvmf_fc_hw_port_online(void *arg1, void *arg2)
 		 */
 		hwqp = &fc_port->ls_queue;
 		(void)spdk_nvmf_bcm_fc_hwqp_port_set_online(hwqp);
-		spdk_nvmf_bcm_fc_add_poller(hwqp);
+		spdk_nvmf_bcm_fc_add_poller(hwqp, SPDK_NVMF_BCM_FC_LS_POLLER_INTERVAL);
 
 		/*
-		 * 4. Cycle through all the io queues and setup a
+		 * 4. Register a poller function to poll the admin queue.
+		 */
+		hwqp = &fc_port->io_queues[0];
+		(void)spdk_nvmf_bcm_fc_hwqp_port_set_online(hwqp);
+		spdk_nvmf_bcm_fc_add_poller(hwqp, SPDK_NVMF_BCM_FC_AQ_POLLER_INTERVAL);
+
+		/*
+		 * 5. Cycle through all the io queues and setup a
 		 *    hwqp poller for each.
 		 */
-		for (i = 0; i < (int)fc_port->max_io_queues; i++) {
+		for (i = 1; i < (int)fc_port->max_io_queues; i++) {
 			hwqp = &fc_port->io_queues[i];
 			(void)spdk_nvmf_bcm_fc_hwqp_port_set_online(hwqp);
-			spdk_nvmf_bcm_fc_add_poller(hwqp);
+			spdk_nvmf_bcm_fc_add_poller(hwqp, SPDK_NVMF_BCM_FC_IOQ_POLLER_INTERVAL);
 		}
 	} else {
 		SPDK_ERRLOG("Unable to find the SPDK FC port %d\n", args->port_handle);

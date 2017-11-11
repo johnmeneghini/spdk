@@ -43,6 +43,13 @@
 #define SPDK_FC_HW_DUMP_BUF_SIZE (10 * 4096)
 #define SPDK_FC_HW_DUMP_REASON_STR_MAX_SIZE 256
 
+/*
+ * Queue poller intervals in msec
+ */
+#define SPDK_NVMF_BCM_FC_IOQ_POLLER_INTERVAL 0
+#define SPDK_NVMF_BCM_FC_AQ_POLLER_INTERVAL  100000
+#define SPDK_NVMF_BCM_FC_LS_POLLER_INTERVAL  100000
+
 /**
  * \enum	spdk_fc_event_t
  *

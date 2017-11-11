@@ -43,6 +43,13 @@
 #define SPDK_FC_HW_DUMP_BUF_SIZE (10 * 4096)
 #define SPDK_FC_HW_DUMP_REASON_STR_MAX_SIZE 256
 
+/*
+ * Queue poller intevals in msecs
+ */
+#define SPDK_NVMF_BCM_FC_IOQ_POLLER_INTERVAL 0
+#define SPDK_NVMF_BCM_FC_AQ_POLLER_INTERVAL  100000
+#define SPDK_NVMF_BCM_FC_LS_POLLER_INTERVAL  100000
+
 /**
  * \enum	spdk_fc_event_t
  *
@@ -379,5 +386,7 @@ struct spdk_nvmf_bcm_fc_queue_dump_info {
 };
 
 typedef struct spdk_nvmf_bcm_fc_queue_dump_info spdk_nvmf_bcm_fc_queue_dump_info_t;
+
+uint32_t nvmf_tgt_fc_get_curr_hwqp_id(void);
 
 #endif
