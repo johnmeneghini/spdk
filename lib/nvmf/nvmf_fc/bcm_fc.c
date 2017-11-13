@@ -251,10 +251,6 @@ spdk_nvmf_bcm_fc_handle_abts_frame(struct spdk_nvmf_bcm_fc_nport *nport, uint16_
 
 	return;
 bls_rej:
-	if (ctx) {
-		spdk_free(ctx);
-	}
-
 	if (args) {
 		spdk_free(args);
 	}
