@@ -823,3 +823,53 @@ spdk_nvmf_session_async_event_request(struct spdk_nvmf_request *req)
 	session->aer_req = req;
 	return SPDK_NVMF_REQUEST_EXEC_STATUS_ASYNCHRONOUS;
 }
+
+static struct spdk_nvmf_conn *
+spdk_nvmf_get_connection(struct spdk_nvmf_session *session, uint16_t qid)
+{
+	struct spdk_nvmf_conn *conn = NULL, *tmp;
+	TAILQ_FOREACH_SAFE(conn, &session->connections, link, tmp) {
+		if (conn->qid == qid) {
+			return conn;
+		}
+	}
+	return NULL;
+}
+
+uint16_t
+spdk_nvmf_get_max_queue_depth(struct spdk_nvmf_session *session, uint16_t qid)
+{
+	struct spdk_nvmf_conn *conn = spdk_nvmf_get_connection(session, qid);
+	if (conn) {
+		return conn->sq_head_max;
+	}
+	return 0;
+}
+
+void
+spdk_nvmf_populate_io_queue_depths(struct spdk_nvmf_session *session,
+				   uint16_t *max_io_queue_depths, uint16_t num_io_queues)
+{
+	struct spdk_nvmf_conn *conn = NULL, *tmp;
+	uint16_t curr_q_index = 0;
+
+	if (!max_io_queue_depths) {
+		SPDK_ERRLOG("NULL container passed to populate queue depths\n");
+		return;
+	}
+
+	if (num_io_queues != (session->num_connections - 1)) {
+		SPDK_ERRLOG("Size of container passed does not match number of IO queues while populating queue depths (%d:%d)\n",
+			    num_io_queues, session->num_connections);
+		return;
+	}
+
+	TAILQ_FOREACH_SAFE(conn, &session->connections, link, tmp) {
+		if (conn->qid == CONN_TYPE_AQ) {
+			continue;
+		}
+
+		max_io_queue_depths[curr_q_index] = conn->sq_head_max;
+		curr_q_index++;
+	}
+}

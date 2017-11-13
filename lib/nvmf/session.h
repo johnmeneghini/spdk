@@ -136,4 +136,8 @@ int spdk_nvmf_session_get_features_async_event_configuration(struct spdk_nvmf_re
 
 int spdk_nvmf_session_async_event_request(struct spdk_nvmf_request *req);
 
+uint16_t spdk_nvmf_get_max_queue_depth(struct spdk_nvmf_session *session, uint16_t qid);
+void spdk_nvmf_populate_io_queue_depths(struct spdk_nvmf_session *session,
+					uint16_t *max_io_queue_depths, uint16_t num_io_queues);
+
 #endif
