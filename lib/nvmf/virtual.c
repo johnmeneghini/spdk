@@ -151,7 +151,7 @@ nvmf_virtual_ctrlr_complete_cmd(struct spdk_bdev_io *bdev_io, bool success,
 		free(req->unmap_bdesc);
 	}
 
-	spdk_bdev_io_get_nvme_status(bdev_io, &sc, &sct, &dnr);
+	spdk_bdev_io_get_nvme_status(bdev_io, &sct, &sc, &dnr);
 	response->status.sc = sc;
 	response->status.sct = sct;
 	response->status.dnr = dnr;
