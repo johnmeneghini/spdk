@@ -555,6 +555,59 @@ spdk_nvmf_bcm_fc_calc_max_q_depth(uint32_t nRQ, uint32_t RQsz,
 					    (mIOQ % nRQ == 0 ? 0 : 1)));
 }
 
+uint32_t
+spdk_nvmf_bcm_fc_get_num_assocs_in_subsystem(uint8_t port_hdl, uint16_t nport_hdl,
+		struct spdk_nvmf_subsystem *subsys)
+{
+	struct spdk_nvmf_bcm_fc_association *assoc = NULL;
+	uint32_t num_assocs = 0;
+	struct spdk_nvmf_bcm_fc_nport *fc_nport = NULL;
+
+	if (!subsys) {
+		return 0;
+	}
+
+	fc_nport = spdk_nvmf_bcm_fc_nport_get(port_hdl, nport_hdl);
+	if (!fc_nport) {
+		return 0;
+	}
+
+
+	TAILQ_FOREACH(assoc, &fc_nport->fc_associations, link) {
+		if (assoc->subsystem == subsys) {
+			++num_assocs;
+		}
+	}
+
+	return num_assocs;
+}
+
+bool
+spdk_nvmf_bcm_fc_is_spdk_session_on_nport(uint8_t port_hdl, uint16_t nport_hdl,
+		struct spdk_nvmf_session *session)
+{
+	struct spdk_nvmf_bcm_fc_nport *fc_nport = NULL;
+
+	if (!session) {
+		return false;
+	}
+
+	fc_nport = spdk_nvmf_bcm_fc_nport_get(port_hdl, nport_hdl);
+	if (!fc_nport) {
+		return false;
+	}
+
+	struct spdk_nvmf_bcm_fc_session *fc_session = nvmf_fc_get_fc_session(session);
+	if (fc_session) {
+		if (fc_session->fc_assoc) {
+			if (fc_session->fc_assoc->tgtport == fc_nport) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 /* Transport API callbacks begin here */
 
 static int
