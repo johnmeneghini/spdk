@@ -739,12 +739,12 @@ nvmf_virtual_ctrlr_process_io_cleanup(struct spdk_nvmf_request *req)
 	/* Cleanup any buffers allocated by bdev. */
 	switch (cmd->opc) {
 	case SPDK_NVME_OPC_READ:
-		if (req->iovcnt) {
+		if (req->bdev_io && req->iovcnt) {
 			spdk_bdev_read_fini(req->bdev_io, req->iov, req->iovcnt, req->iovctx);
 		}
 		break;
 	case SPDK_NVME_OPC_WRITE:
-		if (req->iovcnt) {
+		if (req->bdev_io && req->iovcnt) {
 			spdk_bdev_write_fini(req->bdev_io, req->iov, req->iovcnt, req->iovctx);
 		}
 	default:
