@@ -402,12 +402,12 @@ extern uint64_t ocs_get_tsc(void);
  */
 #define ocs_memset(mem, c, len) memset(mem, c, len)
 
-#define LOG_CRIT        0
-#define LOG_ERR         1
-#define LOG_WARN        2
-#define LOG_INFO        3
-#define LOG_TEST	4
-#define LOG_DEBUG       5
+#define OCS_LOG_CRIT        0
+#define OCS_LOG_ERR         1
+#define OCS_LOG_WARN        2
+#define OCS_LOG_INFO        3
+#define OCS_LOG_TEST	4
+#define OCS_LOG_DEBUG       5
 
 extern const char *ocs_display_name(void *os);
 extern uint32_t ocs_instance(void *os);
@@ -416,12 +416,12 @@ extern int loglevel;
 
 extern void _ocs_log(void *os, const char *fmt, ...) __attribute__((format(printf,2,3)));
 
-#define ocs_log_crit(os, fmt, ...)	ocs_log(os, LOG_CRIT, "CRIT: " fmt, ##__VA_ARGS__);
-#define ocs_log_err(os, fmt, ...)	ocs_log(os, LOG_ERR, "ERR: " fmt, ##__VA_ARGS__);
-#define ocs_log_warn(os, fmt, ...)	ocs_log(os, LOG_WARN, "WARN: " fmt, ##__VA_ARGS__);
-#define ocs_log_info(os, fmt, ...)	ocs_log(os, LOG_INFO, fmt, ##__VA_ARGS__);
-#define ocs_log_test(os, fmt, ...)	ocs_log(os, LOG_TEST, "TEST: " fmt, ##__VA_ARGS__);
-#define ocs_log_debug(os, fmt, ...)	ocs_log(os, LOG_DEBUG, "DEBUG: " fmt, ##__VA_ARGS__);
+#define ocs_log_crit(os, fmt, ...)	ocs_log(os, OCS_LOG_CRIT, "CRIT: " fmt, ##__VA_ARGS__);
+#define ocs_log_err(os, fmt, ...)	ocs_log(os, OCS_LOG_ERR, "ERR: " fmt, ##__VA_ARGS__);
+#define ocs_log_warn(os, fmt, ...)	ocs_log(os, OCS_LOG_WARN, "WARN: " fmt, ##__VA_ARGS__);
+#define ocs_log_info(os, fmt, ...)	ocs_log(os, OCS_LOG_INFO, fmt, ##__VA_ARGS__);
+#define ocs_log_test(os, fmt, ...)	ocs_log(os, OCS_LOG_TEST, "TEST: " fmt, ##__VA_ARGS__);
+#define ocs_log_debug(os, fmt, ...)	ocs_log(os, OCS_LOG_DEBUG, "DEBUG: " fmt, ##__VA_ARGS__);
 
 #define ocs_log(os, level, fmt, ...) \
 	do { \

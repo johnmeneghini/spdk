@@ -175,9 +175,15 @@ ocs_pci_enumerate(int (*enum_cb)(void *enum_ctx, struct spdk_pci_device *pci_dev
 	g_ocs_pci_enum_ctx.user_enum_cb = enum_cb;
 	g_ocs_pci_enum_ctx.user_enum_ctx = enum_ctx;
 
+#if RTE_VERSION >= RTE_VERSION_NUM(17, 05, 0, 4)
+	rte_pci_register(&ocs_rte_driver);
+	rc = rte_pci_probe();
+	rte_pci_unregister(&ocs_rte_driver);
+#else
 	rte_eal_pci_register(&ocs_rte_driver);
 	rc = rte_eal_pci_probe();
 	rte_eal_pci_unregister(&ocs_rte_driver);
+#endif
 
 	return rc;
 }

@@ -757,7 +757,7 @@ ocs_scsi_recv_cmd_process(void *arg1, void *arg2)
 		task->scsi.dxfer_dir 	= SPDK_SCSI_DIR_FROM_DEV;
 		task->scsi.iovs[0].iov_base = NULL;
 		task->scsi.offset 	= 0;
-		task->scsi.length 	= MIN(SPDK_BDEV_LARGE_RBUF_MAX_SIZE,
+		task->scsi.length 	= MIN(SPDK_BDEV_LARGE_BUF_MAX_SIZE,
 						task->scsi.transfer_len);
 
 		spdk_fc_queue_task(io, task);
@@ -774,7 +774,7 @@ ocs_scsi_recv_cmd_process(void *arg1, void *arg2)
 			subtask->scsi.iovs[0].iov_base	= NULL;
 			subtask->mobj 		= NULL;
 			subtask->scsi.offset 	= offset;
-			subtask->scsi.length 	= MIN(SPDK_BDEV_LARGE_RBUF_MAX_SIZE,
+			subtask->scsi.length 	= MIN(SPDK_BDEV_LARGE_BUF_MAX_SIZE,
 					remaining_size);
 
 			TAILQ_INSERT_TAIL(&task->fc_subtask_list, subtask, fc_link);
@@ -795,7 +795,7 @@ ocs_scsi_recv_cmd_process(void *arg1, void *arg2)
 		task->scsi.dxfer_dir	= SPDK_SCSI_DIR_TO_DEV;
 		task->scsi.offset	= 0;
 		task->scsi.iovs[0].iov_base	= NULL;
-		task->scsi.length	= MIN(SPDK_BDEV_LARGE_RBUF_MAX_SIZE,
+		task->scsi.length	= MIN(SPDK_BDEV_LARGE_BUF_MAX_SIZE,
 						task->scsi.transfer_len);
 
 		/* Allocate write buffer for task. */	
@@ -827,7 +827,7 @@ ocs_scsi_recv_cmd_process(void *arg1, void *arg2)
 			}
 
 			subtask->scsi.offset	= offset;
-			subtask->scsi.length	= MIN(SPDK_BDEV_LARGE_RBUF_MAX_SIZE,
+			subtask->scsi.length	= MIN(SPDK_BDEV_LARGE_BUF_MAX_SIZE,
 					remaining_size);
 			subtask->scsi.iovs[0].iov_base = subtask->mobj->buf;
 			subtask->scsi.iovs[0].iov_len  = subtask->scsi.length;

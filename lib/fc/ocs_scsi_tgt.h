@@ -40,6 +40,7 @@
 
 #include "ocs_scsi.h"
 #include "spdk/scsi.h"
+#include "scsi/scsi_internal.h"
 
 #define OCS_SPDK_BUILD_NODE_NAME \
 	do { \

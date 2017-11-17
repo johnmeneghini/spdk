@@ -126,7 +126,7 @@ ocs_free_nvme_buffers(bcm_buffer_desc_t *buffers)
 		spdk_dma_free(buffers->virt);
 	}
 
-	spdk_free(buffers);
+	free(buffers);
 }
 
 static bcm_buffer_desc_t *
@@ -137,7 +137,7 @@ ocs_alloc_nvme_buffers(int size, int num_entries)
 	uint64_t phys;
 	bcm_buffer_desc_t *buffers = NULL, *buffer;
 
-	buffers = spdk_calloc(num_entries, sizeof(bcm_buffer_desc_t));
+	buffers = calloc(num_entries, sizeof(bcm_buffer_desc_t));
 	if (!buffers) {
 		goto error;
 	}
@@ -158,7 +158,7 @@ ocs_alloc_nvme_buffers(int size, int num_entries)
 	return buffers;
 error:
 	if (buffers) {
-		spdk_free(buffers);
+		free(buffers);
 	}
 	return NULL;
 }

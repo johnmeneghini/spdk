@@ -66,7 +66,7 @@ static int
 spdk_fc_initialize_all_pools(void)
 {
 	struct spdk_fc_globals *fc = &g_spdk_fc;
-	int mobj_size = SPDK_BDEV_LARGE_RBUF_MAX_SIZE + sizeof(struct spdk_mobj) + 512;
+	int mobj_size = SPDK_BDEV_LARGE_BUF_MAX_SIZE + sizeof(struct spdk_mobj) + 512;
 
 
 	/* create scsi_task pool */
