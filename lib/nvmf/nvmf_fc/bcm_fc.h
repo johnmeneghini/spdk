@@ -251,6 +251,7 @@ struct spdk_nvmf_bcm_fc_port {
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_port) link;
 
 	struct spdk_nvmf_bcm_fc_ls_rsrc_pool ls_rsrc_pool;
+	void *port_ctx;
 };
 
 /*
