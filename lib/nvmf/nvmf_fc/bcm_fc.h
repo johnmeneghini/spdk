@@ -133,6 +133,7 @@ struct spdk_nvmf_bcm_fc_errors {
 	uint32_t fc_req_buf_err;
 	uint32_t aq_buf_alloc_err;
 	uint32_t write_buf_alloc_err;
+	uint32_t read_buf_alloc_err;
 	uint32_t unexpected_err;
 	uint32_t nvme_cmd_iu_err;
 	uint32_t nvme_cmd_xfer_err;
@@ -312,6 +313,7 @@ typedef enum {
 	SPDK_NVMF_BCM_FC_REQ_SUCCESS,
 	SPDK_NVMF_BCM_FC_REQ_FAILED,
 	SPDK_NVMF_BCM_FC_REQ_ABORTED,
+	SPDK_NVMF_BCM_FC_REQ_PENDING,
 } spdk_nvmf_bcm_fc_request_state_t;
 
 /*

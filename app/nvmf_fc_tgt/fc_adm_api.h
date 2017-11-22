@@ -387,6 +387,5 @@ struct spdk_nvmf_bcm_fc_queue_dump_info {
 
 typedef struct spdk_nvmf_bcm_fc_queue_dump_info spdk_nvmf_bcm_fc_queue_dump_info_t;
 
-uint32_t nvmf_tgt_fc_get_curr_hwqp_id(void);
 
 #endif

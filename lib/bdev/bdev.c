@@ -813,6 +813,8 @@ bdev_io_deferred_completion(void *arg1, void *arg2)
 	struct spdk_bdev_io *bdev_io = arg1;
 	enum spdk_bdev_io_status status = (enum spdk_bdev_io_status)arg2;
 
+	assert(bdev_io->in_submit_request == false);
+
 	spdk_bdev_io_complete(bdev_io, status);
 }
 
@@ -896,9 +898,11 @@ spdk_bdev_io_get_nvme_status(const struct spdk_bdev_io *bdev_io, int *sct, int *
 	} else if (bdev_io->status == SPDK_BDEV_IO_STATUS_SUCCESS) {
 		*sct = SPDK_NVME_SCT_GENERIC;
 		*sc = SPDK_NVME_SC_SUCCESS;
+		*dnr = 0;
 	} else {
 		*sct = SPDK_NVME_SCT_GENERIC;
 		*sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
+		*dnr = 1;
 	}
 }
 
