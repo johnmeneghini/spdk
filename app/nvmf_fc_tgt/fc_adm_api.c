@@ -99,23 +99,6 @@ nvmf_fc_tgt_get_next_lcore(uint32_t prev_core)
 	return UINT32_MAX;
 }
 
-/* Global hwqp_id and helper functions */
-static uint32_t g_hwqp_id;
-
-static inline uint32_t
-nvmf_tgt_fc_get_hwqp_id(void)
-{
-	uint32_t hwqp_id = g_hwqp_id;
-	g_hwqp_id++;
-	DEV_VERIFY(g_hwqp_id < FC_LS_HWQP_ID);
-	return hwqp_id;
-}
-uint32_t
-nvmf_tgt_fc_get_curr_hwqp_id(void)
-{
-	return g_hwqp_id;
-}
-
 /*
  * Re-initialize the FC-Port after an offline event.
  * Only the queue information needs to be populated. XRI, lcore and other hwqp information remains

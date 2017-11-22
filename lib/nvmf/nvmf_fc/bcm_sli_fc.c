@@ -59,7 +59,8 @@ char *fc_req_state_strs[] = {
 	"SPDK_NVMF_BCM_FC_REQ_NONE_BDEV",
 	"SPDK_NVMF_BCM_FC_REQ_NONE_RSP",
 	"SPDK_NVMF_BCM_FC_REQ_SUCCESS",
-	"SPDK_NVMF_BCM_FC_REQ_FAILED"
+	"SPDK_NVMF_BCM_FC_REQ_FAILED",
+	"SPDK_NVMF_BCM_FC_REQ_PENDING"
 };
 
 void spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
@@ -67,7 +68,6 @@ void spdk_nvmf_bcm_fc_free_req(struct spdk_nvmf_bcm_fc_request *fc_req,
 			       bool xri_active);
 int spdk_nvmf_bcm_fc_init_rqpair_buffers(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
 int spdk_nvmf_bcm_fc_create_req_mempool(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
-int nvmf_fc_recv_data(struct spdk_nvmf_bcm_fc_request *fc_req);
 int spdk_nvmf_bcm_fc_xmt_ls_rsp(struct spdk_nvmf_bcm_fc_nport *tgtport,
 				struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst);
 int spdk_nvmf_bcm_fc_handle_rsp(struct spdk_nvmf_bcm_fc_request *req);
@@ -100,8 +100,8 @@ nvmf_fc_advance_conn_sqhead(struct spdk_nvmf_conn *conn)
 static inline bool
 nvmf_fc_sq_90percent_full(struct spdk_nvmf_conn *conn)
 {
-	/* TODO: Figure how to calculate this. */
-	return true;
+	/* TODO: Defer to next phase: */
+	return false;
 }
 
 static inline struct spdk_nvmf_bcm_fc_conn *
@@ -259,7 +259,7 @@ spdk_nvmf_bcm_fc_req_set_state(struct spdk_nvmf_bcm_fc_request *fc_req,
 
 
 static inline bool
-spdk_nvmf_bcm_fc_req_in_bdev(struct spdk_nvmf_bcm_fc_request *fc_req)
+nvmf_fc_req_in_bdev(struct spdk_nvmf_bcm_fc_request *fc_req)
 {
 	switch (fc_req->state) {
 	case SPDK_NVMF_BCM_FC_REQ_READ_BDEV:
@@ -272,7 +272,7 @@ spdk_nvmf_bcm_fc_req_in_bdev(struct spdk_nvmf_bcm_fc_request *fc_req)
 }
 
 static inline bool
-spdk_nvmf_bcm_fc_req_in_xfer(struct spdk_nvmf_bcm_fc_request *fc_req)
+nvmf_fc_req_in_xfer(struct spdk_nvmf_bcm_fc_request *fc_req)
 {
 	switch (fc_req->state) {
 	case SPDK_NVMF_BCM_FC_REQ_READ_XFER:
@@ -287,7 +287,7 @@ spdk_nvmf_bcm_fc_req_in_xfer(struct spdk_nvmf_bcm_fc_request *fc_req)
 }
 
 static inline void
-spdk_nvmf_bcm_fc_process_pending_req(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
+nvmf_fc_process_pending_req(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 {
 	struct spdk_nvmf_bcm_fc_conn *fc_conn = NULL;
 	struct spdk_nvmf_bcm_fc_request *fc_req = NULL, *tmp;
@@ -310,7 +310,7 @@ spdk_nvmf_bcm_fc_process_pending_req(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 }
 
 static inline bool
-spdk_nvmf_bcm_fc_req_in_pending(struct spdk_nvmf_bcm_fc_request *fc_req)
+nvmf_fc_req_in_pending(struct spdk_nvmf_bcm_fc_request *fc_req)
 {
 	struct spdk_nvmf_bcm_fc_request *tmp = NULL;
 
@@ -320,30 +320,6 @@ spdk_nvmf_bcm_fc_req_in_pending(struct spdk_nvmf_bcm_fc_request *fc_req)
 		}
 	}
 	return false;
-}
-
-void
-spdk_nvmf_bcm_fc_req_abort_complete(void *arg1, void *arg2)
-{
-	struct spdk_nvmf_bcm_fc_request *fc_req =
-		(struct spdk_nvmf_bcm_fc_request *)arg1;
-	fc_caller_ctx_t *ctx = NULL, *tmp = NULL;
-
-	/* Request abort completed. Notify all the callbacks */
-	TAILQ_FOREACH_SAFE(ctx, &fc_req->abort_cbs, link, tmp) {
-		/* Notify */
-		ctx->cb(fc_req->hwqp, 0, ctx->cb_args);
-		/* Remove */
-		TAILQ_REMOVE(&fc_req->abort_cbs, ctx, link);
-		/* free */
-		free(ctx);
-	}
-
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
-		      "FC Request(%p) in state :%s aborted", fc_req,
-		      fc_req_state_strs[fc_req->state]);
-
-	spdk_nvmf_bcm_fc_free_req(fc_req, false);
 }
 
 static void
@@ -373,6 +349,30 @@ nvmf_fc_req_bdev_abort(void *arg1, void *arg2)
 }
 
 void
+spdk_nvmf_bcm_fc_req_abort_complete(void *arg1, void *arg2)
+{
+	struct spdk_nvmf_bcm_fc_request *fc_req =
+		(struct spdk_nvmf_bcm_fc_request *)arg1;
+	fc_caller_ctx_t *ctx = NULL, *tmp = NULL;
+
+	/* Request abort completed. Notify all the callbacks */
+	TAILQ_FOREACH_SAFE(ctx, &fc_req->abort_cbs, link, tmp) {
+		/* Notify */
+		ctx->cb(fc_req->hwqp, 0, ctx->cb_args);
+		/* Remove */
+		TAILQ_REMOVE(&fc_req->abort_cbs, ctx, link);
+		/* free */
+		free(ctx);
+	}
+
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
+		      "FC Request(%p) in state :%s aborted", fc_req,
+		      fc_req_state_strs[fc_req->state]);
+
+	spdk_nvmf_bcm_fc_free_req(fc_req, false);
+}
+
+void
 spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 			   bool send_abts, spdk_nvmf_bcm_fc_caller_cb cb,
 			   void *cb_args)
@@ -397,7 +397,7 @@ spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 	/* If the port is quiesced because of an adapter dump
 	 * we kill the outstanding commands */
 	kill_req = (fc_req->hwqp->fc_port->hw_port_status == SPDK_FC_PORT_QUIESCED_FOR_DUMP) ? true : false;
-	if (kill_req && spdk_nvmf_bcm_fc_req_in_xfer(fc_req)) {
+	if (kill_req && nvmf_fc_req_in_xfer(fc_req)) {
 		/* Execute callback if the request is in transfer state and has
 		 * to be aborted. */
 		fc_req->is_aborted = true;
@@ -412,14 +412,14 @@ spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 	/* Mark request as aborted */
 	fc_req->is_aborted = true;
 
-	if (spdk_nvmf_bcm_fc_req_in_bdev(fc_req)) {
+	if (nvmf_fc_req_in_bdev(fc_req)) {
 		/* Notify bdev */
 		nvmf_fc_req_bdev_abort(fc_req, NULL);
-	} else if (spdk_nvmf_bcm_fc_req_in_xfer(fc_req)) {
+	} else if (nvmf_fc_req_in_xfer(fc_req)) {
 		/* Notify hw */
 		spdk_nvmf_bcm_fc_issue_abort(fc_req->hwqp, fc_req->xri,
 					     send_abts, NULL, NULL);
-	} else if (spdk_nvmf_bcm_fc_req_in_pending(fc_req)) {
+	} else if (nvmf_fc_req_in_pending(fc_req)) {
 		/* Remove from pending */
 		TAILQ_REMOVE(&fc_req->fc_conn->pending_queue, fc_req, pending_link);
 		goto complete;
@@ -896,29 +896,6 @@ spdk_nvmf_bcm_fc_init_rqpair_buffers(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 }
 
 static void
-nvmf_fc_post_nvme_rqst(void *arg1, void *arg2)
-{
-	int rc = 0;
-	struct spdk_nvmf_bcm_fc_request *fc_req =
-		(struct spdk_nvmf_bcm_fc_request *)arg1;
-
-	rc = spdk_nvmf_request_exec(&fc_req->req);
-	switch (rc) {
-	case SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE:
-	case SPDK_NVMF_REQUEST_EXEC_STATUS_ASYNCHRONOUS:
-		/* Posted */
-		return;
-	default:
-		break;
-	}
-
-	/* Issue abort for oxid */
-	SPDK_ERRLOG("Aborted CMD\n");
-
-	spdk_nvmf_bcm_fc_free_req(fc_req, false);
-}
-
-static void
 nvmf_fc_nvmf_add_xri_pending(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 			     struct spdk_nvmf_bcm_fc_xri *xri)
 {
@@ -986,7 +963,7 @@ spdk_nvmf_bcm_fc_free_req(struct spdk_nvmf_bcm_fc_request *fc_req, bool xri_acti
 
 	if (fc_req->req.data) {
 		spdk_dma_free(fc_req->req.data);
-	} else if (fc_req->req.iovcnt && fc_req->req.bdev_io) {
+	} else if (fc_req->req.iovcnt || fc_req->req.bdev_io) {
 		spdk_nvmf_request_cleanup(&fc_req->req);
 	}
 
@@ -1071,6 +1048,7 @@ nvmf_fc_io_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 	struct spdk_nvmf_bcm_fc_request *fc_req = arg;
 	cqe_t *cqe_entry = (cqe_t *)cqe;
 	bool xri_active;
+	int rc;
 
 	xri_active = (cqe_entry->u.generic.xb ? true : false);
 
@@ -1093,7 +1071,14 @@ nvmf_fc_io_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 
 		spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_WRITE_BDEV);
 
-		nvmf_fc_post_nvme_rqst(fc_req, NULL);
+		rc = spdk_nvmf_request_exec(&fc_req->req);
+		switch (rc) {
+		case SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE:
+		case SPDK_NVMF_REQUEST_EXEC_STATUS_ASYNCHRONOUS:
+			break;
+		default:
+			goto abort_req;
+		}
 		return;
 	}
 	/* Read Tranfer done */
@@ -1132,6 +1117,141 @@ nvmf_fc_process_wqe_completion(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint16_t req_
 	wqe_ctx->cb(hwqp, cqe, status, wqe_ctx->cb_args);
 }
 
+static uint32_t
+nvmf_fc_fill_sgl(struct spdk_nvmf_bcm_fc_request *fc_req)
+{
+	int i;
+	uint32_t offset = 0;
+	uint64_t iov_phys;
+	bcm_sge_t *sge = NULL;
+	struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd *req_buf = NULL;
+	struct spdk_nvmf_bcm_fc_hwqp *hwqp = fc_req->hwqp;
+
+	assert((fc_req->req.iovcnt) <= BCM_MAX_IOVECS);
+	assert(fc_req->req.iovcnt != 0);
+
+	/* Use RQ buffer for SGL */
+	req_buf = hwqp->queues.rq_payload.buffer[fc_req->buf_index].virt;
+	sge = &req_buf->sge[0];
+
+	memset(sge, 0, (sizeof(bcm_sge_t) * BCM_MAX_IOVECS));
+
+	if (fc_req->req.xfer == SPDK_NVME_DATA_HOST_TO_CONTROLLER) { /* Write */
+		uint64_t xfer_rdy_phys;
+		struct spdk_nvmf_fc_xfer_rdy_iu *xfer_rdy_iu;
+
+		/* 1st SGE is tranfer ready buffer */
+		xfer_rdy_iu = hwqp->queues.rq_payload.buffer[fc_req->buf_index].virt +
+			      offsetof(struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd, xfer_rdy);
+		xfer_rdy_iu->relative_offset = 0;
+		to_be32(&xfer_rdy_iu->burst_len, fc_req->req.length);
+
+		xfer_rdy_phys = hwqp->queues.rq_payload.buffer[fc_req->buf_index].phys +
+				offsetof(struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd, xfer_rdy);
+
+		sge->sge_type = BCM_SGE_TYPE_DATA;
+		sge->buffer_address_low  = PTR_TO_ADDR32_LO(xfer_rdy_phys);
+		sge->buffer_address_high = PTR_TO_ADDR32_HI(xfer_rdy_phys);
+		sge->buffer_length = sizeof(struct spdk_nvmf_fc_xfer_rdy_iu);
+		sge++;
+
+	} else if (fc_req->req.xfer == SPDK_NVME_DATA_CONTROLLER_TO_HOST) { /* read */
+		/* 1st SGE is skip. */
+		sge->sge_type = BCM_SGE_TYPE_SKIP;
+		sge++;
+	} else {
+		return 0;
+	}
+
+	/* 2nd SGE is skip. */
+	sge->sge_type = BCM_SGE_TYPE_SKIP;
+	sge++;
+
+	for (i = 0; i < fc_req->req.iovcnt; i++) {
+		iov_phys = spdk_vtophys(fc_req->req.iov[i].iov_base);
+		sge->sge_type = BCM_SGE_TYPE_DATA;
+		sge->buffer_address_low  = PTR_TO_ADDR32_LO(iov_phys);
+		sge->buffer_address_high = PTR_TO_ADDR32_HI(iov_phys);
+		sge->buffer_length = fc_req->req.iov[i].iov_len;
+		sge->data_offset = offset;
+		offset += fc_req->req.iov[i].iov_len;
+
+		if (i == (fc_req->req.iovcnt - 1)) {
+			/* last */
+			sge->last = true;
+		} else {
+			sge++;
+		}
+	}
+	return offset;
+}
+
+static int
+nvmf_fc_recv_data(struct spdk_nvmf_bcm_fc_request *fc_req)
+{
+	int rc = 0;
+	uint8_t wqe[128] = { 0 };
+	bcm_fcp_treceive64_wqe_t *trecv = (bcm_fcp_treceive64_wqe_t *)wqe;
+	struct spdk_nvmf_bcm_fc_hwqp *hwqp = fc_req->hwqp;
+
+	if (!fc_req->req.iovcnt) {
+		return -1;
+	}
+
+	trecv->xbl = true;
+	if (fc_req->req.iovcnt == 1) {
+		/* Data is a single physical address, use a BDE */
+		uint64_t bde_phys;
+
+		bde_phys = spdk_vtophys(fc_req->req.iov[0].iov_base);
+		trecv->dbde = true;
+		trecv->bde.bde_type = BCM_BDE_TYPE_BDE_64;
+		trecv->bde.buffer_length = fc_req->req.length;
+		trecv->bde.u.data.buffer_address_low = PTR_TO_ADDR32_LO(bde_phys);
+		trecv->bde.u.data.buffer_address_high = PTR_TO_ADDR32_HI(bde_phys);
+	} else {
+		uint64_t sgl_phys;
+
+		if (!nvmf_fc_fill_sgl(fc_req)) {
+			return -1;
+		}
+
+		sgl_phys = hwqp->queues.rq_payload.buffer[fc_req->buf_index].phys +
+			   offsetof(struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd, sge);
+
+		trecv->bde.bde_type = BCM_BDE_TYPE_BLP;
+		trecv->bde.buffer_length = fc_req->req.length;
+		trecv->bde.u.blp.sgl_segment_address_low = PTR_TO_ADDR32_LO(sgl_phys);
+		trecv->bde.u.blp.sgl_segment_address_high = PTR_TO_ADDR32_HI(sgl_phys);
+	}
+
+	trecv->relative_offset = 0;
+	trecv->xri_tag = fc_req->xri->xri;
+	trecv->context_tag = fc_req->rpi;
+	trecv->pu = true;
+	trecv->ar = false;
+
+	trecv->command = BCM_WQE_FCP_TRECEIVE64;
+	trecv->class = BCM_ELS_REQUEST64_CLASS_3;
+	trecv->ct = BCM_ELS_REQUEST64_CONTEXT_RPI;
+
+	trecv->remote_xid = fc_req->oxid;
+	trecv->nvme = 1;
+	trecv->iod = 1;
+	trecv->len_loc = 0x2;
+
+	trecv->cmd_type = BCM_CMD_FCP_TRECEIVE64_WQE;
+	trecv->cq_id = 0xFFFF;
+	trecv->fcp_data_receive_length = fc_req->req.length;
+
+	rc = nvmf_fc_post_wqe(hwqp, (uint8_t *)trecv, true, nvmf_fc_io_cmpl_cb, fc_req);
+	if (!rc) {
+		fc_req->xri_activated = true;
+	}
+
+	return rc;
+}
+
 static int
 nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req)
 {
@@ -1144,14 +1264,11 @@ nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req)
 		goto pending;
 	}
 
-	/* If xfer, Create buffers for required. */
 	if (fc_req->req.length) {
-		/* Except for IO Read/Write create dma memory  */
-		if (fc_conn->conn.type == CONN_TYPE_AQ ||
-		    cmd->opc == SPDK_NVME_OPC_FABRIC ||
-		    (fc_conn->conn.type == CONN_TYPE_IOQ &&
-		     cmd->opc != SPDK_NVME_OPC_READ &&
-		     cmd->opc != SPDK_NVME_OPC_WRITE)) {
+		/* Except for IO read/write, create buffers on fly. */
+		if (!(fc_conn->conn.type == CONN_TYPE_IOQ &&
+		      (cmd->opc == SPDK_NVME_OPC_READ ||
+		       cmd->opc == SPDK_NVME_OPC_WRITE))) {
 
 			fc_req->req.data = spdk_dma_zmalloc(fc_req->req.length, 4096, NULL);
 			if (!fc_req->req.data) {
@@ -1171,8 +1288,10 @@ nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req)
 				goto pending;
 			}
 		}
-		/* For IO queue Writes, alloc buffers */
-		else if (cmd->opc == SPDK_NVME_OPC_WRITE) {
+
+		/* For IOQ Writes, alloc bdev buffers */
+		else if (fc_conn->conn.type == CONN_TYPE_IOQ &&
+			 cmd->opc == SPDK_NVME_OPC_WRITE) {
 			switch (spdk_nvmf_request_exec(&fc_req->req)) {
 			case SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_READY:
 				break;
@@ -1187,7 +1306,6 @@ nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req)
 		}
 	}
 
-	/* Xfer data from host, in case of host to controller. (Write) */
 	if (fc_req->req.xfer == SPDK_NVME_DATA_HOST_TO_CONTROLLER) {
 		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "WRITE CMD.\n");
 
@@ -1196,7 +1314,7 @@ nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req)
 		if (nvmf_fc_recv_data(fc_req)) {
 			goto error;
 		}
-	} else { /* Post to backend */
+	} else {
 		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "READ/NONE CMD\n");
 
 		if (fc_req->req.xfer == SPDK_NVME_DATA_CONTROLLER_TO_HOST) {
@@ -1205,7 +1323,19 @@ nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req)
 			spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_NONE_BDEV);
 		}
 
-		nvmf_fc_post_nvme_rqst(fc_req, NULL);
+		/* Even read can fail for lack of buffers. Handle that. */
+		switch (spdk_nvmf_request_exec(&fc_req->req)) {
+		case SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING:
+			SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
+				      "read buffer alloc failed. Requeue\n");
+			fc_req->hwqp->counters.read_buf_alloc_err++;
+			goto pending;
+		case SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE:
+		case SPDK_NVMF_REQUEST_EXEC_STATUS_ASYNCHRONOUS:
+			break;
+		default:
+			goto error;
+		}
 	}
 
 	return 0;
@@ -1221,6 +1351,8 @@ pending:
 		spdk_dma_free(fc_req->req.data);
 		fc_req->req.data = NULL;
 	}
+
+	spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_PENDING);
 
 	return 1;
 error:
@@ -1516,7 +1648,6 @@ nvmf_fc_process_cq_entry(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_eventq *c
 			break;
 		}
 
-
 		switch ((int)ctype) {
 		case BCM_FC_QENTRY_WQ:
 			nvmf_fc_process_wqe_completion(hwqp, rid, rc, cqe);
@@ -1586,7 +1717,7 @@ spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 				 * There might be some buffers/xri freed.
 				 * First give chance for pending frames
 				 */
-				spdk_nvmf_bcm_fc_process_pending_req(hwqp);
+				nvmf_fc_process_pending_req(hwqp);
 
 			} else if (cq_id == hwqp->queues.cq_rq.q.qid) {
 				nvmf_fc_process_cq_entry(hwqp, &hwqp->queues.cq_rq);
@@ -1663,75 +1794,6 @@ spdk_nvmf_bcm_fc_xmt_ls_rsp(struct spdk_nvmf_bcm_fc_nport *tgtport,
 	return rc;
 }
 
-static uint32_t
-nvmf_fc_fill_sgl(struct spdk_nvmf_bcm_fc_request *fc_req)
-{
-	int i;
-	uint32_t offset = 0;
-	uint64_t iov_phys;
-	bcm_sge_t *sge = NULL;
-	struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd *req_buf = NULL;
-	struct spdk_nvmf_bcm_fc_hwqp *hwqp = fc_req->hwqp;
-
-	assert((fc_req->req.iovcnt) <= BCM_MAX_IOVECS);
-	assert(fc_req->req.iovcnt != 0);
-
-	/* Use RQ buffer for SGL */
-	req_buf = hwqp->queues.rq_payload.buffer[fc_req->buf_index].virt;
-	sge = &req_buf->sge[0];
-
-	memset(sge, 0, (sizeof(bcm_sge_t) * BCM_MAX_IOVECS));
-
-	if (fc_req->req.xfer == SPDK_NVME_DATA_HOST_TO_CONTROLLER) { /* Write */
-		uint64_t xfer_rdy_phys;
-		struct spdk_nvmf_fc_xfer_rdy_iu *xfer_rdy_iu;
-
-		/* 1st SGE is tranfer ready buffer */
-		xfer_rdy_iu = hwqp->queues.rq_payload.buffer[fc_req->buf_index].virt +
-			      offsetof(struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd, xfer_rdy);
-		xfer_rdy_iu->relative_offset = 0;
-		to_be32(&xfer_rdy_iu->burst_len, fc_req->req.length);
-
-		xfer_rdy_phys = hwqp->queues.rq_payload.buffer[fc_req->buf_index].phys +
-				offsetof(struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd, xfer_rdy);
-
-		sge->sge_type = BCM_SGE_TYPE_DATA;
-		sge->buffer_address_low  = PTR_TO_ADDR32_LO(xfer_rdy_phys);
-		sge->buffer_address_high = PTR_TO_ADDR32_HI(xfer_rdy_phys);
-		sge->buffer_length = sizeof(struct spdk_nvmf_fc_xfer_rdy_iu);
-		sge++;
-
-	} else if (fc_req->req.xfer == SPDK_NVME_DATA_CONTROLLER_TO_HOST) { /* read */
-		/* 1st SGE is skip. */
-		sge->sge_type = BCM_SGE_TYPE_SKIP;
-		sge++;
-	} else {
-		return 0;
-	}
-
-	/* 2nd SGE is skip. */
-	sge->sge_type = BCM_SGE_TYPE_SKIP;
-	sge++;
-
-	for (i = 0; i < fc_req->req.iovcnt; i++) {
-		iov_phys = spdk_vtophys(fc_req->req.iov[i].iov_base);
-		sge->sge_type = BCM_SGE_TYPE_DATA;
-		sge->buffer_address_low  = PTR_TO_ADDR32_LO(iov_phys);
-		sge->buffer_address_high = PTR_TO_ADDR32_HI(iov_phys);
-		sge->buffer_length = fc_req->req.iov[i].iov_len;
-		sge->data_offset = offset;
-		offset += fc_req->req.iov[i].iov_len;
-
-		if (i == (fc_req->req.iovcnt - 1)) {
-			/* last */
-			sge->last = true;
-		} else {
-			sge++;
-		}
-	}
-	return offset;
-}
-
 int
 spdk_nvmf_bcm_fc_send_data(struct spdk_nvmf_bcm_fc_request *fc_req)
 {
@@ -1743,6 +1805,10 @@ spdk_nvmf_bcm_fc_send_data(struct spdk_nvmf_bcm_fc_request *fc_req)
 	struct spdk_nvmf_request *req = &fc_req->req;
 	struct spdk_nvmf_conn 	*conn = req->conn;
 	struct spdk_nvmf_bcm_fc_conn *fc_conn = nvmf_fc_get_conn(conn);
+
+	if (!fc_req->req.iovcnt) {
+		return -1;
+	}
 
 	tsend->xbl = true;
 	if (fc_req->req.iovcnt == 1) {
@@ -1757,6 +1823,7 @@ spdk_nvmf_bcm_fc_send_data(struct spdk_nvmf_bcm_fc_request *fc_req)
 		tsend->bde.u.data.buffer_address_low = PTR_TO_ADDR32_LO(bde_phys);
 		tsend->bde.u.data.buffer_address_high = PTR_TO_ADDR32_HI(bde_phys);
 
+		xfer_len = fc_req->req.iov[0].iov_len;
 	} else {
 		uint64_t sgl_phys;
 
@@ -1799,68 +1866,6 @@ spdk_nvmf_bcm_fc_send_data(struct spdk_nvmf_bcm_fc_request *fc_req)
 	tsend->fcp_data_transmit_length = fc_req->req.length;
 
 	rc = nvmf_fc_post_wqe(hwqp, (uint8_t *)tsend, true, nvmf_fc_io_cmpl_cb, fc_req);
-	if (!rc) {
-		fc_req->xri_activated = true;
-	}
-
-	return rc;
-}
-
-int
-nvmf_fc_recv_data(struct spdk_nvmf_bcm_fc_request *fc_req)
-{
-	int rc = 0;
-	uint8_t wqe[128] = { 0 };
-	bcm_fcp_treceive64_wqe_t *trecv = (bcm_fcp_treceive64_wqe_t *)wqe;
-	struct spdk_nvmf_bcm_fc_hwqp *hwqp = fc_req->hwqp;
-
-	trecv->xbl = true;
-	if (fc_req->req.iovcnt == 1) {
-		/* Data is a single physical address, use a BDE */
-		uint64_t bde_phys;
-
-		bde_phys = spdk_vtophys(fc_req->req.iov[0].iov_base);
-		trecv->dbde = true;
-		trecv->bde.bde_type = BCM_BDE_TYPE_BDE_64;
-		trecv->bde.buffer_length = fc_req->req.length;
-		trecv->bde.u.data.buffer_address_low = PTR_TO_ADDR32_LO(bde_phys);
-		trecv->bde.u.data.buffer_address_high = PTR_TO_ADDR32_HI(bde_phys);
-	} else {
-		uint64_t sgl_phys;
-
-		if (!nvmf_fc_fill_sgl(fc_req)) {
-			return -1;
-		}
-
-		sgl_phys = hwqp->queues.rq_payload.buffer[fc_req->buf_index].phys +
-			   offsetof(struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd, sge);
-
-		trecv->bde.bde_type = BCM_BDE_TYPE_BLP;
-		trecv->bde.buffer_length = fc_req->req.length;
-		trecv->bde.u.blp.sgl_segment_address_low = PTR_TO_ADDR32_LO(sgl_phys);
-		trecv->bde.u.blp.sgl_segment_address_high = PTR_TO_ADDR32_HI(sgl_phys);
-	}
-
-	trecv->relative_offset = 0;
-	trecv->xri_tag = fc_req->xri->xri;
-	trecv->context_tag = fc_req->rpi;
-	trecv->pu = true;
-	trecv->ar = false;
-
-	trecv->command = BCM_WQE_FCP_TRECEIVE64;
-	trecv->class = BCM_ELS_REQUEST64_CLASS_3;
-	trecv->ct = BCM_ELS_REQUEST64_CONTEXT_RPI;
-
-	trecv->remote_xid = fc_req->oxid;
-	trecv->nvme = 1;
-	trecv->iod = 1;
-	trecv->len_loc = 0x2;
-
-	trecv->cmd_type = BCM_CMD_FCP_TRECEIVE64_WQE;
-	trecv->cq_id = 0xFFFF;
-	trecv->fcp_data_receive_length = fc_req->req.length;
-
-	rc = nvmf_fc_post_wqe(hwqp, (uint8_t *)trecv, true, nvmf_fc_io_cmpl_cb, fc_req);
 	if (!rc) {
 		fc_req->xri_activated = true;
 	}

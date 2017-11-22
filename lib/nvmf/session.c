@@ -267,9 +267,13 @@ spdk_nvmf_session_connect(struct spdk_nvmf_conn *conn,
 	 * SQSIZE is a 0-based value, so it must be at least 1 (minimum queue depth is 2) and
 	 *  strictly less than max_queue_depth.
 	 */
-	if (cmd->sqsize == 0 || cmd->sqsize >= g_nvmf_tgt.opts.max_queue_depth) {
+	if (cmd->sqsize == 0 ||
+	    (cmd->qid == 0 && cmd->sqsize >= g_nvmf_tgt.opts.max_aq_depth) ||
+	    (cmd->qid != 0 && cmd->sqsize >= g_nvmf_tgt.opts.max_queue_depth)) {
 		SPDK_ERRLOG("Invalid SQSIZE %u (min 1, max %u)\n",
-			    cmd->sqsize, g_nvmf_tgt.opts.max_queue_depth - 1);
+			    cmd->sqsize,
+			    cmd->qid == 0 ? g_nvmf_tgt.opts.max_aq_depth - 1 :
+			    g_nvmf_tgt.opts.max_queue_depth - 1);
 		INVALID_CONNECT_CMD(sqsize);
 		return;
 	}

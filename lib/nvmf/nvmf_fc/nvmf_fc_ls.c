@@ -256,7 +256,7 @@ nvmf_fc_association_init(struct spdk_nvmf_bcm_fc_association *assoc)
 
 	/* allocate rqst/resp buffers to send LS disconnect to initiator */
 	assoc->snd_disconn_bufs.rqst.virt = spdk_dma_malloc(
-			sizeof(struct nvmf_fc_lsdesc_disconn_cmd)  +
+			sizeof(struct nvmf_fc_ls_disconnect_rqst)  +
 			sizeof(struct nvmf_fc_ls_disconnect_acc) +
 			(2 * sizeof(bcm_sge_t)), 0, NULL);
 
@@ -268,12 +268,12 @@ nvmf_fc_association_init(struct spdk_nvmf_bcm_fc_association *assoc)
 	assoc->snd_disconn_bufs.rqst.phys = spdk_vtophys(
 			assoc->snd_disconn_bufs.rqst.virt);
 	assoc->snd_disconn_bufs.rqst.len =
-		sizeof(struct nvmf_fc_lsdesc_disconn_cmd);
+		sizeof(struct nvmf_fc_ls_disconnect_rqst);
 
 	assoc->snd_disconn_bufs.rsp.virt = assoc->snd_disconn_bufs.rqst.virt +
-					   sizeof(struct nvmf_fc_lsdesc_disconn_cmd);
+					   sizeof(struct nvmf_fc_ls_disconnect_rqst);
 	assoc->snd_disconn_bufs.rsp.phys = assoc->snd_disconn_bufs.rqst.phys +
-					   sizeof(struct nvmf_fc_lsdesc_disconn_cmd);
+					   sizeof(struct nvmf_fc_ls_disconnect_rqst);
 	assoc->snd_disconn_bufs.rsp.len =
 		sizeof(struct nvmf_fc_ls_disconnect_acc);
 
@@ -966,6 +966,8 @@ nvmf_fc_ls_process_cass(uint32_t s_id,
 		rc = FCNVME_RJT_RC_INV_HOST;
 		ec = FCNVME_RJT_EXP_INV_HOSTNQN;
 	} else if (rqst->assoc_cmd.sqsize == 0 ||
+		   /* TODO: Currently sqsize check is spec 1.17 compliant.
+		    * To make it 1.19 compliant, need to change check to '>='. */
 		   from_be16(&rqst->assoc_cmd.sqsize) >
 		   g_nvmf_tgt.opts.max_aq_depth) {
 		errmsg_ind = VERR_SQSIZE;
@@ -1095,6 +1097,8 @@ nvmf_fc_ls_process_cioc(struct spdk_nvmf_bcm_fc_nport *tgtport,
 		rc = FCNVME_RJT_RC_INV_PARAM;
 		ec = FCNVME_RJT_EXP_INV_ESRP;
 	} else if (rqst->connect_cmd.sqsize == 0 ||
+		   /* TODO: Currently sqsize check is spec 1.17 compliant.
+		    * To make it 1.19 compliant, need to change check to '>='. */
 		   from_be16(&rqst->connect_cmd.sqsize) >
 		   g_nvmf_tgt.opts.max_queue_depth) {
 		errmsg_ind = VERR_SQSIZE;
@@ -1107,25 +1111,27 @@ nvmf_fc_ls_process_cioc(struct spdk_nvmf_bcm_fc_nport *tgtport,
 		if (!assoc) {
 			errmsg_ind = VERR_NO_ASSOC;
 			rc = FCNVME_RJT_RC_INV_ASSOC;
-		} else { // alloc IO q (i.e. connection)
-			if (assoc->conn_count <
-			    g_nvmf_tgt.opts.max_queues_per_session) {
-				fc_conn = nvmf_fc_ls_new_connection(assoc,
-								    CONN_TYPE_IOQ,
-								    from_be16(&rqst->connect_cmd.qid),
-								    from_be16(&rqst->connect_cmd.sqsize),
-								    from_be16(&rqst->connect_cmd.ersp_ratio),
-								    ls_rqst->rpi,
-								    from_be16(&rqst->connect_cmd.sqsize));
-				if (!fc_conn) {
-					errmsg_ind = VERR_CONN_ALLOC_FAIL;
-					rc = FCNVME_RJT_RC_INSUFF_RES;
-					ec = FCNVME_RJT_EXP_INSUF_RES;
-				}
-			} else {
-				errmsg_ind = VERR_CONN_TOO_MANY;
-				rc = FCNVME_RJT_RC_INV_PARAM;
-				ec =  FCNVME_RJT_EXP_INV_Q_ID;
+		} else if (assoc->assoc_state == SPDK_NVMF_BCM_FC_OBJECT_TO_BE_DELETED) {
+			/* association is being deleted - don't allow more connections */
+			errmsg_ind = VERR_NO_ASSOC;
+			rc = FCNVME_RJT_RC_INV_ASSOC;
+		} else if (assoc->conn_count >= g_nvmf_tgt.opts.max_queues_per_session) {
+			errmsg_ind = VERR_CONN_TOO_MANY;
+			rc = FCNVME_RJT_RC_INV_PARAM;
+			ec =  FCNVME_RJT_EXP_INV_Q_ID;
+		} else {
+			/* get a connection) */
+			fc_conn = nvmf_fc_ls_new_connection(assoc,
+							    CONN_TYPE_IOQ,
+							    from_be16(&rqst->connect_cmd.qid),
+							    from_be16(&rqst->connect_cmd.sqsize),
+							    from_be16(&rqst->connect_cmd.ersp_ratio),
+							    ls_rqst->rpi,
+							    from_be16(&rqst->connect_cmd.sqsize));
+			if (!fc_conn) {
+				errmsg_ind = VERR_CONN_ALLOC_FAIL;
+				rc = FCNVME_RJT_RC_INSUFF_RES;
+				ec = FCNVME_RJT_EXP_INSUF_RES;
 			}
 		}
 	}
@@ -1216,14 +1222,6 @@ nvmf_fc_ls_process_disc(struct spdk_nvmf_bcm_fc_nport *tgtport,
 			errmsg_ind = VERR_NO_ASSOC;
 			rc = FCNVME_RJT_RC_INV_ASSOC;
 		}
-
-		/* check if association already in process of being deleted */
-		/* 10/30/17 - Do not reject LS disconnect when alread deleting
-		 * association. This could confuse the inititator who is expecint
-		 * an LS disconnectresponses - not a reject */
-		/* else if (assoc->assoc_state == SPDK_NVMF_BCM_FC_OBJECT_TO_BE_DELETED) {
-			errmsg_ind = VERR_NO_ASSOC;
-		} */
 	}
 
 	if (rc != FCNVME_RJT_RC_NONE) {
@@ -1279,7 +1277,7 @@ spdk_nvmf_bcm_fc_ls_init(struct spdk_nvmf_bcm_fc_port *fc_port)
 
 	fc_port->ls_rsrc_pool.assocs_mptr =
 		malloc(assocs_count *
-			    sizeof(struct spdk_nvmf_bcm_fc_association));
+		       sizeof(struct spdk_nvmf_bcm_fc_association));
 
 	if (fc_port->ls_rsrc_pool.assocs_mptr) {
 		uint32_t i;
