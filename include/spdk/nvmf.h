@@ -206,6 +206,7 @@ struct spdk_nvmf_tgt_opts {
 	uint16_t				awun;
 	uint16_t				awupf;
 	uint32_t				sgls;
+	uint16_t				oncs;
 };
 
 struct spdk_nvmf_subsystem *spdk_nvmf_create_subsystem(const char *nqn,

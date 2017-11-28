@@ -266,6 +266,13 @@ nvmf_fc_parse_nvmf_tgt(void)
 	}
 	opts.sgls = intval;
 
+	intval = spdk_conf_section_get_intval(sp, "OptNVMCommandSupport");
+	if (intval < 0) {
+		intval = 0;
+	}
+	opts.oncs = intval;
+
+
 	lcore_mask_str = spdk_conf_section_get_val(sp, "NvmfReactorMask");
 	if (!lcore_mask_str) {
 		SPDK_ERRLOG("NvmfReactorMask not specified. \n");
