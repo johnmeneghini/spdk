@@ -38,6 +38,7 @@
 
 #include "spdk_cunit.h"
 
+#include "log/log_syslog.c"
 #include "session.c"
 
 SPDK_LOG_REGISTER_TRACE_FLAG("nvmf", SPDK_TRACE_NVMF)
@@ -73,6 +74,56 @@ spdk_nvmf_request_complete(struct spdk_nvmf_request *req)
 	return -1;
 }
 
+static void
+test_process_aer_rsp(void)
+{
+	struct spdk_nvmf_subsystem *subsystem = malloc(sizeof(struct spdk_nvmf_subsystem));
+	enum aer_type aer_type;
+	uint8_t aer_info;
+	struct spdk_nvmf_session *session = malloc(sizeof(struct spdk_nvmf_session));
+	struct spdk_nvmf_request *req = malloc(sizeof(struct spdk_nvmf_request));
+	union nvmf_c2h_msg *rsp = malloc(sizeof(union nvmf_c2h_msg));
+	/* Validate memory allocation did not fail */
+	CU_ASSERT_NOT_EQUAL(subsystem, NULL);
+	CU_ASSERT_NOT_EQUAL(session, NULL);
+	CU_ASSERT_NOT_EQUAL(req, NULL);
+	CU_ASSERT_NOT_EQUAL(rsp, NULL);
+
+	/* Initialize the members */
+	strcpy(subsystem->subnqn, "nqn.2016-06.io.spdk:subsystem1");
+	req->rsp = rsp;
+	session->subsys = subsystem;
+	session->aer_ctxt.is_aer_pending = false;
+	session->aer_req = req;
+	TAILQ_INIT(&subsystem->sessions);
+	TAILQ_INSERT_TAIL(&subsystem->sessions, session, link);
+
+	/* Check for a non AER_TYPE_NOTICE aer_type */
+	aer_type = AER_TYPE_ERROR_STATUS;
+	aer_info = AER_NOTICE_INFO_NS_ATTR_CHANGED;
+	spdk_nvmf_queue_aer_rsp(subsystem, aer_type, aer_info);
+	/* Check aer_req is intact and not used to issue aer rsp */
+	CU_ASSERT_EQUAL(session->aer_req, req);
+	CU_ASSERT_EQUAL(session->aer_ctxt.is_aer_pending, false);
+
+	/* Check for aer_req value after an aer_rsp is sent */
+	aer_type = AER_TYPE_NOTICE;
+	spdk_nvmf_queue_aer_rsp(subsystem, aer_type, aer_info);
+	CU_ASSERT_EQUAL(session->aer_req, NULL);
+	CU_ASSERT_EQUAL(session->aer_ctxt.is_aer_pending, false);
+
+	/* Check for is_aer_pending flag when aer_req is NULL */
+	session->aer_req = NULL;
+	spdk_nvmf_queue_aer_rsp(subsystem, aer_type, aer_info);
+	CU_ASSERT_EQUAL(session->aer_req, NULL);
+	CU_ASSERT_EQUAL(session->aer_ctxt.is_aer_pending, true);
+
+	free(subsystem);
+	free(session);
+	free(req);
+	free(rsp);
+}
+
 int main(int argc, char **argv)
 {
 	CU_pSuite	suite = NULL;
@@ -89,7 +140,8 @@ int main(int argc, char **argv)
 	}
 
 	if (
-		CU_add_test(suite, "foobar", test_foobar) == NULL) {
+		CU_add_test(suite, "foobar", test_foobar) == NULL ||
+		CU_add_test(suite, "process_aer_rsp", test_process_aer_rsp)  == NULL) {
 		CU_cleanup_registry();
 		return CU_get_error();
 	}
