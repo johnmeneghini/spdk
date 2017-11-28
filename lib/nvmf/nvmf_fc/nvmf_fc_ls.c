@@ -1402,7 +1402,20 @@ void spdk_nvmf_bcm_fc_subsys_disconnect_cb(void *cb_ctx,
 		struct spdk_nvmf_conn *conn)
 {
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\n");
-	spdk_nvmf_session_disconnect(conn);
+	/* There are cases where a disconnect may be done before
+	 * a session exists for a connection.
+	 * Eg. A connection was created, but the NVMe connect
+	 * command was still not received. In the meantime a
+	 * link-down, adapter-dump, host-reboot etc. happens.
+	 * We delete the associations and hence the connections but
+	 * there is no session for that connection.
+	 * Safe to do a NULL check here. The session_disconnect
+	 * is No-op for FC in terms of connection removal and
+	 * destruction. No leaks there.
+	 */
+	if (conn->sess != NULL) {
+		spdk_nvmf_session_disconnect(conn);
+	}
 }
 
 SPDK_LOG_REGISTER_TRACE_FLAG("nvmf_bcm_fc_ls", SPDK_TRACE_NVMF_BCM_FC_LS)
