@@ -132,6 +132,10 @@
   # base spec
 #SGLSupport 5
 
+  # Optional NVM Command Support: Indicates Optional NVM Commands and features
+  # supported by a controller. We enable DSM by default
+  OptNVMCommandSupport 4
+
 
 [Nvme]
   # NVMe Device Whitelist

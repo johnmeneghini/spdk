@@ -302,6 +302,12 @@ spdk_nvmf_parse_nvmf_tgt(void)
 	}
 	opts.sgls = intval;
 
+	intval = spdk_conf_section_get_intval(sp, "OptNVMCommandSupport");
+	if (intval < 0) {
+		intval = 0;
+	}
+	opts.oncs = intval;
+
 	intval = spdk_conf_section_get_intval(sp, "AcceptorCore");
 	if (intval < 0) {
 		intval = spdk_env_get_current_core();

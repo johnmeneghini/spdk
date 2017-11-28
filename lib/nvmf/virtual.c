@@ -65,7 +65,7 @@ struct __attribute__((packed)) nvme_read_cdw12 {
 	uint8_t		lr	: 1;	/* limited retry */
 };
 
-static void nvmf_virtual_set_dsm(struct spdk_nvmf_session *session)
+static void nvmf_virtual_verify_dsm(struct spdk_nvmf_session *session)
 {
 	uint32_t i;
 
@@ -78,15 +78,16 @@ static void nvmf_virtual_set_dsm(struct spdk_nvmf_session *session)
 
 		if (!spdk_bdev_io_type_supported(bdev, SPDK_BDEV_IO_TYPE_UNMAP)) {
 			SPDK_TRACELOG(SPDK_TRACE_NVMF,
-				      "Subsystem%u Namespace %s does not support unmap - not enabling DSM\n",
-				      i, spdk_bdev_get_name(bdev));
+				      "Namespace %s does not support unmap\n",
+				      spdk_bdev_get_name(bdev));
+			session->vcdata.oncs.dsm = 0;
 			return;
 		}
 	}
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "All devices in Subsystem %s support unmap - enabling DSM\n",
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "DSM is %s in Subsystem %s\n",
+		      (session->vcdata.oncs.dsm == 1) ? "enabled" : "disabled",
 		      spdk_nvmf_subsystem_get_nqn(session->subsys));
-	session->vcdata.oncs.dsm = 1;
 }
 
 static void
@@ -129,7 +130,8 @@ nvmf_virtual_ctrlr_get_data(struct spdk_nvmf_session *session)
 	session->vcdata.vwc.present = 1;
 	session->vcdata.sgls.supported = 1;
 	strncpy((char *)session->vcdata.subnqn, session->subsys->subnqn, sizeof(session->vcdata.subnqn));
-	nvmf_virtual_set_dsm(session);
+	memcpy(&session->vcdata.oncs, &g_nvmf_tgt.opts.oncs, sizeof(uint16_t));
+	nvmf_virtual_verify_dsm(session);
 }
 
 static void
