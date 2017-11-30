@@ -237,11 +237,17 @@ bool spdk_nvmf_subsystem_host_allowed(struct spdk_nvmf_subsystem *subsystem, con
 struct spdk_nvmf_listen_addr *spdk_nvmf_tgt_listen(const char *trname, enum spdk_nvmf_adrfam adrfam,
 		const char *traddr, const char *trsvcid);
 
-int spdk_nvmf_subsystem_add_listener(struct spdk_nvmf_subsystem *subsystem,
-				     struct spdk_nvmf_listen_addr *listen_addr);
+int
+spdk_nvmf_subsystem_add_listener(struct spdk_nvmf_subsystem *subsystem,
+				 struct spdk_nvmf_listen_addr *listen_addr);
 
-bool spdk_nvmf_subsystem_listener_allowed(struct spdk_nvmf_subsystem *subsystem,
-		struct spdk_nvmf_listen_addr *listen_addr);
+int
+spdk_nvmf_subsystem_remove_listener(struct spdk_nvmf_subsystem *subsystem,
+				    struct spdk_nvmf_listen_addr *listen_addr);
+
+bool
+spdk_nvmf_subsystem_listener_allowed(struct spdk_nvmf_subsystem *subsystem,
+				     struct spdk_nvmf_listen_addr *listen_addr);
 
 int spdk_nvmf_subsystem_add_host(struct spdk_nvmf_subsystem *subsystem,
 				 const char *host_nqn);

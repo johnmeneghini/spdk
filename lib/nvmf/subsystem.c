@@ -313,6 +313,23 @@ spdk_nvmf_tgt_listen(const char *trname, enum spdk_nvmf_adrfam adrfam, const cha
 }
 
 int
+spdk_nvmf_subsystem_remove_listener(struct spdk_nvmf_subsystem *subsystem,
+				    struct spdk_nvmf_listen_addr *listen_addr)
+{
+	struct spdk_nvmf_subsystem_allowed_listener	*allowed_listener, *allowed_listener_tmp;
+
+	TAILQ_FOREACH_SAFE(allowed_listener,
+			   &subsystem->allowed_listeners, link, allowed_listener_tmp) {
+		if (allowed_listener->listen_addr == listen_addr) {
+			TAILQ_REMOVE(&subsystem->allowed_listeners, allowed_listener, link);
+			free(allowed_listener);
+			return 0;
+		}
+	}
+	return -1;
+}
+
+int
 spdk_nvmf_subsystem_add_listener(struct spdk_nvmf_subsystem *subsystem,
 				 struct spdk_nvmf_listen_addr *listen_addr)
 {
