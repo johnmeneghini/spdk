@@ -880,6 +880,11 @@ enum aer_cmd_set_info {
 	AER_CMD_SET_INFO_SANITIZE_OP_CMPL = 1,
 };
 
+#define SPDK_NVME_SPEC_SERIAL_NUMBER_SIZE 20
+#define SPDK_NVME_SPEC_MPDEL_NUMBER_SIZE 40
+#define SPDK_NVME_SPEC_FIRMWARE_REVISION_SIZE 8
+#define SPDK_NVME_SPEC_IEEE_OUI_SIZE 3
+
 struct __attribute__((packed)) spdk_nvme_ctrlr_data {
 	/* bytes 0-255: controller capabilities and features */
 
@@ -890,19 +895,19 @@ struct __attribute__((packed)) spdk_nvme_ctrlr_data {
 	uint16_t		ssvid;
 
 	/** serial number */
-	int8_t			sn[20];
+	int8_t			sn[SPDK_NVME_SPEC_SERIAL_NUMBER_SIZE];
 
 	/** model number */
-	int8_t			mn[40];
+	int8_t			mn[SPDK_NVME_SPEC_MPDEL_NUMBER_SIZE];
 
 	/** firmware revision */
-	uint8_t			fr[8];
+	uint8_t			fr[SPDK_NVME_SPEC_FIRMWARE_REVISION_SIZE];
 
 	/** recommended arbitration burst */
 	uint8_t			rab;
 
 	/** ieee oui identifier */
-	uint8_t			ieee[3];
+	uint8_t			ieee[SPDK_NVME_SPEC_IEEE_OUI_SIZE];
 
 	/** controller multi-path I/O and namespace sharing capabilities */
 	struct {

@@ -53,7 +53,6 @@
 #include "spdk_internal/event.h"
 #include "nvmf/nvmf_internal.h"
 
-#define MODEL_NUMBER "SPDK Virtual Controller"
 #define FW_VERSION "FFFFFFFF"
 
 /* read command dword 12 */
@@ -99,7 +98,7 @@ nvmf_virtual_ctrlr_get_data(struct spdk_nvmf_session *session)
 	session->vcdata.vid = subsys->dev.virt.sub_pci_id.vendor_id;
 	session->vcdata.ssvid = subsys->dev.virt.sub_pci_id.subvendor_id;
 	spdk_strcpy_pad(session->vcdata.fr, FW_VERSION, sizeof(session->vcdata.fr), ' ');
-	spdk_strcpy_pad(session->vcdata.mn, MODEL_NUMBER, sizeof(session->vcdata.mn), ' ');
+	spdk_strcpy_pad(session->vcdata.mn, g_nvmf_tgt.opts.mn, sizeof(session->vcdata.mn), ' ');
 	spdk_strcpy_pad(session->vcdata.sn, subsys->dev.virt.sn, sizeof(session->vcdata.sn), ' ');
 	session->vcdata.rab = g_nvmf_tgt.opts.rab;
 	memcpy(session->vcdata.ieee, g_nvmf_tgt.opts.ieee, 3 * sizeof(uint8_t));

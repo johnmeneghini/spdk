@@ -86,6 +86,8 @@ struct spdk_nvmf_probe_ctx {
 #define SPDK_NVMF_CONFIG_KEEP_ALIVE_INTERVAL_DEFAULT 10
 #define SPDK_NVMF_CONFIG_VOLATILE_WRITE_CACHE_DEFAULT 1
 #define SPDK_NVMF_CONFIG_SGL_SUPPORT_DEFAULT 5
+#define SPDK_NVMF_CONFIG_OPT_NVM_CMD_SUPPORT_DEFAULT 4
+#define SPDK_NVMF_CONFIG_MODEL_NUMBER_DEFAULT "SPDK Virtual Controller"
 
 
 struct spdk_nvmf_tgt_conf g_spdk_nvmf_tgt_conf;
@@ -165,6 +167,7 @@ spdk_nvmf_parse_nvmf_tgt(void)
 	struct spdk_nvmf_tgt_opts opts;
 	int intval;
 	int rc;
+	char *model_number;
 
 	sp = spdk_conf_find_section(NULL, "Nvmf");
 	if (sp == NULL) {
@@ -318,9 +321,16 @@ spdk_nvmf_parse_nvmf_tgt(void)
 
 	intval = spdk_conf_section_get_intval(sp, "OptNVMCommandSupport");
 	if (intval < 0) {
-		intval = 0;
+		intval = SPDK_NVMF_CONFIG_OPT_NVM_CMD_SUPPORT_DEFAULT;
 	}
 	opts.oncs = intval;
+
+	model_number = spdk_conf_section_get_val(sp, "ModelNumber");
+	if (model_number == NULL) {
+		model_number = SPDK_NVMF_CONFIG_MODEL_NUMBER_DEFAULT;
+	}
+	strncpy(opts.mn, model_number, sizeof(opts.mn));
+
 
 	intval = spdk_conf_section_get_intval(sp, "AcceptorCore");
 	if (intval < 0) {
