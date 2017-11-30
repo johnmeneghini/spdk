@@ -241,6 +241,10 @@ int
 spdk_nvmf_subsystem_add_listener(struct spdk_nvmf_subsystem *subsystem,
 				 struct spdk_nvmf_listen_addr *listen_addr);
 
+int
+spdk_nvmf_subsystem_remove_listener(struct spdk_nvmf_subsystem *subsystem,
+				    struct spdk_nvmf_listen_addr *listen_addr);
+
 bool
 spdk_nvmf_subsystem_listener_allowed(struct spdk_nvmf_subsystem *subsystem,
 				     struct spdk_nvmf_listen_addr *listen_addr);
