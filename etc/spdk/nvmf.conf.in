@@ -146,6 +146,8 @@
   # supported by a controller. We enable DSM by default
   OptNVMCommandSupport 4
 
+  # Model Number: Indicates the model number of the controller
+  ModelNumber "SPDK Virtual Controller"
 
 [Nvme]
   # NVMe Device Whitelist

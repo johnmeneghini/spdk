@@ -195,7 +195,7 @@ struct spdk_nvmf_tgt_opts {
 	uint32_t				max_io_size;
 	uint64_t				lcore_mask;
 	uint8_t					rab;
-	uint8_t					ieee[3];
+	uint8_t					ieee[SPDK_NVME_SPEC_IEEE_OUI_SIZE];
 	uint8_t					cmic;
 	uint8_t					nmic;
 	uint32_t				oaes;
@@ -209,6 +209,7 @@ struct spdk_nvmf_tgt_opts {
 	uint16_t				awupf;
 	uint32_t				sgls;
 	uint16_t				oncs;
+	uint8_t                                 mn[SPDK_NVME_SPEC_MPDEL_NUMBER_SIZE];
 };
 
 struct spdk_nvmf_subsystem *spdk_nvmf_create_subsystem(const char *nqn,
