@@ -43,6 +43,7 @@
 #include "spdk/event.h"
 #include "spdk/queue.h"
 #include "spdk/scsi_spec.h"
+#include "spdk/nvme_spec.h"
 
 #define SPDK_BDEV_SMALL_RBUF_MAX_SIZE 4096
 #define SPDK_BDEV_LARGE_RBUF_MAX_SIZE (64 * 1024)
@@ -78,6 +79,9 @@ struct spdk_bdev {
 
 	/** Unique product name for this kind of block device. */
 	char product_name[SPDK_BDEV_MAX_PRODUCT_NAME_LENGTH];
+
+	/** Temporary. uuid will be moved to spdk_nvmf_ns in future */
+	struct spdk_nvme_ns_id_desc *id_desc;
 
 	/** Size in bytes of a logical block for the backend */
 	uint32_t blocklen;

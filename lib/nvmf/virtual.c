@@ -112,9 +112,19 @@ nvmf_virtual_ctrlr_get_data(struct spdk_nvmf_session *session)
 	session->vcdata.awun = g_nvmf_tgt.opts.awun;
 	session->vcdata.awupf = g_nvmf_tgt.opts.awupf;
 	memcpy(&session->vcdata.sgls, &g_nvmf_tgt.opts.sgls, sizeof(uint32_t));
-	session->vcdata.ver.bits.mjr = 1;
-	session->vcdata.ver.bits.mnr = 2;
-	session->vcdata.ver.bits.ter = 1;
+
+	if (g_nvmf_tgt.opts.nvmever == SPDK_NVME_VERSION(1, 3, 0)) {
+		/* Version Supported: 1.3.0 */
+		session->vcdata.ver.bits.mjr = 1;
+		session->vcdata.ver.bits.mnr = 3;
+		session->vcdata.ver.bits.ter = 0;
+	} else {
+		/* default Version : 1.2.1 */
+		session->vcdata.ver.bits.mjr = 1;
+		session->vcdata.ver.bits.mnr = 2;
+		session->vcdata.ver.bits.ter = 1;
+	}
+
 	session->vcdata.ctratt.host_id_exhid_supported = 1;
 	session->vcdata.frmw.slot1_ro = 1;
 	session->vcdata.frmw.num_slots = 1;
@@ -231,6 +241,7 @@ identify_ns(struct spdk_nvmf_subsystem *subsystem,
 	nsdata->nuse = bdev->blockcnt;
 	nsdata->nlbaf = 0;
 	nsdata->flbas.format = 0;
+	nsdata->nmic.can_share = g_nvmf_tgt.opts.nmic;
 	nsdata->lbaf[0].lbads = spdk_u32log2(bdev->blocklen);
 
 	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
@@ -276,6 +287,37 @@ identify_active_ns_list(struct spdk_nvmf_subsystem *subsystem,
 }
 
 static int
+identify_ns_id_desc_list(struct spdk_nvmf_subsystem *subsystem,
+			 struct spdk_nvme_cmd *cmd,
+			 struct spdk_nvme_cpl *rsp,
+			 void *id_desc_list)
+{
+	struct spdk_bdev *bdev;
+
+	if (cmd->nsid > subsystem->dev.virt.max_nsid || cmd->nsid == 0) {
+		SPDK_ERRLOG("Identify Namespace ID descriptor for invalid NSID %u\n", cmd->nsid);
+		rsp->status.sc = SPDK_NVME_SC_INVALID_NAMESPACE_OR_FORMAT;
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+	}
+
+	bdev = subsystem->dev.virt.ns_list[cmd->nsid - 1];
+	/*
+	 * The NVMe1.3 spec is not clear if NSID is not found in active ns_list.
+	 * Just following the CNS 00h way of handling. Just zero fill and return.
+	 * req->data is already zero filled so just complete
+	 */
+	if (bdev == NULL) {
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+	}
+
+	if (bdev->id_desc) {
+		memcpy(id_desc_list, (char *)bdev->id_desc, sizeof(*bdev->id_desc) + bdev->id_desc->nidl);
+	}
+
+	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+}
+
+static int
 nvmf_virtual_ctrlr_identify(struct spdk_nvmf_request *req)
 {
 	uint8_t cns;
@@ -300,6 +342,8 @@ nvmf_virtual_ctrlr_identify(struct spdk_nvmf_request *req)
 		return identify_ctrlr(session, req->data);
 	case SPDK_NVME_IDENTIFY_ACTIVE_NS_LIST:
 		return identify_active_ns_list(subsystem, cmd, rsp, req->data);
+	case SPDK_NVME_IDENTIFY_NS_ID_DESCRIPTOR_LIST:
+		return identify_ns_id_desc_list(subsystem, cmd, rsp, req->data);
 	default:
 		SPDK_ERRLOG("Identify command with unsupported CNS 0x%02x\n", cns);
 		rsp->status.sc = SPDK_NVME_SC_INVALID_FIELD;

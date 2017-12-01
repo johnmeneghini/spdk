@@ -187,6 +187,7 @@ struct spdk_nvmf_subsystem {
 };
 
 struct spdk_nvmf_tgt_opts {
+	uint32_t				nvmever;
 	uint16_t				max_queue_depth;
 	uint16_t				max_aq_depth;
 	uint16_t				max_queues_per_session;
@@ -196,6 +197,7 @@ struct spdk_nvmf_tgt_opts {
 	uint8_t					rab;
 	uint8_t					ieee[3];
 	uint8_t					cmic;
+	uint8_t					nmic;
 	uint32_t				oaes;
 	uint8_t					acl;
 	uint8_t					aerl;
@@ -256,6 +258,8 @@ nvmf_subsystem_add_ctrlr(struct spdk_nvmf_subsystem *subsystem,
 			 struct spdk_nvme_ctrlr *ctrlr, const struct spdk_pci_addr *pci_addr);
 
 void spdk_nvmf_subsystem_poll(struct spdk_nvmf_subsystem *subsystem);
+
+struct spdk_nvme_ns_id_desc *spdk_nvmf_get_ns_id_desc(uint8_t nidt, uint8_t nid[]);
 
 /**
  * Add a namespace to a subsytem.
