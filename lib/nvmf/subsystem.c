@@ -108,12 +108,8 @@ spdk_nvmf_subsystem_host_allowed(struct spdk_nvmf_subsystem *subsystem, const ch
 	}
 
 	if (subsystem->num_hosts == 0) {
-		/* No hosts means any host can connect , only for discovery subtype */
-		if (subsystem->subtype == SPDK_NVMF_SUBTYPE_DISCOVERY) {
-			return true;
-		} else {
-			return false;
-		}
+		/* No hosts means any host can connect */
+		return true;
 	}
 
 	TAILQ_FOREACH(host, &subsystem->hosts, link) {
