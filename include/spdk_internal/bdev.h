@@ -192,6 +192,9 @@ struct spdk_bdev {
 	/** Unique product name for this kind of block device. */
 	char *product_name;
 
+	/** Temporary. uuid will be moved to spdk_nvmf_ns in future */
+	struct spdk_nvme_ns_id_desc *id_desc;
+
 	/** Size in bytes of a logical block for the backend */
 	uint32_t blocklen;
 

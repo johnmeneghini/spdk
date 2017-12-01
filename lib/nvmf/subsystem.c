@@ -40,6 +40,7 @@
 
 #include "spdk/string.h"
 #include "spdk/trace.h"
+#include "spdk/nvme_spec.h"
 #include "spdk/nvmf_spec.h"
 
 #include "spdk_internal/bdev.h"
@@ -414,6 +415,32 @@ static void spdk_nvmf_ctrlr_hot_remove(void *remove_ctx)
 	struct spdk_nvmf_subsystem *subsystem = (struct spdk_nvmf_subsystem *)remove_ctx;
 
 	subsystem->is_removed = true;
+}
+
+struct spdk_nvme_ns_id_desc *
+spdk_nvmf_get_ns_id_desc(uint8_t nidt, uint8_t nid[])
+{
+	struct spdk_nvme_ns_id_desc *desc;
+	uint8_t nidl;
+
+	assert((nidt >= SPDK_NVME_NIDT_EUI64) || (nidt <= SPDK_NVME_NIDT_UUID));
+
+	if (nidt == SPDK_NVME_NIDT_EUI64) {
+		nidl = SPDK_NVME_NIDL_EUI64;
+	} else if (nidt == SPDK_NVME_NIDT_NGUID) {
+		nidl = SPDK_NVME_NIDL_NGUID;
+	} else if (nidt == SPDK_NVME_NIDT_UUID) {
+		nidl = SPDK_NVME_NIDL_UUID;
+	} else {
+		return NULL;
+	}
+
+	desc = calloc(1, sizeof(struct spdk_nvme_ns_id_desc) + nidl);
+	desc->nidt = nidt;
+	desc->nidl = nidl;
+	memcpy(desc->nid, nid, nidl);
+
+	return desc;
 }
 
 uint32_t
