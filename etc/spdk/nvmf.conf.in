@@ -55,6 +55,9 @@
 
 # Define NVMf protocol global options
 [Nvmf]
+  # NVME spec version. For example NVMe 1.2.1 its 0x010201
+  NVMeVersion 0x010201
+
   # Maximum admin queue depth
   MaxAqDepth 32
 
@@ -94,6 +97,10 @@
   # Controller Multi-Path IO and Namespace Sharing capabilites
   # Refer Identify Controller Data Structure in NVM Express base spec
 #CMIC 0
+
+  # Namespace Multi-Path IO and Namespace Sharing capabilites
+  # Refer Identify Namespace Data Structure in NVM Express base spec
+#NMIC 0
 
   # Optional AER Support: Indicates Optional Asynchronous events supported
   # by a controller
@@ -220,6 +227,7 @@
   Listen RDMA 192.168.2.21:4420
   Host nqn.2016-06.io.spdk:init
   SN SPDK00000000000001
+#Namespace nvme0n1 UUID cfb11df2e43a49779293f41319de4fbb
   Namespace Nvme0n1
   Namespace Nvme1n1
   Namespace Malloc0
