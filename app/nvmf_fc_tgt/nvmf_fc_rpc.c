@@ -313,7 +313,7 @@ spdk_rpc_construct_nvmf_subsystem(struct spdk_jsonrpc_server_conn *conn,
 			req.listen_addresses.addresses,
 			req.hosts.num_hosts, req.hosts.hosts, req.pci_address,
 			req.serial_number,
-			req.namespaces.num_names, req.namespaces.names);
+			req.namespaces.num_names, req.namespaces.names, NULL, NULL);
 	if (ret) {
 		goto invalid;
 	}
