@@ -42,6 +42,7 @@
 #include "spdk/nvmf.h"
 #include "spdk/string.h"
 #include "spdk/util.h"
+#include "spdk/nvme_spec.h"
 
 #define MAX_LISTEN_ADDRESSES 255
 #define MAX_HOSTS 255
@@ -67,6 +68,7 @@ struct spdk_nvmf_probe_ctx {
 #define SPDK_NVMF_CONFIG_QUEUES_PER_SESSION_MIN 2
 #define SPDK_NVMF_CONFIG_QUEUES_PER_SESSION_MAX 1024
 
+#define SPDK_NVMF_CONFIG_NVME_VERSION_DEFAULT 0x010201
 #define SPDK_NVMF_CONFIG_QUEUE_DEPTH_DEFAULT 128
 #define SPDK_NVMF_CONFIG_QUEUE_DEPTH_MIN 16
 #define SPDK_NVMF_CONFIG_QUEUE_DEPTH_MAX 1024
@@ -170,6 +172,12 @@ spdk_nvmf_parse_nvmf_tgt(void)
 		return -1;
 	}
 
+	intval = spdk_conf_section_get_intval(sp, "NVMeVersion");
+	if (intval < 0) {
+		intval = SPDK_NVMF_CONFIG_NVME_VERSION_DEFAULT;
+	}
+	opts.nvmever = intval;
+
 	intval = spdk_conf_section_get_intval(sp, "MaxQueueDepth");
 	if (intval < 0) {
 		intval = SPDK_NVMF_CONFIG_QUEUE_DEPTH_DEFAULT;
@@ -241,6 +249,12 @@ spdk_nvmf_parse_nvmf_tgt(void)
 		intval = 0;
 	}
 	opts.cmic = intval;
+
+	intval = spdk_conf_section_get_intval(sp, "NMIC");
+	if (intval < 0) {
+		intval = 0;
+	}
+	opts.nmic = intval;
 
 	intval = spdk_conf_section_get_intval(sp, "OptAerSupport");
 	if (intval < 0) {
@@ -435,6 +449,8 @@ spdk_nvmf_parse_subsystem(struct spdk_conf_section *sp)
 	const char *sn;
 	int num_devs;
 	char *devs[MAX_VIRTUAL_NAMESPACE];
+	char *devs_nidt[MAX_VIRTUAL_NAMESPACE];
+	char *devs_nid[MAX_VIRTUAL_NAMESPACE];
 
 	nqn = spdk_conf_section_get_val(sp, "NQN");
 	mode_str = spdk_conf_section_get_val(sp, "Mode");
@@ -487,6 +503,8 @@ spdk_nvmf_parse_subsystem(struct spdk_conf_section *sp)
 		if (!devs[i]) {
 			break;
 		}
+		devs_nidt[i] = spdk_conf_section_get_nmval(sp, "Namespace", i, 1);
+		devs_nid[i] = spdk_conf_section_get_nmval(sp, "Namespace", i, 2);
 
 		num_devs++;
 	}
@@ -495,7 +513,7 @@ spdk_nvmf_parse_subsystem(struct spdk_conf_section *sp)
 					    num_listen_addrs, listen_addrs,
 					    num_hosts, hosts,
 					    bdf, sn,
-					    num_devs, devs);
+					    num_devs, devs, devs_nidt, devs_nid);
 
 	for (i = 0; i < MAX_LISTEN_ADDRESSES; i++) {
 		free(listen_addrs_str[i]);
@@ -548,7 +566,8 @@ spdk_nvmf_construct_subsystem(const char *name,
 			      const char *mode_str, int32_t lcore,
 			      int num_listen_addresses, struct rpc_listen_address *addresses,
 			      int num_hosts, char *hosts[], const char *bdf,
-			      const char *sn, int num_devs, char *dev_list[])
+			      const char *sn, int num_devs, char *dev_list[],
+			      char *dev_nidt[], char *dev_nid[])
 {
 	struct spdk_nvmf_subsystem *subsystem;
 	struct nvmf_tgt_subsystem *app_subsys;
@@ -556,6 +575,7 @@ spdk_nvmf_construct_subsystem(const char *name,
 	enum spdk_nvmf_subsystem_mode mode;
 	int i;
 	uint64_t mask;
+	uint8_t nidt, nid[16];
 
 	if (name == NULL) {
 		SPDK_ERRLOG("No NQN specified for subsystem\n");
@@ -719,6 +739,39 @@ spdk_nvmf_construct_subsystem(const char *name,
 			if (bdev == NULL) {
 				SPDK_ERRLOG("Could not find namespace bdev '%s'\n", namespace);
 				goto error;
+			}
+			if (dev_nidt && dev_nid) {
+				nidt = 0;
+				memset(nid, 0, 16);
+				if (dev_nidt[i] && (strcasecmp(dev_nidt[i], "EUI64") == 0)) {
+					nidt = SPDK_NVME_NIDT_EUI64;
+					if (dev_nid[i] && (strlen(dev_nid[i]) == 16)) {
+						sscanf(dev_nid[i], "%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx",
+						       &nid[0], &nid[1], &nid[2], &nid[3],
+						       &nid[4], &nid[5], &nid[6], &nid[7]);
+					}
+				} else if (dev_nidt[i] && (strcasecmp(dev_nidt[i], "NGUID") == 0)) {
+					nidt = SPDK_NVME_NIDT_NGUID;
+					if (dev_nid[i] && (strlen(dev_nid[i]) == 32)) {
+						sscanf(dev_nid[i], "%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx",
+						       &nid[0], &nid[1], &nid[2], &nid[3],
+						       &nid[4], &nid[5], &nid[6], &nid[7]);
+						sscanf(dev_nid[i] + 16, "%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx",
+						       &nid[8], &nid[9], &nid[10], &nid[11],
+						       &nid[12], &nid[13], &nid[14], &nid[15]);
+					}
+				} else if (dev_nidt[i] && (strcasecmp(dev_nidt[i], "UUID") == 0)) {
+					nidt = SPDK_NVME_NIDT_UUID;
+					if (dev_nid[i] && (strlen(dev_nid[i]) == 32)) {
+						sscanf(dev_nid[i], "%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx",
+						       &nid[0], &nid[1], &nid[2], &nid[3],
+						       &nid[4], &nid[5], &nid[6], &nid[7]);
+						sscanf(dev_nid[i] + 16, "%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx",
+						       &nid[8], &nid[9], &nid[10], &nid[11],
+						       &nid[12], &nid[13], &nid[14], &nid[15]);
+					}
+				}
+				bdev->id_desc = spdk_nvmf_get_ns_id_desc(nidt, nid);
 			}
 			if (spdk_nvmf_subsystem_add_ns(subsystem, bdev, 0) == 0) {
 				goto error;

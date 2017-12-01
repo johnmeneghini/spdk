@@ -83,7 +83,7 @@ spdk_nvmf_construct_subsystem(const char *name,
 			      const char *mode, int32_t lcore,
 			      int num_listen_addresses, struct rpc_listen_address *addresses,
 			      int num_hosts, char *hosts[], const char *bdf,
-			      const char *sn, int num_devs, char *dev_list[]);
+			      const char *sn, int num_devs, char *dev_list[], char *dev_nidt[], char *dev_nid[]);
 
 int
 nvmf_tgt_shutdown_subsystem_by_nqn(const char *nqn);
