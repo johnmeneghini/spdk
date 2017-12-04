@@ -133,7 +133,7 @@ nvmf_virtual_ctrlr_get_data(struct spdk_nvmf_session *session)
 	session->vcdata.cqes.min = 0x04;
 	session->vcdata.cqes.max = 0x04;
 	session->vcdata.maxcmd = g_nvmf_tgt.opts.max_queue_depth;
-	session->vcdata.nn = subsys->dev.virt.max_nsid;
+	session->vcdata.nn = MAX_VIRTUAL_NAMESPACE;
 	strncpy((char *)session->vcdata.subnqn, session->subsys->subnqn, sizeof(session->vcdata.subnqn));
 	memcpy(&session->vcdata.oncs, &g_nvmf_tgt.opts.oncs, sizeof(uint16_t));
 	nvmf_virtual_verify_dsm(session);
