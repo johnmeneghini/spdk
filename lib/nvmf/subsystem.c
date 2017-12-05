@@ -307,7 +307,6 @@ spdk_nvmf_tgt_listen(const char *trname, enum spdk_nvmf_adrfam adrfam, const cha
 	}
 
 	TAILQ_INSERT_HEAD(&g_nvmf_tgt.listen_addrs, listen_addr, link);
-	g_nvmf_tgt.discovery_genctr++;
 
 	return listen_addr;
 }
@@ -323,6 +322,7 @@ spdk_nvmf_subsystem_remove_listener(struct spdk_nvmf_subsystem *subsystem,
 		if (allowed_listener->listen_addr == listen_addr) {
 			TAILQ_REMOVE(&subsystem->allowed_listeners, allowed_listener, link);
 			free(allowed_listener);
+			g_nvmf_tgt.discovery_genctr++;
 			return 0;
 		}
 	}
@@ -344,6 +344,7 @@ spdk_nvmf_subsystem_add_listener(struct spdk_nvmf_subsystem *subsystem,
 
 	TAILQ_INSERT_HEAD(&subsystem->allowed_listeners, allowed_listener, link);
 
+	g_nvmf_tgt.discovery_genctr++;
 	return 0;
 }
 
