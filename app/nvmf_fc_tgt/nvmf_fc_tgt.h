@@ -78,10 +78,10 @@ spdk_nvmf_bcm_fc_tgt_start_subsystem(struct nvmf_tgt_subsystem *app_subsys);
 
 int
 spdk_nvmf_bcm_fc_construct_subsystem(const char *name,
-				     const char *mode, int32_t lcore,
+				     const char *mode_str, int32_t lcore,
 				     int num_listen_addresses,
 				     struct rpc_listen_address *addresses,
-				     int num_hosts, char *hosts[],
+				     int num_hosts, char *hosts[],  bool allow_any_host,
 				     const char *bdf, const char *sn,
 				     int num_devs, char *dev_list[],
 				     char *dev_nidt[], char *dev_nid[]);
