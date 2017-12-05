@@ -85,6 +85,7 @@ struct spdk_nvmf_probe_ctx {
 #define SPDK_NVMF_CONFIG_OPT_NVM_CMD_SUPPORT_DEFAULT 4
 #define SPDK_NVMF_CONFIG_MODEL_NUMBER_DEFAULT "SPDK Virtual Controller"
 
+#define SPDK_NVMF_CONFIG_ALLOW_ANY_HOST_DEFAULT false
 
 struct spdk_nvmf_tgt_conf g_spdk_nvmf_tgt_conf;
 static int32_t g_last_core = -1;
@@ -102,16 +103,18 @@ spdk_add_nvmf_discovery_subsystem(void)
 		return -1;
 	}
 
+	spdk_nvmf_subsystem_set_allow_any_host(app_subsys->subsystem, true);
 	nvmf_tgt_start_subsystem(app_subsys);
 
 	return 0;
 }
 
+static struct spdk_nvmf_tgt_opts opts;
+
 static int
 spdk_nvmf_parse_nvmf_tgt(void)
 {
 	struct spdk_conf_section *sp;
-	struct spdk_nvmf_tgt_opts opts;
 	int intval;
 	int rc;
 	char *model_number;
@@ -278,6 +281,8 @@ spdk_nvmf_parse_nvmf_tgt(void)
 	}
 	strncpy(opts.mn, model_number, sizeof(opts.mn));
 
+	opts.allow_any_host = spdk_conf_section_get_boolval(sp, "AllowAnyHost",
+			      SPDK_NVMF_CONFIG_ALLOW_ANY_HOST_DEFAULT);
 
 	intval = spdk_conf_section_get_intval(sp, "AcceptorCore");
 	if (intval < 0) {
@@ -414,6 +419,7 @@ spdk_nvmf_parse_subsystem(struct spdk_conf_section *sp)
 	char *listen_addrs_str[MAX_LISTEN_ADDRESSES] = {};
 	int num_hosts;
 	char *hosts[MAX_HOSTS];
+	bool allow_any_host;
 	const char *bdf;
 	const char *sn;
 	int num_devs;
@@ -462,7 +468,10 @@ spdk_nvmf_parse_subsystem(struct spdk_conf_section *sp)
 	}
 	num_hosts = i;
 
+	allow_any_host = spdk_conf_section_get_boolval(sp, "AllowAnyHost", opts.allow_any_host);
+
 	bdf = spdk_conf_section_get_val(sp, "NVMe");
+
 	sn = spdk_conf_section_get_val(sp, "SN");
 
 	num_devs = 0;
@@ -479,7 +488,7 @@ spdk_nvmf_parse_subsystem(struct spdk_conf_section *sp)
 
 	ret = spdk_nvmf_construct_subsystem(nqn, mode_str, lcore,
 					    num_listen_addrs, listen_addrs,
-					    num_hosts, hosts,
+					    num_hosts, hosts, allow_any_host,
 					    bdf, sn,
 					    num_devs, devs, devs_nidt, devs_nid);
 
@@ -533,7 +542,7 @@ int
 spdk_nvmf_construct_subsystem(const char *name,
 			      const char *mode_str, int32_t lcore,
 			      int num_listen_addresses, struct rpc_listen_address *addresses,
-			      int num_hosts, char *hosts[], const char *bdf,
+			      int num_hosts, char *hosts[], bool allow_any_host, const char *bdf,
 			      const char *sn, int num_devs, char *dev_list[],
 			      char *dev_nidt[], char *dev_nid[])
 {
@@ -625,6 +634,7 @@ spdk_nvmf_construct_subsystem(const char *name,
 	for (i = 0; i < num_hosts; i++) {
 		spdk_nvmf_subsystem_add_host(subsystem, hosts[i]);
 	}
+	spdk_nvmf_subsystem_set_allow_any_host(subsystem, allow_any_host);
 
 	if (mode == NVMF_SUBSYSTEM_MODE_DIRECT) {
 #ifndef SPDK_NO_NVMF_DIRECT

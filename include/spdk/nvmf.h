@@ -180,6 +180,7 @@ struct spdk_nvmf_subsystem {
 
 	TAILQ_HEAD(, spdk_nvmf_host)		hosts;
 	uint32_t				num_hosts;
+	bool					allow_any_host;
 
 	TAILQ_HEAD(, spdk_nvmf_subsystem_allowed_listener)	allowed_listeners;
 
@@ -210,6 +211,7 @@ struct spdk_nvmf_tgt_opts {
 	uint32_t				sgls;
 	uint16_t				oncs;
 	uint8_t                                 mn[SPDK_NVME_SPEC_MPDEL_NUMBER_SIZE];
+	bool                                    allow_any_host;
 };
 
 struct spdk_nvmf_subsystem *spdk_nvmf_create_subsystem(const char *nqn,
@@ -233,6 +235,32 @@ nvmf_find_subsystem(const char *subnqn);
 
 bool spdk_nvmf_subsystem_exists(const char *subnqn);
 
+/**
+ * Set whether a subsystem should allow any host or only hosts in the allowed list.
+ *
+ * \param subsystem Subsystem to modify.
+ * \param allow_any_host true to allow any host to connect to this subsystem, or false to enforce
+ *                       the whitelist configured with spdk_nvmf_subsystem_add_host().
+ */
+void spdk_nvmf_subsystem_set_allow_any_host(struct spdk_nvmf_subsystem *subsystem,
+		bool allow_any_host);
+
+/**
+ * Check whether a subsystem should allow any host or only hosts in the allowed list.
+ *
+ * \param subsystem Subsystem to modify.
+ * \return true if any host is allowed to connect to this subsystem, or false if connecting hosts
+ *         must be in the whitelist configured with spdk_nvmf_subsystem_add_host().
+ */
+bool spdk_nvmf_subsystem_get_allow_any_host(const struct spdk_nvmf_subsystem *subsystem);
+
+/**
+ * Check if the given host is allowed to connect to the subsystem.
+ *
+ * \param subsystem The subsystem to query
+ * \param hostnqn The NQN of the host
+ * \return true if allowed, false if not.
+ */
 bool spdk_nvmf_subsystem_host_allowed(struct spdk_nvmf_subsystem *subsystem, const char *hostnqn);
 
 struct spdk_nvmf_listen_addr *
