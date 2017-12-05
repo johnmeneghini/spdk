@@ -81,29 +81,6 @@ spdk_nvmf_find_subsystem_with_cntlid(uint16_t cntlid)
 	return NULL;
 }
 
-bool
-spdk_nvmf_subsystem_host_allowed(struct spdk_nvmf_subsystem *subsystem, const char *hostnqn)
-{
-	struct spdk_nvmf_host *host;
-
-	if (!hostnqn) {
-		return false;
-	}
-
-	if (TAILQ_EMPTY(&subsystem->hosts)) {
-		/* No hosts means any host can connect */
-		return true;
-	}
-
-	TAILQ_FOREACH(host, &subsystem->hosts, link) {
-		if (strcmp(hostnqn, host->nqn) == 0) {
-			return true;
-		}
-	}
-
-	return false;
-}
-
 int
 spdk_nvmf_subsystem_start(struct spdk_nvmf_subsystem *subsystem)
 {
@@ -309,6 +286,45 @@ spdk_nvmf_tgt_listen(const char *trname, enum spdk_nvmf_adrfam adrfam, const cha
 	TAILQ_INSERT_HEAD(&g_nvmf_tgt.listen_addrs, listen_addr, link);
 
 	return listen_addr;
+}
+
+void
+spdk_nvmf_subsystem_set_allow_any_host(struct spdk_nvmf_subsystem *subsystem, bool allow_any_host)
+{
+	subsystem->allow_any_host = allow_any_host;
+}
+
+bool
+spdk_nvmf_subsystem_get_allow_any_host(const struct spdk_nvmf_subsystem *subsystem)
+{
+	return subsystem->allow_any_host;
+}
+
+bool
+spdk_nvmf_subsystem_host_allowed(struct spdk_nvmf_subsystem *subsystem, const char *hostnqn)
+{
+	struct spdk_nvmf_host *host;
+
+	if (!hostnqn) {
+		return false;
+	}
+
+	if (subsystem->allow_any_host) {
+		return true;
+	}
+
+	if (TAILQ_EMPTY(&subsystem->hosts)) {
+		/* No hosts are defined and allow_any_host is false, no one can connect */
+		return false;
+	}
+
+	TAILQ_FOREACH(host, &subsystem->hosts, link) {
+		if (strcmp(hostnqn, host->nqn) == 0) {
+			return true;
+		}
+	}
+
+	return false;
 }
 
 int

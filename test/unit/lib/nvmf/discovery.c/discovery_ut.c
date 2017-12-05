@@ -262,7 +262,9 @@ test_discovery_log(void)
 	disc_log = (struct spdk_nvmf_discovery_log_page *)buffer;
 	spdk_nvmf_get_discovery_log_page(&req, 0, sizeof(*disc_log));
 	CU_ASSERT(disc_log->genctr == 2);
-	CU_ASSERT(disc_log->numrec == 1);
+	CU_ASSERT(disc_log->numrec == 0);
+
+	spdk_nvmf_subsystem_add_host(subsystem, "nqn.2017-07.com.netapp:num1");
 
 	/* Offset 0, exact size match */
 	memset(buffer, 0xCC, sizeof(buffer));
@@ -305,8 +307,8 @@ test_discovery_log(void)
 	memset(buffer, 0xCC, sizeof(buffer));
 	disc_log = (struct spdk_nvmf_discovery_log_page *)buffer;
 	spdk_nvmf_get_discovery_log_page(&req, 0, sizeof(*disc_log));
-	CU_ASSERT(disc_log->genctr == 4); /* 2 subsystems + 2 listeners */
-	CU_ASSERT(disc_log->numrec == 2); /* numrecs to be 2 */
+	CU_ASSERT(disc_log->genctr == 5); /* 2 subsystems + 2 listeners + 1 host */
+	CU_ASSERT(disc_log->numrec == 1); /* numrecs to be 2 */
 
 	spdk_nvmf_subsystem_add_host(subsystem, "nqn.2017-07.com.netapp:new");
 	spdk_nvmf_subsystem_add_host(subsystem2, "nqn.2017-07.com.netapp:num1");
@@ -315,10 +317,11 @@ test_discovery_log(void)
 	memset(buffer, 0xCC, sizeof(buffer));
 	disc_log = (struct spdk_nvmf_discovery_log_page *)buffer;
 	spdk_nvmf_get_discovery_log_page(&req, 0, sizeof(*disc_log));
-	CU_ASSERT(disc_log->genctr == 6); /* 2 subsystems + 2 listeners + 2 hosts */
+	CU_ASSERT(disc_log->genctr == 7); /* 2 subsystems + 2 listeners + 3 hosts */
 	CU_ASSERT(disc_log->numrec ==
-		  1); /* numrecs to be 1 since we added hosts which go through allowed check */
+		  2); /* numrecs to be 1 since we added hosts which go through allowed check */
 
+	/* duplicate entry so nothing changes */
 	spdk_nvmf_subsystem_add_host(subsystem, "nqn.2017-07.com.netapp:num1");
 
 	/* Get only the header, no entries */

@@ -145,6 +145,9 @@
 
   # Model Number: Indicates the model number of the controller
   ModelNumber "SPDK Virtual Controller"
+  # Global setting allows all hosts to connect to all subsystems
+  # Per-Subsystem setting can be used to override global
+  AllowAnyHost No
 
 [Nvme]
   # NVMe Device Whitelist
@@ -207,7 +210,23 @@
 # - Exactly 1 NVMe directive specifying an NVMe device by PCI BDF. The
 #   PCI domain:bus:device.function can be replaced by "*" to indicate
 #   any PCI device.
-
+# - AllowAnyHost may be either true or false. If it is set, any host can
+#   access the subsytem even thougth it is not added to it.
+#   . AllowAnyHost does not affect the Discovery Controller
+#   . When AllowAnyHost is missing, the global AllowAnyHost setting
+#     is used for the Subsytem.
+#   . When AllowAnyHost is false a valid Host NQN must be added to
+#     the Subsystem. Valid NQNs must contain no upper case letters.
+#
+# Note: Valid host NQNs can be generated with the Linux 'nvme get-hostnqn' utility.
+#      To make the The Linux host NQN persistent, add to the /etc/nvme/hostnqn file.
+#
+#  E.g.:
+#
+#  $ sudo nvme gen-hostnqn | tr A-Z a-z > /etc/nvme/hostnqn
+#  $ cat /etc/nvme/hostnqn
+#  nqn.2014-08.org.nvmexpress:nvmf:uuid:6a007efc-2f43-4123-9c41-9c48896855e1
+#
 # Direct controller
 [Subsystem1]
   NQN nqn.2016-06.io.spdk:cnode1
@@ -215,6 +234,7 @@
   Mode Direct
   Listen RDMA 15.15.15.2:4420
   Host nqn.2016-06.io.spdk:init
+  AllowAnyHost Yes
   NVMe 0000:00:00.0
 
 # Multiple subsystems are allowed.
@@ -224,12 +244,14 @@
   Core 0
   Mode Virtual
   Listen RDMA 192.168.2.21:4420
-  Host nqn.2016-06.io.spdk:init
+  Host nqn.2014-08.org.nvmexpress:nvmf:uuid:6a007efc-2f43-4123-9c41-9c48896855e1
+  Hoat nqn.2014-08.org.nvmexpress:nvmf:uuid:3aebfc32-7e08-4fa2-9c98-43dd8f7d3841
   SN SPDK00000000000001
-#Namespace nvme0n1 UUID cfb11df2e43a49779293f41319de4fbb
   Namespace Nvme0n1
+#Namespace Nvme0n2 NGUID cfb11df2e43a49779293f41319de4fbb
   Namespace Nvme1n1
   Namespace Malloc0
   Namespace Malloc1
+#Namespace Malloc2 UUID cfb11df2e43a49779293f41319de4fbb
   Namespace AIO0
   Namespace AIO1

@@ -100,6 +100,9 @@ dump_nvmf_subsystem(struct spdk_json_write_ctx *w, struct nvmf_tgt_subsystem *tg
 	}
 	spdk_json_write_array_end(w);
 
+	spdk_json_write_name(w, "allow_any_host");
+	spdk_json_write_bool(w, spdk_nvmf_subsystem_get_allow_any_host(subsystem));
+
 	spdk_json_write_name(w, "hosts");
 	spdk_json_write_array_begin(w);
 
@@ -284,6 +287,7 @@ struct rpc_subsystem {
 	char *nqn;
 	struct rpc_listen_addresses listen_addresses;
 	struct rpc_hosts hosts;
+	bool allow_any_host;
 	char *pci_address;
 	char *serial_number;
 	struct rpc_dev_names namespaces;
@@ -304,6 +308,7 @@ static const struct spdk_json_object_decoder rpc_subsystem_decoders[] = {
 	{"listen_addresses", offsetof(struct rpc_subsystem, listen_addresses), decode_rpc_listen_addresses},
 	{"hosts", offsetof(struct rpc_subsystem, hosts), decode_rpc_hosts, true},
 	{"pci_address", offsetof(struct rpc_subsystem, pci_address), spdk_json_decode_string, true},
+	{"allow_any_host", offsetof(struct rpc_subsystem, allow_any_host), spdk_json_decode_bool, true},
 	{"serial_number", offsetof(struct rpc_subsystem, serial_number), spdk_json_decode_string, true},
 	{"namespaces", offsetof(struct rpc_subsystem, namespaces), decode_rpc_dev_names, true},
 };
@@ -327,7 +332,7 @@ spdk_rpc_construct_nvmf_subsystem(struct spdk_jsonrpc_request *request,
 	ret = spdk_nvmf_construct_subsystem(req.nqn, req.mode, req.core,
 					    req.listen_addresses.num_listen_address,
 					    req.listen_addresses.addresses,
-					    req.hosts.num_hosts, req.hosts.hosts, req.pci_address,
+					    req.hosts.num_hosts, req.hosts.hosts, req.allow_any_host, req.pci_address,
 					    req.serial_number,
 					    req.namespaces.num_names, req.namespaces.names, NULL, NULL);
 	if (ret) {

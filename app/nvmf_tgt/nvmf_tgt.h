@@ -80,9 +80,9 @@ struct nvmf_tgt_subsystem *nvmf_tgt_create_subsystem(const char *name,
 
 int
 spdk_nvmf_construct_subsystem(const char *name,
-			      const char *mode, int32_t lcore,
+			      const char *mode_str, int32_t lcore,
 			      int num_listen_addresses, struct rpc_listen_address *addresses,
-			      int num_hosts, char *hosts[], const char *bdf,
+			      int num_hosts, char *hosts[], bool allow_any_host, const char *bdf,
 			      const char *sn, int num_devs, char *dev_list[], char *dev_nidt[], char *dev_nid[]);
 
 int
