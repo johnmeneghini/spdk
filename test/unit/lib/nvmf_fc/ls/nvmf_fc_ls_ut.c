@@ -52,6 +52,8 @@
  * SPDK Stuff
  */
 
+void spdk_post_event(void *context, struct spdk_event *event);
+
 int spdk_nvmf_bcm_fc_xmt_ls_rsp(struct spdk_nvmf_bcm_fc_nport *tgtport,
 				struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst);
 void spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req, bool send_abts,
@@ -186,6 +188,12 @@ spdk_event_call(struct spdk_event *event)
 		}
 		free(event);
 	}
+}
+
+void
+spdk_post_event(void *context, struct spdk_event *event)
+{
+	spdk_event_call(event);
 }
 
 unsigned

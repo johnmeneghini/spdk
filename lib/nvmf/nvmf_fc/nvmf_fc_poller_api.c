@@ -46,6 +46,8 @@
 #include "bcm_fc.h"
 #include "bcm_sli_fc.h"
 
+extern void spdk_post_event(void *context, struct spdk_event *event);
+
 extern void
 spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req, bool send_abts,
 			   spdk_nvmf_bcm_fc_caller_cb cb, void *cb_args);
@@ -241,9 +243,11 @@ nvmf_fc_poller_api_abts_received(void *arg1, void *arg2)
 }
 
 spdk_nvmf_bcm_fc_poller_api_ret_t
-spdk_nvmf_bcm_fc_poller_api(uint32_t lcore, spdk_nvmf_bcm_fc_poller_api_t api, void *api_args)
+spdk_nvmf_bcm_fc_poller_api(struct spdk_nvmf_bcm_fc_hwqp *hwqp, spdk_nvmf_bcm_fc_poller_api_t api,
+			    void *api_args)
 {
 	struct spdk_event *event = NULL;
+	uint32_t lcore = hwqp->lcore_id;
 
 	switch (api) {
 	case SPDK_NVMF_BCM_FC_POLLER_API_ADD_CONNECTION:
@@ -258,9 +262,7 @@ spdk_nvmf_bcm_fc_poller_api(uint32_t lcore, spdk_nvmf_bcm_fc_poller_api_t api, v
 		break;
 	case SPDK_NVMF_BCM_FC_POLLER_API_QUIESCE_QUEUE: {
 		/* quiesce q polling now, don't wait for poller to do it */
-		struct spdk_nvmf_bcm_fc_poller_api_quiesce_queue_args *q_args =
-			(struct spdk_nvmf_bcm_fc_poller_api_quiesce_queue_args *) api_args;
-		q_args->hwqp->state = SPDK_FC_HWQP_OFFLINE;
+		hwqp->state = SPDK_FC_HWQP_OFFLINE;
 
 		event = spdk_event_allocate(lcore,
 					    nvmf_fc_poller_api_quiesce_queue,
@@ -288,7 +290,7 @@ spdk_nvmf_bcm_fc_poller_api(uint32_t lcore, spdk_nvmf_bcm_fc_poller_api_t api, v
 	}
 
 	if (event) {
-		spdk_event_call(event);
+		spdk_post_event(hwqp->context, event);
 		return SPDK_NVMF_BCM_FC_POLLER_API_SUCCESS;
 	}
 

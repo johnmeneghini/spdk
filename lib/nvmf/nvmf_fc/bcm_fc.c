@@ -55,6 +55,7 @@
 #include "bcm_fc.h"
 
 /* externs */
+extern void spdk_post_event(void *context, struct spdk_event *event);
 extern int spdk_nvmf_bcm_fc_handle_rsp(struct spdk_nvmf_bcm_fc_request *fc_req);
 extern int spdk_nvmf_bcm_fc_send_data(struct spdk_nvmf_bcm_fc_request *fc_req);
 extern void spdk_nvmf_bcm_fc_free_req(struct spdk_nvmf_bcm_fc_request *fc_req,
@@ -69,7 +70,6 @@ extern void spdk_nvmf_bcm_fc_req_set_state(struct spdk_nvmf_bcm_fc_request *fc_r
 extern void spdk_nvmf_bcm_fc_req_abort_complete(void *arg1, void *arg2);
 
 /* locals */
-static void nvmf_fc_queue_poller(void *arg);
 static inline struct spdk_nvmf_bcm_fc_session *nvmf_fc_get_fc_session(
 	struct spdk_nvmf_session *session);
 static inline struct spdk_nvmf_bcm_fc_conn *nvmf_fc_get_fc_conn(struct spdk_nvmf_conn *conn);
@@ -81,7 +81,7 @@ static void nvmf_fc_close_conn(struct spdk_nvmf_conn *conn);
 static bool nvmf_fc_conn_is_idle(struct spdk_nvmf_conn *conn);
 
 /* externs */
-extern void spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
+extern uint32_t spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
 extern int spdk_nvmf_bcm_fc_init_rqpair_buffers(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
 extern int spdk_nvmf_bcm_fc_create_req_mempool(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
 
@@ -125,7 +125,7 @@ spdk_nvmf_bcm_fc_add_poller(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 		      "Starting Poller function on lcore_id: %d for port: %d, hwqp: %d\n",
 		      hwqp->lcore_id, hwqp->fc_port->port_hdl, hwqp->hwqp_id);
 
-	spdk_poller_register(&hwqp->poller, nvmf_fc_queue_poller,
+	spdk_poller_register(&hwqp->poller, (spdk_poller_fn)spdk_nvmf_bcm_fc_queue_poller,
 			     (void *)hwqp, hwqp->lcore_id,
 			     period_microseconds);
 }
@@ -244,7 +244,7 @@ spdk_nvmf_bcm_fc_handle_abts_frame(struct spdk_nvmf_bcm_fc_nport *nport, uint16_
 		poller_arg->cb_info.cb_data = ctx;
 		poller_arg->ctx = ctx;
 
-		spdk_nvmf_bcm_fc_poller_api(poller_arg->hwqp->lcore_id,
+		spdk_nvmf_bcm_fc_poller_api(poller_arg->hwqp,
 					    SPDK_NVMF_BCM_FC_POLLER_API_ABTS_RECEIVED,
 					    poller_arg);
 		j ++;
@@ -298,15 +298,18 @@ spdk_nvmf_bcm_fc_put_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct spdk_nvmf_bc
 	return spdk_ring_enqueue(hwqp->fc_port->xri_ring, (void **)&xri, 1) == 1 ? 0 : 1;
 }
 
-static void
-nvmf_fc_queue_poller(void *arg)
+uint32_t
+spdk_nvmf_bcm_fc_queue_poller(void *arg)
 {
 	struct spdk_nvmf_bcm_fc_hwqp *hwqp = arg;
 
 	if (hwqp->state == SPDK_FC_HWQP_ONLINE) {
-		spdk_nvmf_bcm_fc_process_queues(hwqp);
+		return spdk_nvmf_bcm_fc_process_queues(hwqp);
 	}
+
+	return 0;
 }
+
 
 /*** Accessor functions for the bcm-fc structures - BEGIN */
 /*
@@ -723,7 +726,7 @@ nvmf_fc_request_complete_process(void *arg1, void *arg2)
 		event = spdk_event_allocate(fc_req->poller_lcore,
 					    spdk_nvmf_bcm_fc_req_abort_complete,
 					    (void *)fc_req, NULL);
-		spdk_event_call(event);
+		spdk_post_event(fc_req->hwqp->context, event);
 	} else if (rsp->status.sc == SPDK_NVME_SC_SUCCESS &&
 		   req->xfer == SPDK_NVME_DATA_CONTROLLER_TO_HOST) {
 
@@ -753,26 +756,16 @@ nvmf_fc_request_complete(struct spdk_nvmf_request *req)
 	struct spdk_event *event = NULL;
 
 	/* Check if we need to switch to correct lcore of HWQP. */
-#ifndef NETAPP
-	/* Right now spdk_env_get_current_core returns an incorrect
-	 * value (0) when called from non-EAL threads. This results in
-	 * an issue where the WAFL threads could potentially write or
-	 * clobber the h/w queues (or some other data structures.
-	 * TODO: Uncomment the below line when we solve the
-	 * spdk_env_get_current_core issue.
-	 */
 	if (spdk_env_get_current_core() != fc_req->poller_lcore) {
-#endif
 		/* Switch to correct HWQP lcore. */
 		event = spdk_event_allocate(fc_req->poller_lcore,
 					    nvmf_fc_request_complete_process,
 					    (void *)req, NULL);
-		spdk_event_call(event);
-#ifndef NETAPP
+		spdk_post_event(fc_req->hwqp->context, event);
+
 	} else {
 		nvmf_fc_request_complete_process(req, NULL);
 	}
-#endif
 	return 0;
 }
 
