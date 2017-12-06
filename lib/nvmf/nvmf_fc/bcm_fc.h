@@ -164,6 +164,8 @@ struct spdk_nvmf_bcm_fc_hwqp {
 	struct spdk_nvmf_bcm_fc_port *fc_port; /* HW port structure for these queues */
 	struct spdk_poller *poller;
 
+	void *context;			/* Vendor Context */
+
 	TAILQ_HEAD(, spdk_nvmf_bcm_fc_conn) connection_list;
 	uint32_t num_conns; /* number of connections to queue */
 	uint16_t cid_cnt;   /* used to generate unique conn. id for RQ */
@@ -514,7 +516,7 @@ SPDK_STATIC_ASSERT(sizeof(struct spdk_nvmf_bcm_fc_rq_buf_ls_request) ==
  */
 
 /* Poller API entry point function */
-spdk_nvmf_bcm_fc_poller_api_ret_t spdk_nvmf_bcm_fc_poller_api(uint32_t lcore,
+spdk_nvmf_bcm_fc_poller_api_ret_t spdk_nvmf_bcm_fc_poller_api(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 		spdk_nvmf_bcm_fc_poller_api_t api,
 		void *api_args);
 
@@ -554,6 +556,8 @@ void spdk_nvmf_bcm_fc_add_poller(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 				 uint64_t period_microseconds);
 
 void spdk_nvmf_bcm_fc_delete_poller(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
+
+uint32_t spdk_nvmf_bcm_fc_queue_poller(void *arg);
 
 void spdk_nvmf_bcm_fc_handle_abts_frame(struct spdk_nvmf_bcm_fc_nport *nport,
 					uint16_t rpi, uint16_t oxid,
@@ -624,4 +628,5 @@ spdk_err_t
 spdk_nvmf_bcm_fc_find_rport_from_sid(uint32_t s_id,
 				     struct spdk_nvmf_bcm_fc_nport *tgtport,
 				     struct spdk_nvmf_bcm_fc_remote_port_info **rport);
+
 #endif

@@ -63,7 +63,8 @@ char *fc_req_state_strs[] = {
 	"SPDK_NVMF_BCM_FC_REQ_PENDING"
 };
 
-void spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
+extern void spdk_post_event(void *context, struct spdk_event *event);
+uint32_t spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
 void spdk_nvmf_bcm_fc_free_req(struct spdk_nvmf_bcm_fc_request *fc_req,
 			       bool xri_active);
 int spdk_nvmf_bcm_fc_init_rqpair_buffers(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
@@ -434,7 +435,7 @@ complete:
 	spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_ABORTED);
 	event = spdk_event_allocate(fc_req->poller_lcore,
 				    spdk_nvmf_bcm_fc_req_abort_complete, (void *)fc_req, NULL);
-	spdk_event_call(event);
+	spdk_post_event(fc_req->hwqp->context, event);
 }
 
 
@@ -1683,11 +1684,12 @@ nvmf_fc_process_cq_entry(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_eventq *c
 	return rc;
 }
 
-void
+uint32_t
 spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 {
 	int rc = 0, budget = 0;
 	uint32_t n_processed = 0;
+	uint32_t n_processed_total = 0;
 	uint8_t eqe[sizeof(eqe_t)] = { 0 };
 	uint16_t cq_id;
 	struct fc_eventq *eq;
@@ -1729,6 +1731,7 @@ spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 
 		if (n_processed >= (eq->q.posted_limit)) {
 			nvmf_fc_bcm_notify_queue(&eq->q, false, n_processed);
+			n_processed_total += n_processed;
 			n_processed = 0;
 		}
 
@@ -1739,7 +1742,7 @@ spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 
 	nvmf_fc_bcm_notify_queue(&eq->q, eq->auto_arm_flag, n_processed);
 
-	return;
+	return (n_processed + n_processed_total);
 }
 
 int

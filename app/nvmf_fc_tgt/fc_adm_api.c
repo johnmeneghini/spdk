@@ -706,7 +706,7 @@ nvmf_tgt_fc_hw_queue_quiesce(struct spdk_nvmf_bcm_fc_hwqp *fc_hwqp, void *ctx,
 	args->cb_info.cb_data = args;
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "Quiesce queue %d\n", fc_hwqp->hwqp_id);
-	rc = spdk_nvmf_bcm_fc_poller_api(fc_hwqp->lcore_id, SPDK_NVMF_BCM_FC_POLLER_API_QUIESCE_QUEUE,
+	rc = spdk_nvmf_bcm_fc_poller_api(fc_hwqp, SPDK_NVMF_BCM_FC_POLLER_API_QUIESCE_QUEUE,
 					 args);
 	if (rc) {
 		spdk_free(args);

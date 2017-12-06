@@ -589,7 +589,7 @@ nvmf_fc_ls_add_conn_to_poller(
 			api_data->assoc_conn = assoc_conn;
 			SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
 				      "conn_id = %ld\n", fc_conn->conn_id);
-			spdk_nvmf_bcm_fc_poller_api(api_data->args.fc_conn->hwqp->lcore_id,
+			spdk_nvmf_bcm_fc_poller_api(api_data->args.fc_conn->hwqp,
 						    SPDK_NVMF_BCM_FC_POLLER_API_ADD_CONNECTION,
 						    &api_data->args);
 			SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\n");
@@ -802,7 +802,7 @@ nvmf_fc_delete_association(struct spdk_nvmf_bcm_fc_nport *tgtport,
 
 		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
 			      "conn_id = %lx\n", fc_conn->conn_id);
-		spdk_nvmf_bcm_fc_poller_api(api_data->args.hwqp->lcore_id,
+		spdk_nvmf_bcm_fc_poller_api(api_data->args.hwqp,
 					    SPDK_NVMF_BCM_FC_POLLER_API_DEL_CONNECTION,
 					    &api_data->args);
 	}
