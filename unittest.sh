@@ -4,7 +4,7 @@
 #  $valgrind    Specify the valgrind command line, if not
 #               then a default command line is used
 
-set -xe
+set -e
 
 # if ASAN is enabled, use it.  If not use valgrind if installed but allow
 # the env variable to override the default shown below.
@@ -88,7 +88,9 @@ $valgrind test/unit/lib/iscsi/iscsi.c/iscsi_ut
 $valgrind test/unit/lib/util/bit_array.c/bit_array_ut
 $valgrind test/unit/lib/util/io_channel.c/io_channel_ut
 $valgrind test/unit/lib/util/string.c/string_ut
-$valgrind test/unit/lib/nvmf_fc/ls/nvmf_fc_ls_ut
+if [ -x test/lib/nvmf/nvmf_fc/ls/nvmf_fc_ls_ut ]; then
+     $valgrind test/lib/nvmf/nvmf_fc/ls/nvmf_fc_ls_ut
+fi
 
 if [ $(uname -s) = Linux ]; then
 $valgrind test/unit/lib/vhost/vhost.c/vhost_ut
