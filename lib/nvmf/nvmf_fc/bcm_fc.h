@@ -152,6 +152,7 @@ struct spdk_nvmf_bcm_fc_xri {
 	uint32_t xri;   /* The actual xri value */
 	/* Internal */
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_xri) link;
+	bool is_active;
 };
 
 /*
@@ -332,7 +333,6 @@ struct spdk_nvmf_bcm_fc_request {
 	uint16_t rpi;
 	struct spdk_nvmf_bcm_fc_conn *fc_conn;
 	struct spdk_nvmf_bcm_fc_hwqp *hwqp;
-	bool xri_activated;
 	int state;
 	uint32_t transfered_len;
 	bool is_aborted;

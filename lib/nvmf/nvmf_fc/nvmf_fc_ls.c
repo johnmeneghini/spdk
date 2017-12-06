@@ -257,7 +257,7 @@ nvmf_fc_association_init(struct spdk_nvmf_bcm_fc_association *assoc)
 	/* allocate rqst/resp buffers to send LS disconnect to initiator */
 	assoc->snd_disconn_bufs.rqst.virt = spdk_dma_malloc(
 			sizeof(struct nvmf_fc_ls_disconnect_rqst)  +
-			sizeof(struct nvmf_fc_ls_disconnect_acc) +
+			sizeof(struct nvmf_fc_ls_rjt) +
 			(2 * sizeof(bcm_sge_t)), 0, NULL);
 
 	if (assoc->snd_disconn_bufs.rqst.virt == NULL) {
@@ -275,12 +275,12 @@ nvmf_fc_association_init(struct spdk_nvmf_bcm_fc_association *assoc)
 	assoc->snd_disconn_bufs.rsp.phys = assoc->snd_disconn_bufs.rqst.phys +
 					   sizeof(struct nvmf_fc_ls_disconnect_rqst);
 	assoc->snd_disconn_bufs.rsp.len =
-		sizeof(struct nvmf_fc_ls_disconnect_acc);
+		sizeof(struct nvmf_fc_ls_rjt);
 
 	assoc->snd_disconn_bufs.sgl.virt = assoc->snd_disconn_bufs.rsp.virt +
-					   sizeof(struct nvmf_fc_ls_disconnect_acc);
+					   sizeof(struct nvmf_fc_ls_rjt);
 	assoc->snd_disconn_bufs.sgl.phys = assoc->snd_disconn_bufs.rsp.phys +
-					   sizeof(struct nvmf_fc_ls_disconnect_acc);
+					   sizeof(struct nvmf_fc_ls_rjt);
 	assoc->snd_disconn_bufs.sgl.len = 2 * sizeof(bcm_sge_t);
 }
 
@@ -377,13 +377,9 @@ nvmf_fc_ls_new_connection(struct spdk_nvmf_bcm_fc_association *assoc,
 {
 	struct spdk_nvmf_bcm_fc_conn *fc_conn;
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\n");
-
 	fc_conn = TAILQ_FIRST(&assoc->tgtport->fc_port->ls_rsrc_pool.fc_conn_free_list);
 
 	if (fc_conn) {
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\n");
-
 		/* remove from port's free connection list */
 		TAILQ_REMOVE(&assoc->tgtport->fc_port->ls_rsrc_pool.fc_conn_free_list,
 			     fc_conn, port_free_conn_list_link);
@@ -399,19 +395,22 @@ nvmf_fc_ls_new_connection(struct spdk_nvmf_bcm_fc_association *assoc,
 		fc_conn->max_queue_depth = sq_size;
 
 		TAILQ_INIT(&fc_conn->pending_queue);
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "New Connection %p for Association %p created:\n", fc_conn,
-			      assoc);
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\tQueue id:0x%x\n", fc_conn->conn.qid);
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\tQueue size requested:0x%x\n", max_q_size);
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\tMax admin queue size supported:0x%x\n",
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
+			      "New Connection %p for Association %p created:\n",
+			      fc_conn, assoc);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
+			      "\tQueue id:0x%x\n", fc_conn->conn.qid);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
+			      "\tQueue size requested:0x%x\n", max_q_size);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
+			      "\tMax admin queue size supported:0x%x\n",
 			      g_nvmf_tgt.opts.max_aq_depth);
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\tMax IO queue size supported:0x%x\n",
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
+			      "\tMax IO queue size supported:0x%x\n",
 			      g_nvmf_tgt.opts.max_queue_depth);
 	} else {
 		SPDK_ERRLOG("out of connections\n");
 	}
-
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\n");
 
 	return fc_conn;
 }
@@ -533,7 +532,7 @@ nvmf_fc_ls_add_conn_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
 	struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst = dp->ls_rqst;
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-		      "conn_id = %lx\n", fc_conn->conn_id);
+		      "conn_id = 0x%lx\n", fc_conn->conn_id);
 
 	/* insert conn in association's connection list */
 	TAILQ_INSERT_TAIL(&assoc->fc_conns, fc_conn, assoc_link);
@@ -555,6 +554,8 @@ nvmf_fc_ls_add_conn_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
 
 	/* send LS response */
 	nvmf_fc_xmt_ls_rsp(tgtport, ls_rqst);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
+		      "LS response (conn_id 0x%lx) sent\n", fc_conn->conn_id);
 
 	nvmf_fc_ls_free_op_ctx(opd);
 }
@@ -588,7 +589,7 @@ nvmf_fc_ls_add_conn_to_poller(
 			api_data->ls_rqst = ls_rqst;
 			api_data->assoc_conn = assoc_conn;
 			SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-				      "conn_id = %ld\n", fc_conn->conn_id);
+				      "conn_id = 0x%lx\n", fc_conn->conn_id);
 			spdk_nvmf_bcm_fc_poller_api(api_data->args.fc_conn->hwqp,
 						    SPDK_NVMF_BCM_FC_POLLER_API_ADD_CONNECTION,
 						    &api_data->args);
@@ -640,6 +641,7 @@ nvmf_fc_do_del_assoc_cbs(union nvmf_fc_ls_op_ctx *opd,
 static void
 nvmf_fc_send_ls_disconnect(struct spdk_nvmf_bcm_fc_association *assoc)
 {
+#ifdef NVMF_FC_LS_SEND_LS_DISCONNECT
 	struct nvmf_fc_ls_disconnect_rqst *dc_rqst =
 		(struct nvmf_fc_ls_disconnect_rqst *)
 		assoc->snd_disconn_bufs.rqst.virt;
@@ -670,6 +672,7 @@ nvmf_fc_send_ls_disconnect(struct spdk_nvmf_bcm_fc_association *assoc)
 					  &assoc->snd_disconn_bufs, 0, 0)) {
 		SPDK_ERRLOG("Error sending LS disconnect\n");
 	}
+#endif
 }
 
 static void

@@ -65,8 +65,7 @@ char *fc_req_state_strs[] = {
 
 extern void spdk_post_event(void *context, struct spdk_event *event);
 uint32_t spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
-void spdk_nvmf_bcm_fc_free_req(struct spdk_nvmf_bcm_fc_request *fc_req,
-			       bool xri_active);
+void spdk_nvmf_bcm_fc_free_req(struct spdk_nvmf_bcm_fc_request *fc_req);
 int spdk_nvmf_bcm_fc_init_rqpair_buffers(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
 int spdk_nvmf_bcm_fc_create_req_mempool(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
 int spdk_nvmf_bcm_fc_xmt_ls_rsp(struct spdk_nvmf_bcm_fc_nport *tgtport,
@@ -87,6 +86,8 @@ void spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 				bool send_abts, spdk_nvmf_bcm_fc_caller_cb cb,
 				void *cb_args);
 void spdk_nvmf_bcm_fc_req_abort_complete(void *arg1, void *arg2);
+void spdk_nvmf_bcm_fc_release_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
+				  struct spdk_nvmf_bcm_fc_xri *xri, bool xb);
 static int nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req);
 
 static inline uint16_t
@@ -349,6 +350,17 @@ nvmf_fc_req_bdev_abort(void *arg1, void *arg2)
 	spdk_nvmf_request_abort(&fc_req->req);
 }
 
+static bool
+nvmf_fc_is_port_dead(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
+{
+	switch (hwqp->fc_port->hw_port_status) {
+	case SPDK_FC_PORT_QUIESCED_FOR_DUMP:
+		return true;
+	default:
+		return false;
+	}
+}
+
 void
 spdk_nvmf_bcm_fc_req_abort_complete(void *arg1, void *arg2)
 {
@@ -370,7 +382,7 @@ spdk_nvmf_bcm_fc_req_abort_complete(void *arg1, void *arg2)
 		      "FC Request(%p) in state :%s aborted", fc_req,
 		      fc_req_state_strs[fc_req->state]);
 
-	spdk_nvmf_bcm_fc_free_req(fc_req, false);
+	spdk_nvmf_bcm_fc_free_req(fc_req);
 }
 
 void
@@ -395,12 +407,9 @@ spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 		TAILQ_INSERT_TAIL(&fc_req->abort_cbs, ctx, link);
 	}
 
-	/* If the port is quiesced because of an adapter dump
-	 * we kill the outstanding commands */
-	kill_req = (fc_req->hwqp->fc_port->hw_port_status == SPDK_FC_PORT_QUIESCED_FOR_DUMP) ? true : false;
+	/* If port is dead, skip abort wqe */
+	kill_req = nvmf_fc_is_port_dead(fc_req->hwqp);
 	if (kill_req && nvmf_fc_req_in_xfer(fc_req)) {
-		/* Execute callback if the request is in transfer state and has
-		 * to be aborted. */
 		fc_req->is_aborted = true;
 		goto complete;
 	}
@@ -927,40 +936,31 @@ nvmf_fc_nvmf_del_xri_pending(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t xri)
 	}
 }
 
-static void
-nvmf_fc_cleanup_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
-		    struct spdk_nvmf_bcm_fc_xri *xri, uint8_t *cqe)
+void
+spdk_nvmf_bcm_fc_release_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
+			     struct spdk_nvmf_bcm_fc_xri *xri, bool xb)
 {
-	cqe_t *cqe_entry = (cqe_t *)cqe;
-	bool xri_active;
-
-	/* Check if XRI is active with in firmware */
-	xri_active = cqe_entry->u.generic.xb ? true : false;
-
-	if (xri_active) {
-		/* This will be cleaned up by XRI_ABORTED_CQE. */
+	if (xb && xri->is_active && !nvmf_fc_is_port_dead(hwqp)) {
+		/* Post an abort to clean XRI state */
+		spdk_nvmf_bcm_fc_issue_abort(hwqp, xri, false, NULL, NULL);
 		nvmf_fc_nvmf_add_xri_pending(hwqp, xri);
 	} else {
+		xri->is_active = false;
 		spdk_nvmf_bcm_fc_put_xri(hwqp, xri);
 	}
 }
 
 void
-spdk_nvmf_bcm_fc_free_req(struct spdk_nvmf_bcm_fc_request *fc_req, bool xri_active)
+spdk_nvmf_bcm_fc_free_req(struct spdk_nvmf_bcm_fc_request *fc_req)
 {
 	if (!fc_req) {
 		return;
 	}
 
 	if (fc_req->xri) {
-		if (xri_active) {
-			/* This will be cleaned up by XRI_ABORTED_CQE. */
-			nvmf_fc_nvmf_add_xri_pending(fc_req->hwqp, fc_req->xri);
-		} else {
-			spdk_nvmf_bcm_fc_put_xri(fc_req->hwqp, fc_req->xri);
-		}
+		spdk_nvmf_bcm_fc_put_xri(fc_req->hwqp, fc_req->xri);
+		fc_req->xri = NULL;
 	}
-	fc_req->xri = NULL;
 
 	if (fc_req->req.data) {
 		spdk_dma_free(fc_req->req.data);
@@ -982,7 +982,7 @@ nvmf_fc_abort_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 	fc_caller_ctx_t *carg = arg;
 	struct spdk_nvmf_bcm_fc_xri *xri = carg->ctx;
 
-	SPDK_NOTICELOG("IO Aborted(XRI:%d, Status=%d)\n", xri->xri, status);
+	SPDK_NOTICELOG("IO Aborted(XRI:0x%x, Status=%d)\n", xri->xri, status);
 
 	if (carg->cb) {
 		carg->cb(hwqp, status, carg->cb_args);
@@ -995,12 +995,13 @@ static void
 nvmf_fc_bls_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 {
 	struct spdk_nvmf_bcm_fc_hwqp *hwqp = ctx;
-	fc_caller_ctx_t *carg = arg;
+	cqe_t *cqe_entry 	= (cqe_t *)cqe;
+	fc_caller_ctx_t *carg 	= arg;
 	struct spdk_nvmf_bcm_fc_xri *xri = carg->ctx;
 
 	SPDK_NOTICELOG("BLS WQE Compl(%d) \n", status);
 
-	nvmf_fc_cleanup_xri(hwqp, xri, cqe);
+	spdk_nvmf_bcm_fc_release_xri(hwqp, xri, cqe_entry->u.generic.xb);
 
 	if (carg->cb) {
 		carg->cb(hwqp, status, carg->cb_args);
@@ -1013,12 +1014,13 @@ static void
 nvmf_fc_srsr_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 {
 	struct spdk_nvmf_bcm_fc_hwqp *hwqp = ctx;
-	fc_caller_ctx_t *carg = arg;
+	cqe_t *cqe_entry 	= (cqe_t *)cqe;
+	fc_caller_ctx_t *carg 	= arg;
 	struct spdk_nvmf_bcm_fc_xri *xri = carg->ctx;
 
 	SPDK_NOTICELOG("SRSR WQE Compl(%d) \n", status);
 
-	nvmf_fc_cleanup_xri(hwqp, xri, cqe);
+	spdk_nvmf_bcm_fc_release_xri(hwqp, xri, cqe_entry->u.generic.xb);
 
 	if (carg->cb) {
 		carg->cb(hwqp, status, carg->cb_args);
@@ -1032,8 +1034,9 @@ nvmf_fc_ls_rsp_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 {
 	struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst = arg;
 	struct spdk_nvmf_bcm_fc_hwqp *hwqp = ctx;
+	cqe_t *cqe_entry = (cqe_t *)cqe;
 
-	nvmf_fc_cleanup_xri(hwqp, ls_rqst->xri, cqe);
+	spdk_nvmf_bcm_fc_release_xri(hwqp, ls_rqst->xri, cqe_entry->u.generic.xb);
 
 	/* Release RQ buffer */
 	nvmf_fc_rqpair_buffer_release(hwqp, ls_rqst->rqstbuf.buf_index);
@@ -1048,22 +1051,10 @@ nvmf_fc_io_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 {
 	struct spdk_nvmf_bcm_fc_request *fc_req = arg;
 	cqe_t *cqe_entry = (cqe_t *)cqe;
-	bool xri_active;
 	int rc;
 
-	xri_active = (cqe_entry->u.generic.xb ? true : false);
-
-	if (fc_req->is_aborted) {
-		/* Cleanup XRI based on CQE. */
-		nvmf_fc_cleanup_xri(fc_req->hwqp, fc_req->xri, cqe);
-		fc_req->xri = NULL;
-		spdk_nvmf_bcm_fc_req_abort_complete(fc_req, NULL);
-		return;
-	}
-
-	if (status) {
-		SPDK_ERRLOG("IO WQE Compl(%d)\n", status);
-		goto abort_req;
+	if (status || fc_req->is_aborted) {
+		goto io_done;
 	}
 
 	/* Write Tranfer done */
@@ -1078,7 +1069,7 @@ nvmf_fc_io_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 		case SPDK_NVMF_REQUEST_EXEC_STATUS_ASYNCHRONOUS:
 			break;
 		default:
-			goto abort_req;
+			goto io_done;
 		}
 		return;
 	}
@@ -1089,7 +1080,7 @@ nvmf_fc_io_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 
 		spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_READ_RSP);
 		if (spdk_nvmf_bcm_fc_handle_rsp(fc_req)) {
-			goto abort_req;
+			goto io_done;
 		}
 		return;
 	}
@@ -1097,8 +1088,16 @@ nvmf_fc_io_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 	/* IO completed successfully */
 	spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_SUCCESS);
 
-abort_req: /* Should we send ABTS in abort case ? */
-	spdk_nvmf_bcm_fc_free_req(fc_req, xri_active);
+io_done:
+	spdk_nvmf_bcm_fc_release_xri(fc_req->hwqp, fc_req->xri,
+				     cqe_entry->u.generic.xb);
+	fc_req->xri = NULL;
+
+	if (fc_req->is_aborted) {
+		spdk_nvmf_bcm_fc_req_abort_complete(fc_req, NULL);
+	} else {
+		spdk_nvmf_bcm_fc_free_req(fc_req);
+	}
 }
 
 static void
@@ -1247,7 +1246,7 @@ nvmf_fc_recv_data(struct spdk_nvmf_bcm_fc_request *fc_req)
 
 	rc = nvmf_fc_post_wqe(hwqp, (uint8_t *)trecv, true, nvmf_fc_io_cmpl_cb, fc_req);
 	if (!rc) {
-		fc_req->xri_activated = true;
+		fc_req->xri->is_active = true;
 	}
 
 	return rc;
@@ -1359,7 +1358,7 @@ pending:
 error:
 	/* Dropped return success to caller */
 	fc_req->hwqp->counters.unexpected_err++;
-	spdk_nvmf_bcm_fc_free_req(fc_req, false);
+	spdk_nvmf_bcm_fc_free_req(fc_req);
 	return 0;
 }
 
@@ -1416,6 +1415,12 @@ nvmf_fc_handle_nvme_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_frame_hdr
 	/* If association/connection is being deleted - return */
 	if (fc_conn->fc_assoc->assoc_state !=  SPDK_NVMF_BCM_FC_OBJECT_CREATED) {
 		SPDK_ERRLOG("Association state not valid\n");
+		goto abort;
+	}
+
+	/* Make sure xfer len is according to mdts */
+	if (from_be32(&cmd_iu->data_len) > g_nvmf_tgt.opts.max_io_size) {
+		SPDK_ERRLOG("IO length requested is greater than MDTS\n");
 		goto abort;
 	}
 
@@ -1793,6 +1798,9 @@ spdk_nvmf_bcm_fc_xmt_ls_rsp(struct spdk_nvmf_bcm_fc_nport *tgtport,
 	hwqp = (struct spdk_nvmf_bcm_fc_hwqp *)ls_rqst->private_data;
 
 	rc = nvmf_fc_post_wqe(hwqp, (uint8_t *)xmit, true, nvmf_fc_ls_rsp_cmpl_cb, ls_rqst);
+	if (!rc) {
+		ls_rqst->xri->is_active = true;
+	}
 
 	return rc;
 }
@@ -1805,8 +1813,7 @@ spdk_nvmf_bcm_fc_send_data(struct spdk_nvmf_bcm_fc_request *fc_req)
 	uint32_t xfer_len = 0;
 	bcm_fcp_tsend64_wqe_t *tsend = (bcm_fcp_tsend64_wqe_t *)wqe;
 	struct spdk_nvmf_bcm_fc_hwqp *hwqp = fc_req->hwqp;
-	struct spdk_nvmf_request *req = &fc_req->req;
-	struct spdk_nvmf_conn 	*conn = req->conn;
+	struct spdk_nvmf_conn *conn = fc_req->req.conn;
 	struct spdk_nvmf_bcm_fc_conn *fc_conn = nvmf_fc_get_conn(conn);
 
 	if (!fc_req->req.iovcnt) {
@@ -1870,7 +1877,7 @@ spdk_nvmf_bcm_fc_send_data(struct spdk_nvmf_bcm_fc_request *fc_req)
 
 	rc = nvmf_fc_post_wqe(hwqp, (uint8_t *)tsend, true, nvmf_fc_io_cmpl_cb, fc_req);
 	if (!rc) {
-		fc_req->xri_activated = true;
+		fc_req->xri->is_active = true;
 	}
 
 	return rc;
@@ -1895,7 +1902,7 @@ nvmf_fc_xmt_rsp(struct spdk_nvmf_bcm_fc_request *fc_req, uint8_t *ersp_buf, uint
 		memcpy(&trsp->inline_rsp, ersp_buf, ersp_len);
 	}
 
-	if (fc_req->xri_activated) {
+	if (fc_req->xri->is_active) {
 		trsp->xc = true;
 	}
 
@@ -1911,7 +1918,7 @@ nvmf_fc_xmt_rsp(struct spdk_nvmf_bcm_fc_request *fc_req, uint8_t *ersp_buf, uint
 
 	rc = nvmf_fc_post_wqe(hwqp, (uint8_t *)trsp, true, nvmf_fc_io_cmpl_cb, fc_req);
 	if (!rc) {
-		fc_req->xri_activated = true;
+		fc_req->xri->is_active = true;
 	}
 
 	return rc;
@@ -1992,6 +1999,9 @@ done:
 		spdk_free(ctx);
 	}
 
+	if (!rc) {
+		xri->is_active = false;
+	}
 	return rc;
 }
 
@@ -2047,6 +2057,10 @@ done:
 
 	if (rc && xri) {
 		spdk_nvmf_bcm_fc_put_xri(hwqp, xri);
+	}
+
+	if (!rc) {
+		xri->is_active = true;
 	}
 
 	return rc;
@@ -2134,6 +2148,10 @@ done:
 
 	if (rc && xri) {
 		spdk_nvmf_bcm_fc_put_xri(hwqp, xri);
+	}
+
+	if (!rc) {
+		xri->is_active = true;
 	}
 
 	return rc;
