@@ -44,7 +44,7 @@
 #define SPDK_FC_HW_DUMP_REASON_STR_MAX_SIZE 256
 
 /*
- * Queue poller intevals in msecs
+ * Queue poller intervals in msec
  */
 #define SPDK_NVMF_BCM_FC_IOQ_POLLER_INTERVAL 0
 #define SPDK_NVMF_BCM_FC_AQ_POLLER_INTERVAL  100000
@@ -387,5 +387,9 @@ struct spdk_nvmf_bcm_fc_queue_dump_info {
 
 typedef struct spdk_nvmf_bcm_fc_queue_dump_info spdk_nvmf_bcm_fc_queue_dump_info_t;
 
+/**
+  * \brief Pass the given event to the associated lcore with an application context
+  */
+void spdk_post_event(void *context, struct spdk_event *event);
 
 #endif

@@ -2106,6 +2106,17 @@ out:
 	}
 }
 
+void
+spdk_post_event(void *context, struct spdk_event *event)
+{
+	/* Collect any metrics/statistics as needed.
+	 * The current environment does not need the 'context'.
+	 * However other environments can use this to implement
+	 * their own event_call handling logic.
+	 */
+	spdk_event_call(event);
+}
+
 /* ******************* PUBLIC FUNCTIONS FOR DRIVER AND LIBRARY INTERACTIONS - END ************** */
 
 SPDK_LOG_REGISTER_TRACE_FLAG("nvmf_bcm_fc_adm", SPDK_TRACE_NVMF_BCM_FC_ADM);
