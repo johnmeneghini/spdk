@@ -176,4 +176,14 @@ void spdk_poller_register(struct spdk_poller **ppoller,
 void spdk_poller_unregister(struct spdk_poller **ppoller,
 			    struct spdk_event *complete);
 
+/**
+ * \brief Return the event mempool for the reactor bound to a given lcore
+ */
+struct spdk_mempool *spdk_get_event_mempool(uint32_t lcore);
+
+/**
+ *  * \brief Execute an event now
+ *   */
+void spdk_event_execute(struct spdk_event *event);
+
 #endif

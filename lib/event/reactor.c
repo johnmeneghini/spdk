@@ -766,3 +766,17 @@ spdk_poller_unregister(struct spdk_poller **ppoller,
 		spdk_event_call(spdk_event_allocate(lcore, _spdk_event_remove_poller, poller, complete));
 	}
 }
+
+struct spdk_mempool *
+spdk_get_event_mempool(uint32_t lcore)
+{
+	struct spdk_reactor *reactor;
+	reactor = &g_reactors[lcore];
+	return (reactor->event_mempool);
+}
+
+void
+spdk_event_execute(struct spdk_event *event)
+{
+	event->fn(event->arg1, event->arg2);
+}
