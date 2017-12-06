@@ -84,6 +84,7 @@ struct spdk_nvmf_bcm_fc_hw_port_init_args {
 	uint32_t                          io_queue_cnt;
 	struct spdk_nvmf_bcm_fc_hw_queues io_queues[NVMF_FC_MAX_IO_QUEUES];
 	void                             *cb_ctx;
+	void                             *port_ctx;
 };
 
 typedef struct spdk_nvmf_bcm_fc_hw_port_init_args spdk_nvmf_bcm_fc_hw_port_init_args_t;
@@ -388,5 +389,10 @@ struct spdk_nvmf_bcm_fc_queue_dump_info {
 typedef struct spdk_nvmf_bcm_fc_queue_dump_info spdk_nvmf_bcm_fc_queue_dump_info_t;
 
 uint32_t nvmf_tgt_fc_get_curr_hwqp_id(void);
+
+/**
+  * \brief Pass the given event to the associated lcore with an application context
+  */
+void spdk_post_event(void *context, struct spdk_event *event);
 
 #endif
