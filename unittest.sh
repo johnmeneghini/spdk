@@ -3,7 +3,8 @@
 # Environment variables:
 #  $valgrind    Valgrind executable name, if desired
 
-set -xe
+set -e
+#set -x
 
 $valgrind test/lib/blob/blob_ut/blob_ut
 
@@ -51,4 +52,6 @@ test/lib/iscsi/pdu/pdu
 $valgrind test/lib/util/bit_array/bit_array_ut
 $valgrind test/lib/util/io_channel/io_channel_ut
 $valgrind test/lib/util/string/string_ut
-$valgrind test/lib/nvmf/nvmf_fc/ls/nvmf_fc_ls_ut
+if [ -x test/lib/nvmf/nvmf_fc/ls/nvmf_fc_ls_ut ]; then
+     $valgrind test/lib/nvmf/nvmf_fc/ls/nvmf_fc_ls_ut
+fi
