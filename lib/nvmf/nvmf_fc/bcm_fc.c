@@ -58,8 +58,7 @@
 extern void spdk_post_event(void *context, struct spdk_event *event);
 extern int spdk_nvmf_bcm_fc_handle_rsp(struct spdk_nvmf_bcm_fc_request *fc_req);
 extern int spdk_nvmf_bcm_fc_send_data(struct spdk_nvmf_bcm_fc_request *fc_req);
-extern void spdk_nvmf_bcm_fc_free_req(struct spdk_nvmf_bcm_fc_request *fc_req,
-				      bool free_xri);
+extern void spdk_nvmf_bcm_fc_free_req(struct spdk_nvmf_bcm_fc_request *fc_req);
 extern int spdk_nvmf_bcm_fc_xmt_bls_rsp(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 					uint16_t ox_id, uint16_t rx_id,
 					uint16_t rpi, bool rjt, uint8_t rjt_exp,
@@ -68,6 +67,8 @@ extern int spdk_nvmf_bcm_fc_xmt_bls_rsp(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 extern void spdk_nvmf_bcm_fc_req_set_state(struct spdk_nvmf_bcm_fc_request *fc_req,
 		spdk_nvmf_bcm_fc_request_state_t state);
 extern void spdk_nvmf_bcm_fc_req_abort_complete(void *arg1, void *arg2);
+extern void spdk_nvmf_bcm_fc_release_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
+		struct spdk_nvmf_bcm_fc_xri *xri, bool xb);
 
 /* locals */
 static inline struct spdk_nvmf_bcm_fc_session *nvmf_fc_get_fc_session(
@@ -286,6 +287,7 @@ spdk_nvmf_bcm_fc_get_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 		return NULL;
 	}
 
+	xri->is_active = false;
 	return xri;
 }
 
@@ -722,6 +724,10 @@ nvmf_fc_request_complete_process(void *arg1, void *arg2)
 	struct spdk_event *event = NULL;
 
 	if (fc_req->is_aborted) {
+		/* Cleanup XRI if valid */
+		spdk_nvmf_bcm_fc_release_xri(fc_req->hwqp, fc_req->xri, fc_req->xri->is_active);
+		fc_req->xri = NULL;
+
 		/* Defer this to make sure we dont call io cleanup in same context. */
 		event = spdk_event_allocate(fc_req->poller_lcore,
 					    spdk_nvmf_bcm_fc_req_abort_complete,
@@ -745,7 +751,7 @@ nvmf_fc_request_complete_process(void *arg1, void *arg2)
 
 	if (rc) {
 		SPDK_ERRLOG("Error in request complete.\n");
-		spdk_nvmf_bcm_fc_free_req(fc_req, false);
+		spdk_nvmf_bcm_fc_free_req(fc_req);
 	}
 }
 
