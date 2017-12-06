@@ -157,6 +157,11 @@ nvmf_fc_tgt_hw_port_data_init(struct spdk_nvmf_bcm_fc_port *fc_port,
 	}
 
 	/*
+	 * Set port context from init args. Used for FCP port stats.
+	 */
+	fc_port->port_ctx = args->port_ctx;
+
+	/*
 	 * Create a ring for the XRI's and store the XRI's in there.
 	 * The ring size is set to count, which must be a power of two.
 	 * The real usable ring size is count-1 instead of count to
@@ -701,7 +706,7 @@ nvmf_tgt_fc_hw_queue_quiesce(struct spdk_nvmf_bcm_fc_hwqp *fc_hwqp, void *ctx,
 	args->cb_info.cb_data = args;
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "Quiesce queue %d\n", fc_hwqp->hwqp_id);
-	rc = spdk_nvmf_bcm_fc_poller_api(fc_hwqp->lcore_id, SPDK_NVMF_BCM_FC_POLLER_API_QUIESCE_QUEUE,
+	rc = spdk_nvmf_bcm_fc_poller_api(fc_hwqp, SPDK_NVMF_BCM_FC_POLLER_API_QUIESCE_QUEUE,
 					 args);
 	if (rc) {
 		spdk_free(args);
@@ -1227,6 +1232,7 @@ nvmf_fc_hw_port_online(void *arg1, void *arg2)
 		 * 3. Register a poller function to poll the LS queue.
 		 */
 		hwqp = &fc_port->ls_queue;
+		hwqp->context = NULL;
 		(void)spdk_nvmf_bcm_fc_hwqp_port_set_online(hwqp);
 		spdk_nvmf_bcm_fc_add_poller(hwqp, SPDK_NVMF_BCM_FC_LS_POLLER_INTERVAL);
 
@@ -1234,6 +1240,7 @@ nvmf_fc_hw_port_online(void *arg1, void *arg2)
 		 * 4. Register a poller function to poll the admin queue.
 		 */
 		hwqp = &fc_port->io_queues[0];
+		hwqp->context = NULL;
 		(void)spdk_nvmf_bcm_fc_hwqp_port_set_online(hwqp);
 		spdk_nvmf_bcm_fc_add_poller(hwqp, SPDK_NVMF_BCM_FC_AQ_POLLER_INTERVAL);
 
@@ -1244,7 +1251,12 @@ nvmf_fc_hw_port_online(void *arg1, void *arg2)
 		for (i = 1; i < (int)fc_port->max_io_queues; i++) {
 			hwqp = &fc_port->io_queues[i];
 			(void)spdk_nvmf_bcm_fc_hwqp_port_set_online(hwqp);
-			spdk_nvmf_bcm_fc_add_poller(hwqp, SPDK_NVMF_BCM_FC_IOQ_POLLER_INTERVAL);
+
+			/* Legacy SPDK version of this did the following :
+			 *	spdk_nvmf_bcm_fc_add_poller(hwqp, SPDK_NVMF_BCM_FC_IOQ_POLLER_INTERVAL);
+			 */
+			hwqp->context = nvmf_poller_add_resource(hwqp, spdk_nvmf_bcm_fc_queue_poller);
+			DEV_VERIFY(hwqp->context != NULL);
 		}
 	} else {
 		SPDK_ERRLOG("Unable to find the SPDK FC port %d\n", args->port_handle);
@@ -1302,7 +1314,11 @@ nvmf_fc_hw_port_offline(void *arg1, void *arg2)
 		for (i = 0; i < (int)fc_port->max_io_queues; i++) {
 			hwqp = &fc_port->io_queues[i];
 			(void)spdk_nvmf_bcm_fc_hwqp_port_set_offline(hwqp);
-			spdk_nvmf_bcm_fc_delete_poller(hwqp);
+
+			/* Legacy SPDK version of the code did the following :
+			 *	spdk_nvmf_bcm_fc_delete_poller(hwqp);
+			 */
+			(void)nvmf_poller_del_resource(hwqp->context);
 		}
 
 		/*
@@ -2048,7 +2064,11 @@ nvmf_fc_hw_port_link_break(void *arg1, void *arg2)
 	for (i = 0; i < (int)fc_port->max_io_queues; i++) {
 		hwqp = &fc_port->io_queues[i];
 		(void)spdk_nvmf_bcm_fc_hwqp_port_set_offline(hwqp);
-		spdk_nvmf_bcm_fc_delete_poller(hwqp);
+
+		/* Legacy SPDK version of the code did the following :
+		 *	spdk_nvmf_bcm_fc_delete_poller(hwqp);
+		 */
+		(void)nvmf_poller_del_resource(hwqp->context);
 	}
 
 	/*
@@ -2116,6 +2136,12 @@ out:
 	} else {
 		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "%s", log_str);
 	}
+}
+
+void
+spdk_post_event(void *context, struct spdk_event *event)
+{
+	nvmf_poller_post_event(context, event);
 }
 
 /* ******************* PUBLIC FUNCTIONS FOR DRIVER AND LIBRARY INTERACTIONS - END ************** */
