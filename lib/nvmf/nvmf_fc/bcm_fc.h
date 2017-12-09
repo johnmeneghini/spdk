@@ -318,7 +318,10 @@ typedef enum {
 	SPDK_NVMF_BCM_FC_REQ_FAILED,
 	SPDK_NVMF_BCM_FC_REQ_ABORTED,
 	SPDK_NVMF_BCM_FC_REQ_PENDING,
+	SPDK_NVMF_BCM_FC_REQ_MAX_STATE,
 } spdk_nvmf_bcm_fc_request_state_t;
+
+SPDK_STATIC_ASSERT(MAX_REQ_STATES >= SPDK_NVMF_BCM_FC_REQ_MAX_STATE, "Too many request states");
 
 /*
  * NVMF FC Request

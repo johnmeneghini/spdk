@@ -186,4 +186,30 @@ SPDK_TRACE_REGISTER_FN(nvmf_trace)
 					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
 	spdk_trace_register_description("NVMF_IO_COMPLETION_DONE", "", TRACE_NVMF_IO_COMPLETE,
 					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_REQ_INIT", "", TRACE_FC_REQ_INIT,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_REQ_READ_BDEV", "", TRACE_FC_REQ_READ_BDEV,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_REQ_READ_XFER", "", TRACE_FC_REQ_READ_XFER,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_REQ_READ_RSP", "", TRACE_FC_REQ_READ_RSP,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_REQ_WRITE_XFER", "", TRACE_FC_REQ_WRITE_XFER,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_REQ_WRITE_BDEV", "", TRACE_FC_REQ_WRITE_BDEV,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_REQ_WRITE_RSP", "", TRACE_FC_REQ_WRITE_RSP,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_REQ_NONE_BDEV", "", TRACE_FC_REQ_NONE_BDEV,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_REQ_NONE_RSP", "", TRACE_FC_REQ_NONE_RSP,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_REQ_SUCCESS", "", TRACE_FC_REQ_SUCCESS,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_REQ_FAILED", "", TRACE_FC_REQ_FAILED,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_REQ_ABORTED", "", TRACE_FC_REQ_ABORTED,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_REQ_PENDING", "", TRACE_FC_REQ_PENDING,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
 }
