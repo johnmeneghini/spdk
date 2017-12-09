@@ -62,6 +62,7 @@ union nvmf_c2h_msg {
 SPDK_STATIC_ASSERT(sizeof(union nvmf_c2h_msg) == 16, "Incorrect size");
 
 #define MAX_NUM_OF_IOVECTORS 17
+#define MAX_REQ_STATES       16
 
 struct spdk_nvmf_request {
 	struct spdk_nvmf_conn		*conn;
@@ -75,6 +76,7 @@ struct spdk_nvmf_request {
 	union nvmf_c2h_msg		*rsp;
 	struct spdk_scsi_unmap_bdesc	*unmap_bdesc;
 	struct spdk_bdev_io 		*bdev_io;
+	uint64_t req_state_trace[MAX_REQ_STATES];
 };
 
 int

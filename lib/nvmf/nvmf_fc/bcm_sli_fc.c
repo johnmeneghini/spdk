@@ -44,6 +44,7 @@
 #include "spdk/util.h"
 #include "spdk/event.h"
 #include "spdk/likely.h"
+#include "spdk/trace.h"
 #include "spdk_internal/log.h"
 #include "bcm_fc.h"
 #include "nvmf/nvmf_internal.h"
@@ -219,6 +220,66 @@ spdk_nvmf_bcm_fc_create_req_mempool(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	return 0;
 }
 
+static inline void
+nvmf_fc_record_req_trace_point(struct spdk_nvmf_bcm_fc_request *fc_req,
+			       spdk_nvmf_bcm_fc_request_state_t state)
+{
+	uint16_t tpoint_id = SPDK_TRACE_MAX_TPOINT_ID;
+
+	switch (state) {
+	case SPDK_NVMF_BCM_FC_REQ_INIT:
+		/* Start IO tracing */
+		spdk_trace_record(TRACE_NVMF_IO_START, fc_req->poller_lcore,
+				  0, (uint64_t)(&fc_req->req), 0);
+		tpoint_id = TRACE_FC_REQ_INIT;
+		break;
+	case SPDK_NVMF_BCM_FC_REQ_READ_BDEV:
+		tpoint_id = TRACE_FC_REQ_READ_BDEV;
+		break;
+	case SPDK_NVMF_BCM_FC_REQ_READ_XFER:
+		tpoint_id = TRACE_FC_REQ_READ_XFER;
+		break;
+	case SPDK_NVMF_BCM_FC_REQ_READ_RSP:
+		tpoint_id = TRACE_FC_REQ_READ_RSP;
+		break;
+	case SPDK_NVMF_BCM_FC_REQ_WRITE_XFER:
+		tpoint_id = TRACE_FC_REQ_WRITE_XFER;
+		break;
+	case SPDK_NVMF_BCM_FC_REQ_WRITE_BDEV:
+		tpoint_id = TRACE_FC_REQ_WRITE_BDEV;
+		break;
+	case SPDK_NVMF_BCM_FC_REQ_WRITE_RSP:
+		tpoint_id = TRACE_FC_REQ_WRITE_RSP;
+		break;
+	case SPDK_NVMF_BCM_FC_REQ_NONE_BDEV:
+		tpoint_id = TRACE_FC_REQ_NONE_BDEV;
+		break;
+	case SPDK_NVMF_BCM_FC_REQ_NONE_RSP:
+		tpoint_id = TRACE_FC_REQ_NONE_RSP;
+		break;
+	case SPDK_NVMF_BCM_FC_REQ_SUCCESS:
+		tpoint_id = TRACE_FC_REQ_SUCCESS;
+		break;
+	case SPDK_NVMF_BCM_FC_REQ_FAILED:
+		tpoint_id = TRACE_FC_REQ_FAILED;
+		break;
+	case SPDK_NVMF_BCM_FC_REQ_ABORTED:
+		tpoint_id = TRACE_FC_REQ_ABORTED;
+		break;
+	case SPDK_NVMF_BCM_FC_REQ_PENDING:
+		tpoint_id = TRACE_FC_REQ_PENDING;
+		break;
+	default:
+		assert(tpoint_id != SPDK_TRACE_MAX_TPOINT_ID);
+		break;
+	}
+	if (tpoint_id != SPDK_TRACE_MAX_TPOINT_ID) {
+		fc_req->req.req_state_trace[state] = spdk_get_ticks();
+		spdk_trace_record(tpoint_id, fc_req->poller_lcore, 0,
+				  (uint64_t)(&fc_req->req), 0);
+	}
+}
+
 static inline struct spdk_nvmf_bcm_fc_request *
 nvmf_fc_alloc_req_buf(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 {
@@ -256,6 +317,7 @@ spdk_nvmf_bcm_fc_req_set_state(struct spdk_nvmf_bcm_fc_request *fc_req,
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
 		      "FC Request(%p):\n\tState Old:%s New:%s\n", fc_req,
 		      fc_req_state_strs[fc_req->state], fc_req_state_strs[state]);
+	nvmf_fc_record_req_trace_point(fc_req, state);
 	fc_req->state = state;
 }
 
@@ -1444,6 +1506,7 @@ nvmf_fc_handle_nvme_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_frame_hdr
 	fc_req->fc_conn = fc_conn;
 	fc_req->req.xfer = xfer;
 
+	nvmf_fc_record_req_trace_point(fc_req, SPDK_NVMF_BCM_FC_REQ_INIT);
 	if (nvmf_fc_execute_nvme_rqst(fc_req)) {
 		TAILQ_INSERT_TAIL(&fc_conn->pending_queue, fc_req, pending_link);
 	}
