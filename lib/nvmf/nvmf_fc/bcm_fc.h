@@ -297,6 +297,8 @@ struct spdk_nvmf_bcm_fc_nport {
 	TAILQ_HEAD(, spdk_nvmf_bcm_fc_remote_port_info) rem_port_list;
 	uint32_t rport_count;
 
+	void *vendor_data;	/* available for vendor use */
+
 	/* list of associations to nport */
 	TAILQ_HEAD(, spdk_nvmf_bcm_fc_association) fc_associations;
 	uint32_t assoc_count;
