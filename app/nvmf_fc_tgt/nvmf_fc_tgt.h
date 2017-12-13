@@ -43,12 +43,19 @@
 #include "spdk/event.h"
 #include "spdk/error.h"
 
+#define MAX_HOSTS 255
+
+struct spdk_host_conf {
+	const char *hostnqn;
+	uint16_t max_queue_depth;
+	uint16_t max_queue_num;
+};
+
 struct rpc_listen_address {
 	char *transport;
 	char *traddr;
 	char *trsvcid;
 };
-
 
 struct nvmf_tgt_subsystem {
 	struct spdk_nvmf_subsystem *subsystem;
@@ -81,8 +88,8 @@ spdk_nvmf_bcm_fc_construct_subsystem(const char *name,
 				     const char *mode_str, int32_t lcore,
 				     int num_listen_addresses,
 				     struct rpc_listen_address *addresses,
-				     int num_hosts, char *hosts[],  bool allow_any_host,
-				     const char *bdf, const char *sn,
+				     int num_hosts, struct spdk_host_conf *hosts,
+				     bool allow_any_host, const char *bdf, const char *sn,
 				     int num_devs, char *dev_list[],
 				     char *dev_nidt[], char *dev_nid[]);
 

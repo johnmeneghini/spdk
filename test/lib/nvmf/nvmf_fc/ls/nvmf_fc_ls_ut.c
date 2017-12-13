@@ -43,7 +43,17 @@
 #include "nvmf_fc/bcm_fc.h"
 #include "nvmf/transport.h"
 #include "nvmf/nvmf_internal.h"
+#include "nvmf/subsystem.h"
+#include "nvmf/session.h"
+#include "spdk/trace.h"
+#include "spdk_internal/log.h"
 
+extern struct spdk_trace_flag SPDK_TRACE_NVMF_BCM_FC_LS;
+
+struct spdk_trace_flag SPDK_TRACE_NVMF = {
+	.name = "nvmf",
+	.enabled = false,   /* make this true to enable TRACE output */
+};
 
 /*
  * SPDK Stuff
@@ -204,9 +214,16 @@ spdk_nvmf_handle_connect(struct spdk_nvmf_request *req)
 {
 }
 
-void
-spdk_nvmf_session_disconnect(struct spdk_nvmf_conn *conn)
+struct spdk_nvmf_subsystem *
+spdk_nvmf_find_subsystem_with_cntlid(uint16_t cntlid)
 {
+	return NULL;
+}
+
+int
+spdk_nvmf_request_complete(struct spdk_nvmf_request *req)
+{
+	return -1;
 }
 
 static int
@@ -217,8 +234,6 @@ nvmf_fc_ls_ut_remove_conn(struct spdk_nvmf_session *session,
 }
 
 struct spdk_nvmf_subsystem g_nvmf_subsys;
-
-
 
 struct spdk_nvmf_subsystem *
 nvmf_find_subsystem(const char *subnqn)
@@ -232,6 +247,77 @@ spdk_nvmf_subsystem_host_allowed(struct spdk_nvmf_subsystem *subsystem,
 				 const char *hostnqn)
 {
 	return true;
+}
+
+bool
+spdk_nvmf_valid_nqn(const char *nqn)
+{
+	if (!memchr(nqn, '\0', SPDK_NVMF_NQN_MAX_LEN)) {
+		SPDK_ERRLOG("Invalid NQN length > max %d\n", SPDK_NVMF_NQN_MAX_LEN - 1);
+		return false;
+	}
+
+	if (strncmp(nqn, "nqn.", 4) != 0) {
+		SPDK_ERRLOG("Invalid NQN \"%s\": NQN must begin with \"nqn.\".\n", nqn);
+		return false;
+	}
+
+	/* yyyy-mm. */
+	if (!(isdigit(nqn[4]) && isdigit(nqn[5]) && isdigit(nqn[6]) && isdigit(nqn[7]) &&
+	      nqn[8] == '-' && isdigit(nqn[9]) && isdigit(nqn[10]) && nqn[11] == '.')) {
+		SPDK_ERRLOG("Invalid date code in NQN \"%s\"\n", nqn);
+		return false;
+	}
+
+	return true;
+}
+
+#if 0
+static const char *fc_ut_bad_subsystem =
+	"nqn.com.broadcom:sn.300a0989adc53390c0dc7c87011e786b:subsystem.bad";
+
+static struct spdk_nvmf_host fc_ut_bad_host = {
+	.nqn = "nqn.bad_fc_host",
+	.max_aq_depth = 128,
+	.max_queue_depth = 1024,
+	.max_connections_allowed = 32,
+};
+#endif
+
+static const char *fc_ut_good_subsystem =
+	"nqn.2017-11.com.broadcom:sn.390c0dc7c87011e786b300a0989adc53:subsystem.good";
+
+static struct spdk_nvmf_host fc_ut_target = {
+	.nqn = "nqn.2017-11.fc_host",
+	.max_aq_depth = 32,
+	.max_queue_depth = 16,
+	.max_connections_allowed = 2,
+};
+
+static struct spdk_nvmf_host fc_ut_initiator = {
+	.nqn = "nqn.2017-11.fc_host",
+	.max_aq_depth = 31,
+	.max_queue_depth = 15,
+	.max_connections_allowed = 2,
+};
+
+static struct spdk_nvmf_host *fc_ut_host = &fc_ut_initiator;
+
+struct spdk_nvmf_host *
+spdk_nvmf_find_subsystem_host(struct spdk_nvmf_subsystem *subsystem, const char *hostnqn)
+{
+	if (!hostnqn) {
+		SPDK_ERRLOG("hostnqn is NULL\n");
+		return NULL;
+	}
+
+	if (strcmp(hostnqn, fc_ut_target.nqn) == 0) {
+		return &fc_ut_target;
+	}
+
+	SPDK_ERRLOG("Hostnqn %s not found on Subsystem %s\n", hostnqn, subsystem->subnqn);
+
+	return NULL;
 }
 
 const struct spdk_nvmf_transport spdk_nvmf_transport_bcm_fc = {
@@ -259,7 +345,6 @@ const struct spdk_nvmf_transport spdk_nvmf_transport_bcm_fc = {
 
 };
 
-
 /*
  *  The Tests
  */
@@ -281,8 +366,9 @@ static bool g_spdk_nvmf_bcm_fc_xmt_srsr_req = false;
 
 
 static void
-run_create_assoc_test(
-	struct spdk_nvmf_bcm_fc_nport *tgtport)
+run_create_assoc_test(const char *subnqn,
+		      struct spdk_nvmf_host *host,
+		      struct spdk_nvmf_bcm_fc_nport *tgtport)
 {
 	struct spdk_nvmf_bcm_fc_ls_rqst ls_rqst;
 	struct nvmf_fc_ls_cr_assoc_rqst ca_rqst;
@@ -298,9 +384,10 @@ run_create_assoc_test(
 	to_be32(&ca_rqst.assoc_cmd.desc_len,
 		sizeof(struct nvmf_fc_lsdesc_cr_assoc_cmd) -
 		(2 * sizeof(uint32_t)));
-	to_be16(&ca_rqst.assoc_cmd.ersp_ratio, 5);
-	to_be16(&ca_rqst.assoc_cmd.sqsize, 31);
-
+	to_be16(&ca_rqst.assoc_cmd.ersp_ratio, (host->max_aq_depth / 2));
+	to_be16(&ca_rqst.assoc_cmd.sqsize, host->max_aq_depth);
+	snprintf(&ca_rqst.assoc_cmd.subnqn[0], strlen(subnqn) + 1, "%s", subnqn);
+	snprintf(&ca_rqst.assoc_cmd.hostnqn[0], strlen(host->nqn) + 1, "%s", host->nqn);
 	ls_rqst.rqstbuf.virt = &ca_rqst;
 	ls_rqst.rspbuf.virt = respbuf;
 	ls_rqst.rqst_len = sizeof(struct nvmf_fc_ls_cr_assoc_rqst);
@@ -313,7 +400,8 @@ run_create_assoc_test(
 
 
 static void
-run_create_conn_test(struct spdk_nvmf_bcm_fc_nport *tgtport,
+run_create_conn_test(struct spdk_nvmf_host *host,
+		     struct spdk_nvmf_bcm_fc_nport *tgtport,
 		     uint64_t assoc_id)
 {
 	struct spdk_nvmf_bcm_fc_ls_rqst ls_rqst;
@@ -333,9 +421,9 @@ run_create_conn_test(struct spdk_nvmf_bcm_fc_nport *tgtport,
 	to_be32(&cc_rqst.connect_cmd.desc_len,
 		sizeof(struct nvmf_fc_lsdesc_cr_conn_cmd) -
 		(2 * sizeof(uint32_t)));
-	to_be16(&cc_rqst.connect_cmd.ersp_ratio, 20);
-	to_be16(&cc_rqst.connect_cmd.sqsize,
-		g_nvmf_tgt.opts.max_queue_depth - 1);
+
+	to_be16(&cc_rqst.connect_cmd.ersp_ratio, (host->max_queue_depth / 2));
+	to_be16(&cc_rqst.connect_cmd.sqsize, host->max_queue_depth);
 
 	/* fill in association id descriptor */
 	to_be32(&cc_rqst.assoc_id.desc_tag, FCNVME_LSDESC_ASSOC_ID),
@@ -488,7 +576,7 @@ handle_cc_rsp(struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst)
 		if (acc_hdr->w0.ls_cmd == FCNVME_LS_RJT) {
 			struct nvmf_fc_ls_rjt *rjt =
 				(struct nvmf_fc_ls_rjt *)ls_rqst->rspbuf.virt;
-			if (g_create_conn_test_cnt == g_nvmf_tgt.opts.max_queues_per_session) {
+			if (g_create_conn_test_cnt == fc_ut_host->max_connections_allowed) {
 				/* expected to get reject for too many connections */
 				CU_ASSERT(rjt->rjt.reason_code ==
 					  FCNVME_RJT_RC_INV_PARAM);
@@ -579,11 +667,11 @@ ls_tests_init(void)
 	uint16_t i;
 
 	bzero(&g_nvmf_tgt, sizeof(g_nvmf_tgt));
-	g_nvmf_tgt.opts.max_aq_depth = 32,
-			g_nvmf_tgt.opts.max_queue_depth = 128,
-					g_nvmf_tgt.opts.max_queues_per_session = 4,
+	g_nvmf_tgt.opts.max_aq_depth = 32;
+	g_nvmf_tgt.opts.max_queue_depth = 1024;
+	g_nvmf_tgt.opts.max_queues_per_session = 4;
 
-							bzero(&fcport, sizeof(struct spdk_nvmf_bcm_fc_port));
+	bzero(&fcport, sizeof(struct spdk_nvmf_bcm_fc_port));
 	fcport.hw_port_status = SPDK_FC_PORT_ONLINE;
 	fcport.max_io_queues = 16;
 	for (i = 0; i < fcport.max_io_queues; i++) {
@@ -619,13 +707,13 @@ create_assoc_test(void)
 {
 	/* main test driver */
 	g_test_run_type = TEST_RUN_TYPE_CREATE_ASSOC;
-	run_create_assoc_test(&tgtport);
+	run_create_assoc_test(fc_ut_good_subsystem, fc_ut_host, &tgtport);
 
 	if (g_last_rslt == 0) {
 		g_test_run_type = TEST_RUN_TYPE_CREATE_CONN;
 		/* create connections until we get too many connections error */
 		while (g_last_rslt == 0)
-			run_create_conn_test(&tgtport, g_curr_assoc_id);
+			run_create_conn_test(fc_ut_host, &tgtport, g_curr_assoc_id);
 
 		/* disconnect the association */
 		g_test_run_type = TEST_RUN_TYPE_DISCONNECT;
@@ -639,7 +727,7 @@ invalid_connection_test(void)
 {
 	/* run test to create connection to invalid association */
 	g_test_run_type = TEST_RUN_TYPE_CONN_BAD_ASSOC;
-	run_create_conn_test(&tgtport, g_curr_assoc_id);
+	run_create_conn_test(fc_ut_host, &tgtport, g_curr_assoc_id);
 }
 
 static void
@@ -652,14 +740,14 @@ create_max_assoc_conns_test(void)
 	for (i = 0; i < fcport.ls_rsrc_pool.assocs_count &&
 	     g_last_rslt == 0; i++) {
 		g_test_run_type = TEST_RUN_TYPE_CREATE_ASSOC;
-		run_create_assoc_test(&tgtport);
+		run_create_assoc_test(fc_ut_good_subsystem, fc_ut_host, &tgtport);
 		if (g_last_rslt == 0) {
 			int j;
 			assoc_id[i] = g_curr_assoc_id;
 			g_test_run_type = TEST_RUN_TYPE_CREATE_CONN;
-			for (j = 1; j < g_nvmf_tgt.opts.max_queues_per_session; j++) {
+			for (j = 1; j < fc_ut_host->max_connections_allowed; j++) {
 				if (g_last_rslt == 0) {
-					run_create_conn_test(&tgtport, g_curr_assoc_id);
+					run_create_conn_test(fc_ut_host, &tgtport, g_curr_assoc_id);
 				}
 			}
 		}
@@ -764,11 +852,67 @@ spdk_nvmf_bcm_fc_find_rport_from_sid(uint32_t s_id,
 	return rc;
 }
 
+static void
+usage(const char *program_name)
+{
+	printf("%s options\n", program_name);
+	printf("\t[-d <value> Enable trace level 0..2 (default: 0)]\n");
+	printf("\t[-a <value> Admin Queue depth (default: %u)]\n",
+	       fc_ut_target.max_aq_depth);
+	printf("\t[-q <value> IO Queue depth (default: %u)]\n",
+	       fc_ut_target.max_queue_depth);
+	printf("\t[-c <value> IO Queue count (default: %u)]\n",
+	       fc_ut_target.max_connections_allowed);
+}
+
 int main(int argc, char **argv)
 {
 	unsigned int	num_failures = 0;
-
 	CU_pSuite	suite = NULL;
+	int trace_level = 0;
+	uint16_t max_aq_depth = 32;
+	uint16_t max_queue_depth = 16;
+	uint16_t max_connections_allowed = 2;
+	int op;
+
+	while ((op = getopt(argc, argv, "a:q:c:d:")) != -1) {
+		switch (op) {
+		case 'a':
+			max_aq_depth = (uint16_t) atoi(optarg);
+			break;
+		case 'q':
+			max_queue_depth = (uint16_t) atoi(optarg);
+			break;
+		case 'c':
+			max_connections_allowed = atoi(optarg);
+			break;
+		case 'd':
+			trace_level = atoi(optarg);
+			break;
+		default:
+			usage(argv[0]);
+			exit(1);
+		}
+	}
+
+	fc_ut_target.max_aq_depth = max_aq_depth;
+	fc_ut_target.max_queue_depth = max_queue_depth;
+	fc_ut_target.max_connections_allowed = max_connections_allowed;
+
+	switch (trace_level) {
+	case 2:
+		SPDK_TRACE_NVMF_BCM_FC_LS.enabled = true;
+	/* fall through */
+	case 1:
+		SPDK_TRACE_NVMF.enabled = true;
+	/* fall through */
+	default:
+		break;
+	}
+
+	fc_ut_initiator.max_aq_depth = max_aq_depth - 1;
+	fc_ut_initiator.max_queue_depth = max_queue_depth - 1;
+	fc_ut_initiator.max_connections_allowed = max_connections_allowed;
 
 	if (CU_initialize_registry() != CUE_SUCCESS) {
 		return CU_get_error();
