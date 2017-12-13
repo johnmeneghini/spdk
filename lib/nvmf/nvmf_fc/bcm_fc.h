@@ -204,6 +204,7 @@ struct spdk_nvmf_bcm_fc_association {
 	struct spdk_nvmf_bcm_fc_nport *tgtport;
 	struct spdk_nvmf_bcm_fc_remote_port_info *rport;
 	struct spdk_nvmf_subsystem *subsystem;
+	struct spdk_nvmf_host *host;
 	spdk_nvmf_bcm_fc_object_state_t assoc_state;
 
 	char host_id[SPDK_NVMF_FC_HOST_ID_LEN];

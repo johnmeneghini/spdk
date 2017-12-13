@@ -193,15 +193,21 @@
 #     is used for the Subsytem.
 #   . When AllowAnyHost is false a valid Host NQN must be added to
 #     the Subsystem. Valid NQNs must contain no upper case letters.
+#   Optionally, max_queue_depth and max_queue_num parameter can be
+#   defined on the Host directive line. The format of the Host 
+#   directive line is:  
 #
-# Note: Valid host NQNs can be generated with the Linux 'nvme get-hostnqn' utility.
-#       To make the The Linux host NQN persistent, add to the /etc/nvme/hostnqn file.
+#           Host <nqn> [max_queue_depth] [max_queue_num]
 #
-#  E.g.:
+#   Note: Valid host NQNs can be generated with the Linux 
+#   'nvme get-hostnqn' utility. To make the The Linux host
+#   NQN persistent, add to the /etc/nvme/hostnqn file.
 #
-#  $ sudo nvme gen-hostnqn | tr A-Z a-z > /etc/nvme/hostnqn
-#  $ cat /etc/nvme/hostnqn
-#  nqn.2014-08.org.nvmexpress:nvmf:uuid:6a007efc-2f43-4123-9c41-9c48896855e1
+#   E.g.:
+#
+#   $ sudo nvme gen-hostnqn | tr A-Z a-z > /etc/nvme/hostnqn
+#   $ cat /etc/nvme/hostnqn
+#   nqn.2014-08.org.nvmexpress:nvmf:uuid:6a007efc-2f43-4123-9c41-9c48896855e1
 #
 # Multiple subsystems are allowed.
 [Subsystem1]
@@ -218,6 +224,9 @@
   SN SPDK00000000000002
   AllowAnyHost No
   Host nqn.2014-08.org.nvmexpress:nvmf:uuid:6a007efc-2f43-4123-9c41-9c48896855e1
+  Host nqn.2016-06.io.spdk1:init 24 2 
+  Host nqn.2016-06.io.spdk2:init 128 4
+  Host nqn.2016-06.io.spdk3:init 1024 8
   Namespace Malloc2
   Namespace Malloc3
 #Namespace Malloc4 UUID cfb11df2e43a49779293f41319de4fbb

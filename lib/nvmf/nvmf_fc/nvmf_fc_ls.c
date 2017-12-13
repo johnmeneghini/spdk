@@ -35,6 +35,7 @@
 #include "nvmf/request.h"
 #include "nvmf/session.h"
 #include "nvmf/transport.h"
+#include "nvmf/subsystem.h"
 
 #include "spdk/env.h"
 #include "spdk/assert.h"
@@ -192,11 +193,13 @@ static inline uint32_t nvmf_fc_lsdesc_len(size_t sz)
 static struct spdk_nvmf_subsystem *
 nvmf_fc_ls_valid_subnqn(uint8_t *subnqn)
 {
-	if (!memchr(subnqn, '\0', FCNVME_ASSOC_SUBNQN_LEN))
+	if (!spdk_nvmf_valid_nqn((const char *) subnqn)) {
 		return NULL;
+	}
 	return spdk_nvmf_find_subsystem((const char *)subnqn);
 }
 
+#if 0
 static bool
 nvmf_fc_ls_valid_hostnqn(struct spdk_nvmf_subsystem *subsystem,
 			 uint8_t *hostnqn)
@@ -205,6 +208,7 @@ nvmf_fc_ls_valid_hostnqn(struct spdk_nvmf_subsystem *subsystem,
 		return false;
 	return spdk_nvmf_subsystem_host_allowed(subsystem, (const char *)hostnqn);
 }
+#endif
 
 static inline void
 nvmf_fc_xmt_ls_rsp(struct spdk_nvmf_bcm_fc_nport *tgtport,
@@ -298,7 +302,8 @@ nvmf_fc_ls_new_association(uint32_t s_id,
 			   struct spdk_nvmf_bcm_fc_nport *tgtport,
 			   struct spdk_nvmf_bcm_fc_remote_port_info *rport,
 			   struct nvmf_fc_lsdesc_cr_assoc_cmd *a_cmd,
-			   struct spdk_nvmf_subsystem *subsys, uint16_t rpi)
+			   struct spdk_nvmf_subsystem *subsys,
+			   struct spdk_nvmf_host *host, uint16_t rpi)
 {
 	struct spdk_nvmf_bcm_fc_association *assoc;
 
@@ -330,9 +335,13 @@ nvmf_fc_ls_new_association(uint32_t s_id,
 		memcpy(assoc->host_nqn, a_cmd->hostnqn, FCNVME_ASSOC_HOSTNQN_LEN);
 		memcpy(assoc->sub_nqn, a_cmd->subnqn, FCNVME_ASSOC_HOSTNQN_LEN);
 		assoc->conn_count = 0;
+
 		TAILQ_INIT(&assoc->fc_conns);
 		assoc->ls_del_op_ctx = NULL;
 		assoc->snd_disconn_bufs.rpi = rpi;
+
+		/* Back pointer to host specific controller configuration. */
+		assoc->host = host;
 
 		/* add association to target port's association list */
 		TAILQ_INSERT_TAIL(&tgtport->fc_associations, assoc, link);
@@ -372,7 +381,8 @@ nvmf_fc_ls_append_del_cb_ctx(struct spdk_nvmf_bcm_fc_association *assoc,
 
 static struct spdk_nvmf_bcm_fc_conn *
 nvmf_fc_ls_new_connection(struct spdk_nvmf_bcm_fc_association *assoc,
-			  enum conn_type type, uint16_t qid, uint16_t max_q_size,
+			  struct spdk_nvmf_host *host,
+			  enum conn_type type, uint16_t qid,
 			  uint16_t esrp_ratio, uint16_t rpi, uint16_t sq_size)
 {
 	struct spdk_nvmf_bcm_fc_conn *fc_conn;
@@ -388,26 +398,21 @@ nvmf_fc_ls_new_connection(struct spdk_nvmf_bcm_fc_association *assoc,
 		fc_conn->conn.type = type;
 		fc_conn->conn.transport = &spdk_nvmf_transport_bcm_fc;
 		fc_conn->conn.qid = qid;
-		fc_conn->conn.sq_head_max = max_q_size;
+		fc_conn->conn.sq_head_max = sq_size;
 		fc_conn->esrp_ratio = esrp_ratio;
 		fc_conn->fc_assoc = assoc;
 		fc_conn->rpi = rpi;
 		fc_conn->max_queue_depth = sq_size;
 
 		TAILQ_INIT(&fc_conn->pending_queue);
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-			      "New Connection %p for Association %p created:\n",
-			      fc_conn, assoc);
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-			      "\tQueue id:0x%x\n", fc_conn->conn.qid);
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-			      "\tQueue size requested:0x%x\n", max_q_size);
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-			      "\tMax admin queue size supported:0x%x\n",
-			      g_nvmf_tgt.opts.max_aq_depth);
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-			      "\tMax IO queue size supported:0x%x\n",
-			      g_nvmf_tgt.opts.max_queue_depth);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "New Connection %p for Association %p created:\n", fc_conn,
+			      assoc);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\tQueue id:%u\n", fc_conn->conn.qid);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\tQueue size requested:%u\n", sq_size);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\tMax admin queue size supported:%u\n",
+			      host->max_aq_depth);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\tMax IO queue size supported:%u\n",
+			      host->max_queue_depth);
 	} else {
 		SPDK_ERRLOG("out of connections\n");
 	}
@@ -481,6 +486,8 @@ nvmf_fc_ls_assign_conn_to_q(struct spdk_nvmf_bcm_fc_association *assoc,
 	struct spdk_nvmf_bcm_fc_nport *tgtport = assoc->tgtport;
 	struct spdk_nvmf_bcm_fc_port *fc_port = tgtport->fc_port;
 	uint32_t sel_qind = 0;
+
+	/* XXX What queue are we talking about here?  The HWQP? */
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\n");
 
@@ -911,7 +918,9 @@ nvmf_fc_ls_process_cass(uint32_t s_id,
 		(struct nvmf_fc_ls_cr_assoc_acc *)ls_rqst->rspbuf.virt;
 	struct spdk_nvmf_bcm_fc_association *assoc;
 	struct spdk_nvmf_bcm_fc_conn *fc_conn;
-	struct spdk_nvmf_subsystem *subsys = NULL;
+	struct spdk_nvmf_subsystem *subsystem = NULL;
+	struct spdk_nvmf_host *host;
+
 	struct spdk_nvmf_bcm_fc_remote_port_info *rport = NULL;
 	int errmsg_ind = 0;
 	uint8_t rc = FCNVME_RJT_RC_NONE;
@@ -919,16 +928,21 @@ nvmf_fc_ls_process_cass(uint32_t s_id,
 	spdk_err_t err;
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-		      "LS_CASS: ls_rqst_len=%d, desc_list_len=%d, cmd_len=%d, sq_size=%d\n"
-		      "Subnqn: %s, Hostnqn: %s\n",
+		      "LS_CASS: ls_rqst_len=%d, desc_list_len=%d, cmd_len=%d, sq_size=%d\n",
 		      ls_rqst->rqst_len, be32_to_cpu(&rqst->desc_list_len),
 		      be32_to_cpu(&rqst->assoc_cmd.desc_len),
-		      be16_to_cpu(&rqst->assoc_cmd.sqsize),
-		      rqst->assoc_cmd.subnqn,
+		      be16_to_cpu(&rqst->assoc_cmd.sqsize));
+
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
+		      "LS_CASS: Subnqn: %s\n",
+		      rqst->assoc_cmd.subnqn);
+
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
+		      "LS_CASS: Hostnqn: %s\n",
 		      rqst->assoc_cmd.hostnqn);
 
 	if (ls_rqst->rqst_len < LS_CREATE_ASSOC_MIN_LEN) {
-		SPDK_ERRLOG("assoc_cmd req len = %d, should be at leastt %d\n",
+		SPDK_ERRLOG("assoc_cmd req len = %d, should be at least %d\n",
 			    ls_rqst->rqst_len, LS_CREATE_ASSOC_MIN_LEN);
 		errmsg_ind = VERR_CR_ASSOC_LEN;
 		rc = FCNVME_RJT_RC_INV_PARAM;
@@ -959,20 +973,17 @@ nvmf_fc_ls_process_cass(uint32_t s_id,
 		errmsg_ind = VERR_ERSP_RATIO;
 		rc = FCNVME_RJT_RC_INV_PARAM;
 		ec = FCNVME_RJT_EXP_INV_ESRP;
-	} else if ((subsys = nvmf_fc_ls_valid_subnqn(rqst->assoc_cmd.subnqn))
+	} else if ((subsystem = nvmf_fc_ls_valid_subnqn(rqst->assoc_cmd.subnqn))
 		   == NULL) {
 		errmsg_ind = VERR_SUBNQN;
 		rc = FCNVME_RJT_RC_INV_PARAM;
 		ec = FCNVME_RJT_EXP_INV_SUBNQN;
-	} else if (!nvmf_fc_ls_valid_hostnqn(subsys, rqst->assoc_cmd.hostnqn)) {
+	} else if ((host = spdk_nvmf_find_subsystem_host(subsystem,
+			   (const char *) rqst->assoc_cmd.hostnqn)) == NULL) {
 		errmsg_ind = VERR_HOSTNQN;
 		rc = FCNVME_RJT_RC_INV_HOST;
 		ec = FCNVME_RJT_EXP_INV_HOSTNQN;
-	} else if (rqst->assoc_cmd.sqsize == 0 ||
-		   /* TODO: Currently sqsize check is spec 1.17 compliant.
-		    * To make it 1.19 compliant, need to change check to '>='. */
-		   from_be16(&rqst->assoc_cmd.sqsize) >
-		   g_nvmf_tgt.opts.max_aq_depth) {
+	} else if (!(spdk_nvmf_validate_sqsize(host, 0, from_be16(&rqst->assoc_cmd.sqsize), __func__))) {
 		errmsg_ind = VERR_SQSIZE;
 		rc = FCNVME_RJT_RC_INV_PARAM;
 		ec = FCNVME_RJT_EXP_SQ_SIZE;
@@ -987,16 +998,15 @@ nvmf_fc_ls_process_cass(uint32_t s_id,
 		} else {
 			assoc = nvmf_fc_ls_new_association(s_id, tgtport, rport,
 							   &rqst->assoc_cmd,
-							   subsys,
+							   subsystem, host,
 							   ls_rqst->rpi);
 			if (!assoc) {
 				errmsg_ind = VERR_ASSOC_ALLOC_FAIL;
 				rc = FCNVME_RJT_RC_INSUFF_RES;
 				ec = FCNVME_RJT_EXP_INSUF_RES;
 			} else { // alloc admin q (i.e. connection)
-				fc_conn = nvmf_fc_ls_new_connection(assoc,
+				fc_conn = nvmf_fc_ls_new_connection(assoc, host,
 								    CONN_TYPE_AQ, 0,
-								    from_be16(&rqst->assoc_cmd.sqsize),
 								    from_be16(&rqst->assoc_cmd.ersp_ratio),
 								    ls_rqst->rpi,
 								    from_be16(&rqst->assoc_cmd.sqsize));
@@ -1099,14 +1109,6 @@ nvmf_fc_ls_process_cioc(struct spdk_nvmf_bcm_fc_nport *tgtport,
 		errmsg_ind = VERR_ERSP_RATIO;
 		rc = FCNVME_RJT_RC_INV_PARAM;
 		ec = FCNVME_RJT_EXP_INV_ESRP;
-	} else if (rqst->connect_cmd.sqsize == 0 ||
-		   /* TODO: Currently sqsize check is spec 1.17 compliant.
-		    * To make it 1.19 compliant, need to change check to '>='. */
-		   from_be16(&rqst->connect_cmd.sqsize) >
-		   g_nvmf_tgt.opts.max_queue_depth) {
-		errmsg_ind = VERR_SQSIZE;
-		rc = FCNVME_RJT_RC_INV_PARAM;
-		ec = FCNVME_RJT_EXP_SQ_SIZE;
 	} else {
 		/* find association */
 		assoc = nvmf_fc_ls_find_assoc(tgtport,
@@ -1118,23 +1120,31 @@ nvmf_fc_ls_process_cioc(struct spdk_nvmf_bcm_fc_nport *tgtport,
 			/* association is being deleted - don't allow more connections */
 			errmsg_ind = VERR_NO_ASSOC;
 			rc = FCNVME_RJT_RC_INV_ASSOC;
-		} else if (assoc->conn_count >= g_nvmf_tgt.opts.max_queues_per_session) {
-			errmsg_ind = VERR_CONN_TOO_MANY;
-			rc = FCNVME_RJT_RC_INV_PARAM;
-			ec =  FCNVME_RJT_EXP_INV_Q_ID;
-		} else {
-			/* get a connection) */
-			fc_conn = nvmf_fc_ls_new_connection(assoc,
-							    CONN_TYPE_IOQ,
-							    from_be16(&rqst->connect_cmd.qid),
-							    from_be16(&rqst->connect_cmd.sqsize),
-							    from_be16(&rqst->connect_cmd.ersp_ratio),
-							    ls_rqst->rpi,
-							    from_be16(&rqst->connect_cmd.sqsize));
-			if (!fc_conn) {
-				errmsg_ind = VERR_CONN_ALLOC_FAIL;
-				rc = FCNVME_RJT_RC_INSUFF_RES;
-				ec = FCNVME_RJT_EXP_INSUF_RES;
+		} else { // alloc IO q (i.e. connection)
+			if (assoc->conn_count >= assoc->host->max_connections_allowed) {
+				errmsg_ind = VERR_CONN_TOO_MANY;
+				rc = FCNVME_RJT_RC_INV_PARAM;
+				ec =  FCNVME_RJT_EXP_INV_Q_ID;
+			} else if (!(spdk_nvmf_validate_sqsize(assoc->host,
+							       from_be16(&rqst->connect_cmd.qid),
+							       from_be16(&rqst->connect_cmd.sqsize),
+							       __func__))) {
+				errmsg_ind = VERR_SQSIZE;
+				rc = FCNVME_RJT_RC_INV_PARAM;
+				ec = FCNVME_RJT_EXP_SQ_SIZE;
+			} else {
+
+				fc_conn = nvmf_fc_ls_new_connection(assoc, assoc->host,
+								    CONN_TYPE_IOQ,
+								    from_be16(&rqst->connect_cmd.qid),
+								    from_be16(&rqst->connect_cmd.ersp_ratio),
+								    ls_rqst->rpi,
+								    from_be16(&rqst->connect_cmd.sqsize));
+				if (!fc_conn) {
+					errmsg_ind = VERR_CONN_ALLOC_FAIL;
+					rc = FCNVME_RJT_RC_INSUFF_RES;
+					ec = FCNVME_RJT_EXP_INSUF_RES;
+				}
 			}
 		}
 	}
@@ -1147,9 +1157,7 @@ nvmf_fc_ls_process_cioc(struct spdk_nvmf_bcm_fc_nport *tgtport,
 				   rqst->w0.ls_cmd,
 				   rc, ec, 0);
 		nvmf_fc_xmt_ls_rsp(tgtport, ls_rqst);
-	}
-
-	else {
+	} else {
 		/* format accept response */
 		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\n");
 		bzero(acc, sizeof(*acc));
@@ -1269,6 +1277,10 @@ spdk_nvmf_bcm_fc_ls_init(struct spdk_nvmf_bcm_fc_port *fc_port)
 	TAILQ_INIT(&fc_port->ls_rsrc_pool.assoc_free_list);
 	TAILQ_INIT(&fc_port->ls_rsrc_pool.fc_conn_free_list);
 
+	/*
+	 * XXX Here's the logic that equates the global maximum queue depth
+	 * XXX and maximum IO queue number with the per-port HWQP resources.
+	 */
 	ioqs_per_rq = fc_port->io_queues[1].queues.rq_payload.num_buffers /
 		      g_nvmf_tgt.opts.max_queue_depth;
 	max_ioqs = ioqs_per_rq * (fc_port->max_io_queues - 1);
@@ -1359,8 +1371,7 @@ spdk_nvmf_bcm_fc_handle_ls_rqst(uint32_t s_id,
 	struct nvmf_fc_ls_rqst_w0 *w0 =
 		(struct nvmf_fc_ls_rqst_w0 *)ls_rqst->rqstbuf.virt;
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-		      "LS cmd=%d\n", w0->ls_cmd);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "LS cmd=%d\n", w0->ls_cmd);
 
 	switch (w0->ls_cmd) {
 	case FCNVME_LS_CREATE_ASSOCIATION:

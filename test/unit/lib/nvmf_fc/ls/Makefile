@@ -33,13 +33,15 @@
 
 SPDK_ROOT_DIR := $(abspath $(CURDIR)/../../../../../)
 SPDK_LIB_NVMF_FC_DIR = $(SPDK_ROOT_DIR)/lib/nvmf/nvmf_fc
+SPDK_LIB_NVMF_DIR = $(SPDK_ROOT_DIR)/lib/nvmf
 
 include $(SPDK_ROOT_DIR)/mk/spdk.common.mk
 
-CFLAGS += -I$(SPDK_ROOT_DIR)/lib -I$(SPDK_LIB_NVMF_FC_DIR)
+CFLAGS += -I$(SPDK_ROOT_DIR)/lib -I$(SPDK_LIB_NVMF_FC_DIR) -I$(SPDK_LIB_NVMF_DIR)
 
 TEST_FILE = nvmf_fc_ls_ut.c
 OTHER_FILES = $(SPDK_LIB_NVMF_FC_DIR)/nvmf_fc_ls.c \
 	$(SPDK_LIB_NVMF_FC_DIR)/nvmf_fc_poller_api.c \
+	$(SPDK_LIB_NVMF_DIR)/session.c 
 
 include $(SPDK_ROOT_DIR)/mk/nvmf.unittest.mk

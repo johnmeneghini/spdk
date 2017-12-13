@@ -299,7 +299,8 @@ spdk_rpc_construct_nvmf_subsystem(struct spdk_jsonrpc_server_conn *conn,
 {
 	struct rpc_subsystem req = {};
 	struct spdk_json_write_ctx *w;
-	int ret;
+	struct spdk_host_conf hosts[MAX_HOSTS] = {};
+	int i, ret;
 	req.core = -1;	/* Explicitly set the core as the uninitialized value */
 
 	if (spdk_json_decode_object(params, rpc_subsystem_decoders,
@@ -309,10 +310,19 @@ spdk_rpc_construct_nvmf_subsystem(struct spdk_jsonrpc_server_conn *conn,
 		goto invalid;
 	}
 
+	/*
+	 * Quick hack until I can get the json decoder working
+	 */
+	for (i = 0; i < (int) req.hosts.num_hosts; i++) {
+		hosts[i].hostnqn = req.hosts.hosts[i];
+		hosts[i].max_queue_depth = 64;
+		hosts[i].max_queue_num = 4;
+	}
+
 	ret = spdk_nvmf_bcm_fc_construct_subsystem(req.nqn, req.mode, req.core,
 			req.listen_addresses.num_listen_address,
 			req.listen_addresses.addresses,
-			req.hosts.num_hosts, req.hosts.hosts, req.allow_any_host, req.pci_address,
+			req.hosts.num_hosts, hosts, req.allow_any_host, req.pci_address,
 			req.serial_number,
 			req.namespaces.num_names, req.namespaces.names, NULL, NULL);
 	if (ret) {
