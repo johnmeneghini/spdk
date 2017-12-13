@@ -259,7 +259,9 @@ test_discovery_log(void)
 	CU_ASSERT(disc_log->genctr == 2);
 	CU_ASSERT(disc_log->numrec == 0);
 
-	spdk_nvmf_subsystem_add_host(subsystem, "nqn.2017-07.com.netapp:num1");
+	spdk_nvmf_subsystem_add_host(subsystem, "nqn.2017-07.com.netapp:num1",
+				     128 /* max_queue_depth */,
+				     8   /* max_connections_allowed */);
 
 	/* Offset 0, exact size match */
 	memset(buffer, 0xCC, sizeof(buffer));
@@ -305,8 +307,12 @@ test_discovery_log(void)
 	CU_ASSERT(disc_log->genctr == 5); /* 2 subsystems + 2 listeners + 1 host */
 	CU_ASSERT(disc_log->numrec == 1); /* numrecs to be 2 */
 
-	spdk_nvmf_subsystem_add_host(subsystem, "nqn.2017-07.com.netapp:new");
-	spdk_nvmf_subsystem_add_host(subsystem2, "nqn.2017-07.com.netapp:num1");
+	spdk_nvmf_subsystem_add_host(subsystem, "nqn.2017-07.com.netapp:new",
+				     128 /* max_queue_depth */,
+				     8   /* max_connections_allowed */);
+	spdk_nvmf_subsystem_add_host(subsystem2, "nqn.2017-07.com.netapp:num1",
+				     1024 /* max_queue_depth */,
+				     32   /* max_connections_allowed */);
 
 	/* Get only the header, no entries */
 	memset(buffer, 0xCC, sizeof(buffer));
@@ -317,7 +323,9 @@ test_discovery_log(void)
 		  2); /* numrecs to be 1 since we added hosts which go through allowed check */
 
 	/* duplicate entry so nothing changes */
-	spdk_nvmf_subsystem_add_host(subsystem, "nqn.2017-07.com.netapp:num1");
+	spdk_nvmf_subsystem_add_host(subsystem, "nqn.2017-07.com.netapp:num1",
+				     128 /* max_queue_depth */,
+				     8   /* max_connections_allowed */);
 
 	/* Get only the header, no entries */
 	memset(buffer, 0xCC, sizeof(buffer));

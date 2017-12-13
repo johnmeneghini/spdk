@@ -99,6 +99,48 @@ spdk_nvmf_find_subsystem_with_cntlid(uint16_t cntlid)
 	return NULL;
 }
 
+struct spdk_nvmf_host *
+spdk_nvmf_find_subsystem_host(struct spdk_nvmf_subsystem *subsystem, const char *hostnqn)
+{
+
+	struct spdk_nvmf_host *host;
+
+	if (!hostnqn) {
+		SPDK_ERRLOG("hostnqn is NULL\n");
+		return NULL;
+	}
+
+	if (!spdk_nvmf_valid_nqn(hostnqn)) {
+		return NULL;
+	}
+
+	if (subsystem->num_hosts == 0) {
+		SPDK_ERRLOG("No Hosts defined for Subsystem %s\n", subsystem->subnqn);
+		if (spdk_nvmf_subsystem_get_allow_any_host(subsystem)) {
+			SPDK_ERRLOG("AllowAnyHost: Hostnqn %s\n", hostnqn);
+			return &subsystem->host0;
+		} else {
+			/* No hosts are defined and allow_any_host is false, no one can connect */
+			return NULL;
+		}
+	}
+
+	TAILQ_FOREACH(host, &subsystem->hosts, link) {
+		if (strcmp(hostnqn, host->nqn) == 0) {
+			return host;
+		}
+	}
+
+	SPDK_ERRLOG("Hostnqn %s not found on Subsystem %s\n", hostnqn, subsystem->subnqn);
+
+	if (spdk_nvmf_subsystem_get_allow_any_host(subsystem)) {
+		SPDK_ERRLOG("AllowAnyHost: Hostnqn %s\n", hostnqn);
+		return &subsystem->host0;
+	}
+
+	return NULL;
+}
+
 int
 spdk_nvmf_subsystem_start(struct spdk_nvmf_subsystem *subsystem)
 {
@@ -146,15 +188,19 @@ spdk_nvmf_subsystem_poll(struct spdk_nvmf_subsystem *subsystem)
 	}
 }
 
-static bool
+bool
 spdk_nvmf_valid_nqn(const char *nqn)
 {
 	size_t len;
 
+	if (!memchr(nqn, '\0', SPDK_NVMF_NQN_MAX_LEN)) {
+		SPDK_ERRLOG("Invalid NQN length > max %d\n", SPDK_NVMF_NQN_MAX_LEN - 1);
+		return false;
+	}
+
 	len = strlen(nqn);
 	if (len >= SPDK_NVMF_NQN_MAX_LEN) {
 		SPDK_ERRLOG("Invalid NQN \"%s\": length %zu > max %d\n", nqn, len, SPDK_NVMF_NQN_MAX_LEN - 1);
-		return false;
 	}
 
 	if (strncmp(nqn, "nqn.", 4) != 0) {
@@ -178,6 +224,8 @@ spdk_nvmf_add_discovery_log_allowed_fn(void *fn)
 {
 	g_nvmf_tgt.disc_log_allowed_fn = (disc_log_allowed_fn_t) fn;
 }
+
+static const char *host0_nqn = "nqn.2017-11.Any.Host";
 
 struct spdk_nvmf_subsystem *
 spdk_nvmf_create_subsystem(const char *nqn,
@@ -207,6 +255,15 @@ spdk_nvmf_create_subsystem(const char *nqn,
 	subsystem->connect_cb = connect_cb;
 	subsystem->disconnect_cb = disconnect_cb;
 	snprintf(subsystem->subnqn, sizeof(subsystem->subnqn), "%s", nqn);
+
+	subsystem->host0.max_queue_depth = g_nvmf_tgt.opts.max_queue_depth;
+	subsystem->host0.max_connections_allowed = g_nvmf_tgt.opts.max_queues_per_session;
+	subsystem->host0.max_aq_depth = g_nvmf_tgt.opts.max_aq_depth;
+	if (!(subsystem->host0.nqn = spdk_strdup(host0_nqn))) {
+		spdk_free(subsystem);
+		return NULL;
+	}
+
 	TAILQ_INIT(&subsystem->allowed_listeners);
 	TAILQ_INIT(&subsystem->hosts);
 	TAILQ_INIT(&subsystem->sessions);
@@ -223,6 +280,8 @@ spdk_nvmf_create_subsystem(const char *nqn,
 	TAILQ_INSERT_TAIL(&g_nvmf_tgt.subsystems, subsystem, entries);
 	g_nvmf_tgt.discovery_genctr++;
 
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Created Subsystem NQN %s\n", nqn);
+
 	return subsystem;
 }
 
@@ -237,6 +296,8 @@ spdk_nvmf_delete_subsystem(struct spdk_nvmf_subsystem *subsystem)
 		return;
 	}
 
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Destroy Subsystem NQN %s\n",
+		      spdk_nvmf_subsystem_get_nqn(subsystem));
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "subsystem is %p\n", subsystem);
 
 	TAILQ_FOREACH_SAFE(allowed_listener,
@@ -264,6 +325,7 @@ spdk_nvmf_delete_subsystem(struct spdk_nvmf_subsystem *subsystem)
 	TAILQ_REMOVE(&g_nvmf_tgt.subsystems, subsystem, entries);
 	g_nvmf_tgt.discovery_genctr++;
 
+	spdk_free(subsystem->host0.nqn);
 	spdk_free(subsystem);
 }
 
@@ -326,7 +388,7 @@ spdk_nvmf_subsystem_host_allowed(struct spdk_nvmf_subsystem *subsystem, const ch
 		return false;
 	}
 
-	if (subsystem->allow_any_host) {
+	if (spdk_nvmf_subsystem_get_allow_any_host(subsystem)) {
 		return true;
 	}
 
@@ -404,7 +466,8 @@ spdk_nvmf_subsystem_listener_allowed(struct spdk_nvmf_subsystem *subsystem,
 }
 
 int
-spdk_nvmf_subsystem_add_host(struct spdk_nvmf_subsystem *subsystem, const char *host_nqn)
+spdk_nvmf_subsystem_add_host(struct spdk_nvmf_subsystem *subsystem, const char *host_nqn,
+			     uint16_t max_queue_depth, uint16_t max_connections_allowed)
 {
 	struct spdk_nvmf_host *host;
 
@@ -425,9 +488,17 @@ spdk_nvmf_subsystem_add_host(struct spdk_nvmf_subsystem *subsystem, const char *
 		return -1;
 	}
 
+	host->max_queue_depth = max_queue_depth;
+	host->max_connections_allowed = max_connections_allowed;
+	host->max_aq_depth = g_nvmf_tgt.opts.max_aq_depth;
+
 	TAILQ_INSERT_HEAD(&subsystem->hosts, host, link);
 	subsystem->num_hosts++;
 	g_nvmf_tgt.discovery_genctr++;
+
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Host NQN %s (%u/%u/%u) added to Subsystem %s\n",
+		      host->nqn, host->max_aq_depth, host->max_queue_depth, host->max_connections_allowed,
+		      spdk_nvmf_subsystem_get_nqn(subsystem));
 
 	return 0;
 }
@@ -444,6 +515,10 @@ spdk_nvmf_subsystem_remove_host(struct spdk_nvmf_subsystem *subsystem, const cha
 			spdk_free(host);
 			subsystem->num_hosts--;
 			g_nvmf_tgt.discovery_genctr++;
+
+			SPDK_TRACELOG(SPDK_TRACE_NVMF, "Host NQN %s removed from Subsystem %s\n",
+				      hostnqn, spdk_nvmf_subsystem_get_nqn(subsystem));
+
 			return;
 		}
 	}
@@ -538,7 +613,7 @@ spdk_nvmf_subsystem_add_ns(struct spdk_nvmf_subsystem *subsystem, struct spdk_bd
 		      nsid);
 
 	subsystem->dev.virt.ns_list[i] = bdev;
-	subsystem->dev.virt.max_nsid =  spdk_max(subsystem->dev.virt.max_nsid, nsid);;
+	subsystem->dev.virt.max_nsid =  spdk_max(subsystem->dev.virt.max_nsid, nsid);
 	return nsid;
 }
 

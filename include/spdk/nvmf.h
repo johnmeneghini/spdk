@@ -84,6 +84,13 @@ struct spdk_nvmf_listen_addr {
 
 struct spdk_nvmf_host {
 	char				*nqn;
+	/*
+	 * The below values are duplicates of the
+	 * the values found in struct spdk_nvme_ctrlr_opts
+	 */
+	uint16_t			max_aq_depth;
+	uint16_t			max_queue_depth;
+	uint16_t			max_connections_allowed;
 	TAILQ_ENTRY(spdk_nvmf_host)	link;
 };
 
@@ -182,6 +189,12 @@ struct spdk_nvmf_subsystem {
 	uint32_t				num_hosts;
 	bool					allow_any_host;
 
+	/*
+	 * Host 0 contains the default host/controller configuration.
+	 * These values are used when the num_hosts == 0.
+	 */
+	struct spdk_nvmf_host                   host0;
+
 	TAILQ_HEAD(, spdk_nvmf_subsystem_allowed_listener)	allowed_listeners;
 
 	TAILQ_ENTRY(spdk_nvmf_subsystem)	entries;
@@ -190,7 +203,7 @@ struct spdk_nvmf_subsystem {
 struct spdk_nvmf_tgt_opts {
 	uint32_t				nvmever;
 	uint16_t				max_queue_depth;
-	uint16_t				max_aq_depth;
+	uint16_t                                max_aq_depth;
 	uint16_t				max_queues_per_session;
 	uint32_t				in_capsule_data_size;
 	uint32_t				max_io_size;
@@ -280,7 +293,7 @@ spdk_nvmf_subsystem_listener_allowed(struct spdk_nvmf_subsystem *subsystem,
 
 int
 spdk_nvmf_subsystem_add_host(struct spdk_nvmf_subsystem *subsystem,
-			     const char *host_nqn);
+			     const char *host_nqn, uint16_t max_queue_depth, uint16_t max_connections_allowed);
 
 void
 spdk_nvmf_subsystem_remove_host(struct spdk_nvmf_subsystem *subsystem,

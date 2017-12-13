@@ -43,7 +43,6 @@
 #include "spdk/nvme_spec.h"
 
 #define MAX_LISTEN_ADDRESSES 255
-#define MAX_HOSTS 255
 #define PORTNUMSTRLEN 32
 #define SPDK_NVMF_DEFAULT_SIN_PORT ((uint16_t)4420)
 
@@ -89,6 +88,7 @@ struct spdk_nvmf_probe_ctx {
 
 struct spdk_nvmf_tgt_conf g_spdk_nvmf_tgt_conf;
 static int32_t g_last_core = -1;
+static struct spdk_nvmf_tgt_opts tgt_opts;
 
 static int
 spdk_add_nvmf_discovery_subsystem(void)
@@ -135,22 +135,22 @@ spdk_nvmf_parse_nvmf_tgt(void)
 	if (intval < 0) {
 		intval = SPDK_NVMF_CONFIG_QUEUE_DEPTH_DEFAULT;
 	}
-	opts.max_queue_depth = spdk_max(intval, SPDK_NVMF_CONFIG_QUEUE_DEPTH_MIN);
-	opts.max_queue_depth = spdk_min(intval, SPDK_NVMF_CONFIG_QUEUE_DEPTH_MAX);
+	tgt_opts.max_queue_depth = spdk_max(intval, SPDK_NVMF_CONFIG_QUEUE_DEPTH_MIN);
+	tgt_opts.max_queue_depth = spdk_min(intval, SPDK_NVMF_CONFIG_QUEUE_DEPTH_MAX);
 
 	intval = spdk_conf_section_get_intval(sp, "MaxAqDepth");
 	if (intval < 0) {
 		intval = SPDK_NVMF_CONFIG_AQ_DEPTH_DEFAULT;
 	}
-	opts.max_aq_depth = spdk_max(intval, SPDK_NVMF_CONFIG_AQ_DEPTH_MIN);
-	opts.max_aq_depth = spdk_min(intval, SPDK_NVMF_CONFIG_AQ_DEPTH_MAX);
+	tgt_opts.max_aq_depth = spdk_max(intval, SPDK_NVMF_CONFIG_AQ_DEPTH_MIN);
+	tgt_opts.max_aq_depth = spdk_min(intval, SPDK_NVMF_CONFIG_AQ_DEPTH_MAX);
 
 	intval = spdk_conf_section_get_intval(sp, "MaxQueuesPerSession");
 	if (intval < 0) {
 		intval = SPDK_NVMF_CONFIG_QUEUES_PER_SESSION_DEFAULT;
 	}
-	opts.max_queues_per_session = spdk_max(intval, SPDK_NVMF_CONFIG_QUEUES_PER_SESSION_MIN);
-	opts.max_queues_per_session = spdk_min(intval, SPDK_NVMF_CONFIG_QUEUES_PER_SESSION_MAX);
+	tgt_opts.max_queues_per_session = spdk_max(intval, SPDK_NVMF_CONFIG_QUEUES_PER_SESSION_MIN);
+	tgt_opts.max_queues_per_session = spdk_min(intval, SPDK_NVMF_CONFIG_QUEUES_PER_SESSION_MAX);
 
 	intval = spdk_conf_section_get_intval(sp, "InCapsuleDataSize");
 	if (intval < 0) {
@@ -159,8 +159,8 @@ spdk_nvmf_parse_nvmf_tgt(void)
 		SPDK_ERRLOG("InCapsuleDataSize must be a multiple of 16\n");
 		return -1;
 	}
-	opts.in_capsule_data_size = spdk_max(intval, SPDK_NVMF_CONFIG_IN_CAPSULE_DATA_SIZE_MIN);
-	opts.in_capsule_data_size = spdk_min(intval, SPDK_NVMF_CONFIG_IN_CAPSULE_DATA_SIZE_MAX);
+	tgt_opts.in_capsule_data_size = spdk_max(intval, SPDK_NVMF_CONFIG_IN_CAPSULE_DATA_SIZE_MIN);
+	tgt_opts.in_capsule_data_size = spdk_min(intval, SPDK_NVMF_CONFIG_IN_CAPSULE_DATA_SIZE_MAX);
 
 	intval = spdk_conf_section_get_intval(sp, "MaxIOSize");
 	if (intval < 0) {
@@ -169,39 +169,39 @@ spdk_nvmf_parse_nvmf_tgt(void)
 		SPDK_ERRLOG("MaxIOSize must be a multiple of 4096\n");
 		return -1;
 	}
-	opts.max_io_size = spdk_max(intval, SPDK_NVMF_CONFIG_MAX_IO_SIZE_MIN);
-	opts.max_io_size = spdk_min(intval, SPDK_NVMF_CONFIG_MAX_IO_SIZE_MAX);
+	tgt_opts.max_io_size = spdk_max(intval, SPDK_NVMF_CONFIG_MAX_IO_SIZE_MIN);
+	tgt_opts.max_io_size = spdk_min(intval, SPDK_NVMF_CONFIG_MAX_IO_SIZE_MAX);
 
 	intval = spdk_conf_section_get_intval(sp, "ArbitrationBurst");
 	if (intval < 0) {
 		intval = SPDK_NVMF_CONFIG_ARBITRATION_BURST_DEFAULT;
 	}
-	opts.rab = intval;
+	tgt_opts.rab = intval;
 
 	intval = spdk_conf_section_get_intval(sp, "IEEEOUI0");
 	if (intval < 0) {
 		intval = 0;
 	}
-	opts.ieee[0] = intval;
+	tgt_opts.ieee[0] = intval;
 
 	intval = spdk_conf_section_get_intval(sp, "IEEEOUI1");
 	if (intval < 0) {
 		intval = 0;
 	}
-	opts.ieee[1] = intval;
+	tgt_opts.ieee[1] = intval;
 
 	intval = spdk_conf_section_get_intval(sp, "IEEEOUI2");
 	if (intval < 0) {
 		intval = 0;
 	}
-	opts.ieee[2] = intval;
+	tgt_opts.ieee[2] = intval;
 
 
 	intval = spdk_conf_section_get_intval(sp, "CMIC");
 	if (intval < 0) {
 		intval = 0;
 	}
-	opts.cmic = intval;
+	tgt_opts.cmic = intval;
 
 	intval = spdk_conf_section_get_intval(sp, "NMIC");
 	if (intval < 0) {
@@ -213,67 +213,67 @@ spdk_nvmf_parse_nvmf_tgt(void)
 	if (intval < 0) {
 		intval = 0;
 	}
-	opts.oaes = intval;
+	tgt_opts.oaes = intval;
 
 	intval = spdk_conf_section_get_intval(sp, "AbortLimit");
 	if (intval < 0) {
 		intval = 0;
 	}
-	opts.acl = intval;
+	tgt_opts.acl = intval;
 
 	intval = spdk_conf_section_get_intval(sp, "AerLimit");
 	if (intval < 1) {
 		intval = 1;
 	}
-	opts.aerl = intval;
+	tgt_opts.aerl = intval;
 
 	intval = spdk_conf_section_get_intval(sp, "ErrLogEntries");
 	if (intval < 0) {
 		intval = SPDK_NVMF_CONFIG_ERR_LOG_PAGE_ENTRIES_DEFAULT;
 	}
-	opts.elpe = intval;
+	tgt_opts.elpe = intval;
 
 	intval = spdk_conf_section_get_intval(sp, "NumPowerStates");
 	if (intval < 0) {
 		intval = 0;
 	}
-	opts.npss = intval;
+	tgt_opts.npss = intval;
 
 	intval = spdk_conf_section_get_intval(sp, "KeepAliveInt");
 	if (intval < 0) {
 		intval = SPDK_NVMF_CONFIG_KEEP_ALIVE_INTERVAL_DEFAULT;
 	}
-	opts.kas = intval;
+	tgt_opts.kas = intval;
 
 	intval = spdk_conf_section_get_intval(sp, "VolatileWriteCache");
 	if (intval < 0) {
 		intval = SPDK_NVMF_CONFIG_VOLATILE_WRITE_CACHE_DEFAULT;
 	}
-	opts.vwc = intval;
+	tgt_opts.vwc = intval;
 
 	intval = spdk_conf_section_get_intval(sp, "AtomicWriteNormal");
 	if (intval < 0) {
 		intval = 0;
 	}
-	opts.awun = intval;
+	tgt_opts.awun = intval;
 
 	intval = spdk_conf_section_get_intval(sp, "AtomicWritePowerFail");
 	if (intval < 0) {
 		intval = 0;
 	}
-	opts.awupf = intval;
+	tgt_opts.awupf = intval;
 
 	intval = spdk_conf_section_get_intval(sp, "SGLSupport");
 	if (intval < 0) {
 		intval = SPDK_NVMF_CONFIG_SGL_SUPPORT_DEFAULT;
 	}
-	opts.sgls = intval;
+	tgt_opts.sgls = intval;
 
 	intval = spdk_conf_section_get_intval(sp, "OptNVMCommandSupport");
 	if (intval < 0) {
 		intval = SPDK_NVMF_CONFIG_OPT_NVM_CMD_SUPPORT_DEFAULT;
 	}
-	opts.oncs = intval;
+	tgt_opts.oncs = intval;
 
 	model_number = spdk_conf_section_get_val(sp, "ModelNumber");
 	if (model_number == NULL) {
@@ -296,7 +296,7 @@ spdk_nvmf_parse_nvmf_tgt(void)
 	}
 	g_spdk_nvmf_tgt_conf.acceptor_poll_rate = intval;
 
-	rc = spdk_nvmf_tgt_opts_init(&opts);
+	rc = spdk_nvmf_tgt_opts_init(&tgt_opts);
 	if (rc != 0) {
 		SPDK_ERRLOG("spdk_nvmf_tgt_opts_init() failed\n");
 		return rc;
@@ -411,14 +411,14 @@ spdk_nvmf_allocate_lcore(uint64_t mask, uint32_t lcore)
 static int
 spdk_nvmf_parse_subsystem(struct spdk_conf_section *sp)
 {
-	const char *nqn, *mode_str;
+	const char *nqn, *mode_str, *queue_str;
 	int i, ret;
 	int lcore;
 	int num_listen_addrs;
 	struct rpc_listen_address listen_addrs[MAX_LISTEN_ADDRESSES];
 	char *listen_addrs_str[MAX_LISTEN_ADDRESSES] = {};
 	int num_hosts;
-	char *hosts[MAX_HOSTS];
+	struct spdk_host_conf hosts[MAX_HOSTS] = {};
 	bool allow_any_host;
 	const char *bdf;
 	const char *sn;
@@ -461,9 +461,25 @@ spdk_nvmf_parse_subsystem(struct spdk_conf_section *sp)
 
 	/* Parse Host sections */
 	for (i = 0; i < MAX_HOSTS; i++) {
-		hosts[i] = spdk_conf_section_get_nval(sp, "Host", i);
-		if (!hosts[i]) {
+
+		if (!(hosts[i].hostnqn = spdk_conf_section_get_nmval(sp, "Host", i, 0))) {
 			break;
+		}
+
+		if ((queue_str = spdk_conf_section_get_nmval(sp, "Host", i, 1))) {
+			hosts[i].max_queue_depth = (uint16_t) atoi(queue_str);
+		} else {
+			SPDK_ERRLOG("max_queue_depth not defined for Host %s\n", hosts[i].hostnqn);
+			hosts[i].max_queue_depth = tgt_opts.max_queue_depth;
+			hosts[i].max_queue_num = tgt_opts.max_queues_per_session;
+			continue;
+		}
+
+		if ((queue_str = spdk_conf_section_get_nmval(sp, "Host", i, 2))) {
+			hosts[i].max_queue_num = (uint16_t) atoi(queue_str);
+		} else {
+			SPDK_ERRLOG("max_queue_num not defined for Host %s\n", hosts[i].hostnqn);
+			hosts[i].max_queue_num = tgt_opts.max_queues_per_session;
 		}
 	}
 	num_hosts = i;
@@ -542,8 +558,8 @@ int
 spdk_nvmf_construct_subsystem(const char *name,
 			      const char *mode_str, int32_t lcore,
 			      int num_listen_addresses, struct rpc_listen_address *addresses,
-			      int num_hosts, char *hosts[], bool allow_any_host, const char *bdf,
-			      const char *sn, int num_devs, char *dev_list[],
+			      int num_hosts, struct spdk_host_conf *hosts, bool allow_any_host,
+			      const char *bdf, const char *sn, int num_devs, char *dev_list[],
 			      char *dev_nidt[], char *dev_nid[])
 {
 	struct spdk_nvmf_subsystem *subsystem;
@@ -632,7 +648,8 @@ spdk_nvmf_construct_subsystem(const char *name,
 
 	/* Parse Host sections */
 	for (i = 0; i < num_hosts; i++) {
-		spdk_nvmf_subsystem_add_host(subsystem, hosts[i]);
+		spdk_nvmf_subsystem_add_host(subsystem, hosts[i].hostnqn, hosts[i].max_queue_depth,
+					     hosts[i].max_queue_num);
 	}
 	spdk_nvmf_subsystem_set_allow_any_host(subsystem, allow_any_host);
 
