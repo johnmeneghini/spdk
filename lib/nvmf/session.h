@@ -36,6 +36,7 @@
 
 #include "spdk/stdinc.h"
 
+#include "spdk/nvmf.h"
 #include "spdk/nvmf_spec.h"
 #include "spdk/queue.h"
 
@@ -75,6 +76,7 @@ struct spdk_nvmf_aer_ctxt {
 struct spdk_nvmf_session {
 	uint16_t			cntlid;
 	struct spdk_nvmf_subsystem 	*subsys;
+	struct spdk_nvmf_host		*host;
 
 	struct {
 		union spdk_nvme_cap_register	cap;
@@ -85,8 +87,8 @@ struct spdk_nvmf_session {
 	struct spdk_nvme_ctrlr_data	vcdata; /* virtual controller data */
 
 	TAILQ_HEAD(connection_q, spdk_nvmf_conn) connections;
-	int num_connections;
-	int max_connections_allowed;
+	uint16_t num_connections;
+	uint16_t max_connections_allowed;
 	uint32_t kato;
 	union {
 		uint32_t raw;
@@ -104,6 +106,11 @@ struct spdk_nvmf_session {
 
 	TAILQ_ENTRY(spdk_nvmf_session) 		link;
 };
+
+bool spdk_nvmf_validate_sqsize(struct spdk_nvmf_host *host,
+			       uint16_t qid,
+			       uint16_t sqsize,
+			       const char *func);
 
 void spdk_nvmf_session_connect(struct spdk_nvmf_conn *conn,
 			       struct spdk_nvmf_fabric_connect_cmd *cmd,

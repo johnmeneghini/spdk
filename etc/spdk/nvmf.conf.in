@@ -206,7 +206,9 @@
 #   is Listen <type> <address> where type currently can only be RDMA.
 # - Between 0 and 255 Host directives are allowed. This defines the
 #   NQNs of allowed hosts. If no Host directive is specified, all hosts
-#   are allowed to connect.
+#   are allowed to connect. Optionally, a max_queue_depth and max_queue_num
+#   parameter can be defined on the Host directive line. The format of the
+#   Host directive line is:  Host <nqn> [max_queue_depth] [max_queue_num]
 # - Exactly 1 NVMe directive specifying an NVMe device by PCI BDF. The
 #   PCI domain:bus:device.function can be replaced by "*" to indicate
 #   any PCI device.
@@ -245,7 +247,9 @@
   Mode Virtual
   Listen RDMA 192.168.2.21:4420
   Host nqn.2014-08.org.nvmexpress:nvmf:uuid:6a007efc-2f43-4123-9c41-9c48896855e1
-  Hoat nqn.2014-08.org.nvmexpress:nvmf:uuid:3aebfc32-7e08-4fa2-9c98-43dd8f7d3841
+  Host nqn.2016-06.io.spdk1:init 24 2 
+  Host nqn.2016-06.io.spdk2:init 128 4
+  Host nqn.2016-06.io.spdk3:init 1024 8
   SN SPDK00000000000001
   Namespace Nvme0n1
 #Namespace Nvme0n2 NGUID cfb11df2e43a49779293f41319de4fbb

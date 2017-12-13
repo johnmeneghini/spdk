@@ -51,7 +51,7 @@
 static void
 nvmf_init_discovery_session_properties(struct spdk_nvmf_session *session)
 {
-	session->vcdata.maxcmd = g_nvmf_tgt.opts.max_queue_depth;
+	session->vcdata.maxcmd = session->host->max_aq_depth;
 	/* extended data for get log page supportted */
 	session->vcdata.lpa.edlp = 1;
 	session->vcdata.cntlid = session->cntlid;
@@ -98,6 +98,8 @@ nvmf_init_discovery_session_properties(struct spdk_nvmf_session *session)
 static void
 nvmf_init_nvme_session_properties(struct spdk_nvmf_session *session)
 {
+	uint16_t mqes;
+
 	assert((g_nvmf_tgt.opts.max_io_size % SPDK_NVMF_BLOCK_SIZE) == 0);
 
 	/* Init the controller details */
@@ -106,7 +108,7 @@ nvmf_init_nvme_session_properties(struct spdk_nvmf_session *session)
 	session->vcdata.aerl = g_nvmf_tgt.opts.aerl;
 	session->vcdata.cntlid = session->cntlid;
 	session->vcdata.kas = g_nvmf_tgt.opts.kas;
-	session->vcdata.maxcmd = g_nvmf_tgt.opts.max_queue_depth;
+	session->vcdata.maxcmd = session->host->max_queue_depth;
 	session->vcdata.mdts = spdk_u32log2(g_nvmf_tgt.opts.max_io_size / SPDK_NVMF_BLOCK_SIZE);
 	memcpy(&session->vcdata.sgls, &g_nvmf_tgt.opts.sgls, sizeof(uint32_t));
 
@@ -121,7 +123,7 @@ nvmf_init_nvme_session_properties(struct spdk_nvmf_session *session)
 
 	strncpy((char *)session->vcdata.subnqn, session->subsys->subnqn, sizeof(session->vcdata.subnqn));
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "	ctrlr data: maxcmd %x\n",
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "	ctrlr data: maxcmd %u\n",
 		      session->vcdata.maxcmd);
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "	ext ctrlr data: ioccsz %x\n",
 		      session->vcdata.nvmf_specific.ioccsz);
@@ -136,9 +138,11 @@ nvmf_init_nvme_session_properties(struct spdk_nvmf_session *session)
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "	sgls data: 0x%x\n",
 		      *(uint32_t *)&session->vcdata.sgls);
 
+	mqes = (session->vcdata.maxcmd - 1);   /* max queue depth */
+
 	session->vcprop.cap.raw = 0;
 	session->vcprop.cap.bits.cqr = 1;
-	session->vcprop.cap.bits.mqes = (session->vcdata.maxcmd - 1);	/* max queue depth */
+	session->vcprop.cap.bits.mqes = mqes;	/* max queue depth */
 	session->vcprop.cap.bits.ams = 0;	/* optional arb mechanisms */
 	session->vcprop.cap.bits.to = 1;	/* ready timeout - 500 msec units */
 	session->vcprop.cap.bits.dstrd = 0;	/* fixed to 0 for NVMf */
@@ -152,6 +156,11 @@ nvmf_init_nvme_session_properties(struct spdk_nvmf_session *session)
 		session->vcprop.vs.bits.mnr = 3;
 		session->vcprop.vs.bits.ter = 0;
 	}
+
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "        properties cap data: %#lx\n",
+		      *(uint64_t *)&session->vcprop.cap.raw);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "        properties cap mqes: 0x%x (%u)\n", mqes, mqes);
+
 	/* Report at least version 1.2.1 */
 	if (session->vcprop.vs.raw < SPDK_NVME_VERSION(1, 2, 1)) {
 		session->vcprop.vs.bits.mjr = 1;
@@ -241,6 +250,45 @@ spdk_nvmf_session_gen_cntlid(void)
 	return cntlid;
 }
 
+bool
+spdk_nvmf_validate_sqsize(struct spdk_nvmf_host *host,
+			  uint16_t qid,
+			  uint16_t sqsize,
+			  const char *func)
+{
+	/*
+	 * SQSIZE is a 0-based value, so it must be at least 1
+	 * (minimum queue depth is 2) and strictly less than
+	 * max_queue_depth.
+	 */
+	if (qid == 0) {
+		SPDK_TRACELOG(SPDK_TRACE_NVMF, "%s: Admin SQSIZE %u (max %u) qid %u\n", func, sqsize,
+			      (host->max_aq_depth - 1), qid);
+		if (sqsize == 0 || sqsize >= host->max_aq_depth) {
+			SPDK_ERRLOG("%s: Invalid Admin SQSIZE %u (min 1, max %u) qid %u\n", func,
+				    sqsize, (host->max_aq_depth - 1), qid);
+			return false;
+		}
+	} else {
+		SPDK_TRACELOG(SPDK_TRACE_NVMF, "%s: IO SQSIZE %u (max %u) qid %u\n", func, sqsize,
+			      (host->max_queue_depth - 1), qid);
+		/*
+		 * TODO: Currently sqsize check is spec FC-NVMe 1.17 compliant.
+		 * To make it 1.19 compliant, we need to change the check below
+		 *  to '>=' max_queue_depth, not '>= max_queue_depth + 1.
+		 * Testing with the Linux initiator shows that we see this
+		 * off-by-one error only on the conection queues.  The admin
+		 * queue sqsize doesn't display this bug.
+		 */
+		if (sqsize == 0 || sqsize >= (host->max_queue_depth + 1)) {
+			SPDK_ERRLOG("%s: Invalid IO SQSIZE %u (min 1, max %u) qid %u\n", func,
+				    sqsize, (host->max_queue_depth - 1), qid);
+			return false;
+		}
+	}
+	return true;
+}
+
 void
 spdk_nvmf_session_connect(struct spdk_nvmf_conn *conn,
 			  struct spdk_nvmf_fabric_connect_cmd *cmd,
@@ -248,12 +296,13 @@ spdk_nvmf_session_connect(struct spdk_nvmf_conn *conn,
 			  struct spdk_nvmf_fabric_connect_rsp *rsp)
 {
 	struct spdk_nvmf_session *session;
+	struct spdk_nvmf_host *host;
 	struct spdk_nvmf_subsystem *subsystem;
 
 #define INVALID_CONNECT_CMD(field) invalid_connect_response(rsp, 0, offsetof(struct spdk_nvmf_fabric_connect_cmd, field))
 #define INVALID_CONNECT_DATA(field) invalid_connect_response(rsp, 1, offsetof(struct spdk_nvmf_fabric_connect_data, field))
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "recfmt 0x%x qid %u sqsize %u\n",
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "CONNECT recfmt 0x%x qid %u sqsize %u\n",
 		      cmd->recfmt, cmd->qid, cmd->sqsize);
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Connect data:\n");
@@ -269,10 +318,23 @@ spdk_nvmf_session_connect(struct spdk_nvmf_conn *conn,
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "  subnqn: \"%s\"\n", data->subnqn);
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "  hostnqn: \"%s\"\n", data->hostnqn);
 
+	if (!spdk_nvmf_valid_nqn((const char *) data->subnqn)) {
+		SPDK_ERRLOG("Invalid subsystem NQN '%s'\n", data->subnqn);
+		INVALID_CONNECT_DATA(subnqn);
+		return;
+	}
+
 	subsystem = spdk_nvmf_find_subsystem(data->subnqn);
+
 	if (subsystem == NULL) {
 		SPDK_ERRLOG("Could not find subsystem '%s'\n", data->subnqn);
 		INVALID_CONNECT_DATA(subnqn);
+		return;
+	}
+
+	if ((host = spdk_nvmf_find_subsystem_host(subsystem, (const char *) data->hostnqn)) == NULL) {
+		SPDK_ERRLOG("Could not find host '%s'\n", data->hostnqn);
+		INVALID_CONNECT_DATA(hostnqn);
 		return;
 	}
 
@@ -280,16 +342,11 @@ spdk_nvmf_session_connect(struct spdk_nvmf_conn *conn,
 	 * SQSIZE is a 0-based value, so it must be at least 1 (minimum queue depth is 2) and
 	 *  strictly less than max_queue_depth.
 	 */
-	if (cmd->sqsize == 0 ||
-	    (cmd->qid == 0 && cmd->sqsize >= g_nvmf_tgt.opts.max_aq_depth) ||
-	    (cmd->qid != 0 && cmd->sqsize >= g_nvmf_tgt.opts.max_queue_depth)) {
-		SPDK_ERRLOG("Invalid SQSIZE %u (min 1, max %u)\n",
-			    cmd->sqsize,
-			    cmd->qid == 0 ? g_nvmf_tgt.opts.max_aq_depth - 1 :
-			    g_nvmf_tgt.opts.max_queue_depth - 1);
+	if (!(spdk_nvmf_validate_sqsize(host, cmd->qid, cmd->sqsize, __func__))) {
 		INVALID_CONNECT_CMD(sqsize);
 		return;
 	}
+
 	conn->sq_head_max = cmd->sqsize;
 	conn->qid = cmd->qid;
 
@@ -322,11 +379,12 @@ spdk_nvmf_session_connect(struct spdk_nvmf_conn *conn,
 			rsp->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
 			return;
 		}
+		session->host = host;
 		session->kato = cmd->kato;
 		session->async_event_config.raw = 0;
 		session->num_connections = 0;
 		session->subsys = subsystem;
-		session->max_connections_allowed = g_nvmf_tgt.opts.max_queues_per_session;
+		session->max_connections_allowed = host->max_connections_allowed;
 		session->aer_ctxt.is_aer_pending = false;
 		session->aer_ctxt.aer_rsp_cdw0 = 0;
 		session->aer_req = NULL;
@@ -592,7 +650,7 @@ spdk_nvmf_property_get(struct spdk_nvmf_session *session,
 	response->status.sc = 0;
 	response->value.u64 = 0;
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "size %d, offset 0x%x\n",
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "PROPERTY_GET size %d, offset 0x%x\n",
 		      cmd->attrib.size, cmd->ofst);
 
 	if (cmd->attrib.size != SPDK_NVMF_PROP_SIZE_4 &&
@@ -608,7 +666,7 @@ spdk_nvmf_property_get(struct spdk_nvmf_session *session,
 		return;
 	}
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "name: %s\n", prop->name);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "PROPERTY_GET name: %s\n", prop->name);
 	if (cmd->attrib.size != prop->size) {
 		SPDK_ERRLOG("offset 0x%x size mismatch: cmd %u, prop %u\n",
 			    cmd->ofst, cmd->attrib.size, prop->size);
@@ -617,7 +675,7 @@ spdk_nvmf_property_get(struct spdk_nvmf_session *session,
 	}
 
 	response->value.u64 = prop->get_cb(session);
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "response value: 0x%" PRIx64 "\n", response->value.u64);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "PROPERTY_GET response value: 0x%" PRIx64 "\n", response->value.u64);
 }
 
 void
@@ -628,7 +686,7 @@ spdk_nvmf_property_set(struct spdk_nvmf_session *session,
 	const struct nvmf_prop *prop;
 	uint64_t value;
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "size %d, offset 0x%x, value 0x%" PRIx64 "\n",
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "PROPERTY_SET size %d, offset 0x%x, value 0x%" PRIx64 "\n",
 		      cmd->attrib.size, cmd->ofst, cmd->value.u64);
 
 	prop = find_prop(cmd->ofst);
@@ -638,7 +696,7 @@ spdk_nvmf_property_set(struct spdk_nvmf_session *session,
 		return;
 	}
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "name: %s\n", prop->name);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "PROPERTY_SET name: %s\n", prop->name);
 	if (cmd->attrib.size != prop->size) {
 		SPDK_ERRLOG("offset 0x%x size mismatch: cmd %u, prop %u\n",
 			    cmd->ofst, cmd->attrib.size, prop->size);
@@ -652,7 +710,7 @@ spdk_nvmf_property_set(struct spdk_nvmf_session *session,
 	}
 
 	if (!prop->set_cb(session, value)) {
-		SPDK_ERRLOG("prop set_cb failed\n");
+		SPDK_ERRLOG("PROPERTY_SET prop set_cb failed\n");
 		response->status.sc = SPDK_NVMF_FABRIC_SC_INVALID_PARAM;
 		return;
 	}
@@ -767,7 +825,7 @@ spdk_nvmf_session_set_features_number_of_queues(struct spdk_nvmf_request *req)
 	ncqr = (req->cmd->nvme_cmd.cdw11 >> 16) + 1;
 
 	/* Number of queues requested are zero based values */
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Set Features - Number of Queues Requested, sub:0x%x, compl:0x%x\n",
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Set Features - Number of Queues Requested, sub:%u, compl:%u\n",
 		      nsqr - 1, ncqr - 1);
 
 	/* 1 completion queue is mapped to 1 submission queue in nvmf */
@@ -794,7 +852,7 @@ spdk_nvmf_session_set_features_number_of_queues(struct spdk_nvmf_request *req)
 		rsp->cdw0 = ((nsqr - 1) << 16) |
 			    (nsqr - 1);
 		SPDK_TRACELOG(SPDK_TRACE_NVMF,
-			      "Set Features - Number of Queues Configured, cdw0 sub:0x%x, compl:0x%x\n",
+			      "Set Features - Number of Queues Configured, cdw0 sub:%u, compl:%u\n",
 			      rsp->cdw0 & 0xffff, rsp->cdw0 >> 16);
 	}
 

@@ -1,5 +1,69 @@
 # Changelog
 
+## NVMe-oF Controller Configuration
+
+### Global Nvmf Directives
+
+The following new Nvmf global directives have been added to nvmf.conf.in
+
+```
+  MaxAqDepth           - Maximum admin queue depth (default 32)
+  NVMeVersion          - NVME spec version (default 0x010201)
+  ArbitrationBurst     - Set the arbitration burst (default 2)
+  IEEEOUI0             - Organizations IEEE OUI identifier byte 0
+  IEEEOUI1             - Organizations IEEE OUI identifier byte 1
+  IEEEOUI2             - Organizations IEEE OUI identifier byte 2
+  CMIC                 - Controller Multi-Path IO and Namespace Sharing capabilites
+  NMIC                 - Namespace Multi-Path IO and Namespace Sharing capabilites
+  OptAerSupport        - AER Indicates Optional Asynchronous events supported
+  AbortLimit           - Indicates the maximum number of concurrent Abort commands supported
+  ErrLogEntries        - Indicates the maximum number of Error Log Page entries supported
+  NumPowerStates       - Indicates the number of NVM Express power states supported
+  KeepAliveInt         - Indicates the granularity of Keep Alive timer in 100ms units
+  AtomicWriteNormal    - Sets Identify Controller Datastructure Atomic Write Unit Normal
+  AtomicWritePowerFail - Sets Identify Controller Datastructure Atomic Write Unit Power Fail
+  SGLSupport           - Sets Identify Controller Datastructure SGL Support
+  OptNVMCommandSupport - Indicates Optional NVM Commands and features
+```
+
+### Per-Controller IO Queue Configuration
+
+These new nvmf.conf.in directive support per-controller or per-host queue limits to replace the following global limits.
+
+```
+  MaxQueueDepth
+  MaxQueuesPerSession
+```
+
+To program a per-controller/per-host queue limit the Host directive in the Subsystem section of the nvmf.conf.in file has been updated.  Host directives are used to specify the specific Host NQNs that are allowed to connect to the subsystem.  In addition to specifying the Host NQN each Host directive now supportes an optional max_queue_depth and max_queue_num parameter. The format of the Host directive line is:
+
+```
+   Host <nqn> [max_queue_depth] [max_queue_num]
+```
+
+If no Host max_queue_depth or max_queue_num directive is provided then the global `MaxQueueDepth` and `MaxQueuesPerSession` values are used to populate the per-host queue limits.  If no Host directives are included in the Subsystem, and AllowAnyHost is true, then the global `MaxQueueDepth` and `MaxQueuesPerSession` values are used.
+
+Note: Valid host NQNs must contain all lower case characters. Host NQNs can be generated with the Linux `nvme get-hostnqn` utility. To make the Linux host NQN persistent, add it to the `/etc/nvme/hostnqn` file.
+
+E.g.:
+
+```
+  $ sudo nvme gen-hostnqn | tr A-Z a-z > /etc/nvme/hostnqn
+  $ cat /etc/nvme/hostnqn
+  nqn.2014-08.org.nvmexpress:nvmf:uuid:6a007efc-2f43-4123-9c41-9c48896855e1
+```
+
+An example nvmf.conf.in Subsystem Host directive is:
+
+```
+ AllowAnyHost false
+ Host nqn.2014-08.org.nvmexpress:nvmf:uuid:6a007efc-2f43-4123-9c41-9c48896855e1 64 8
+```
+
+This directive allows a Host with 8 io queues, and each io queue supports a depth of 64.
+
+Note: The Admin queue depth is programmed by the global `MaxAqDepth` Nvmf directive.  The default for this setting is still set to 32, and the Admin queue is not counted in the `MaxQueuesPerSession` calculation. 
+
 ## v17.07.1: DPDK 17.08 compatibility
 
 The `env_dpdk` environment layer has been updated to build against DPDK 17.08.

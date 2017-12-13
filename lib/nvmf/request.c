@@ -104,7 +104,7 @@ spdk_nvmf_handle_connect(struct spdk_nvmf_request *req)
 
 	spdk_nvmf_session_connect(conn, connect, connect_data, response);
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "connect capsule response: cntlid = 0x%04x\n",
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "CONNECT capsule response: cntlid = 0x%04x\n",
 		      response->status_code_specific.success.cntlid);
 
 	spdk_nvmf_request_complete(req);
@@ -232,9 +232,9 @@ nvmf_trace_command(union nvmf_h2c_msg *h2c_msg, enum conn_type conn_type)
 
 	if (cmd->opc == SPDK_NVME_OPC_FABRIC) {
 		opc = cap_hdr->fctype;
-		SPDK_TRACELOG(SPDK_TRACE_NVMF, "%s Fabrics cmd: fctype 0x%02x cid %u\n",
+		SPDK_TRACELOG(SPDK_TRACE_NVMF, "%s Fabrics cmd: %s fctype 0x%02x cid %u\n",
 			      conn_type == CONN_TYPE_AQ ? "Admin" : "I/O",
-			      cap_hdr->fctype, cap_hdr->cid);
+			      spdk_print_fabric_cmd(cap_hdr->fctype), cap_hdr->fctype, cap_hdr->cid);
 	} else {
 		opc = cmd->opc;
 		SPDK_TRACELOG(SPDK_TRACE_NVMF, "%s cmd: opc 0x%02x fuse %u cid %u nsid %u cdw10 0x%08x\n",
@@ -325,6 +325,7 @@ spdk_nvmf_request_exec(struct spdk_nvmf_request *req)
 		assert(subsystem != NULL);
 
 		if (subsystem->is_removed) {
+			/* XXX do we want to set DNR here? */
 			rsp->status.sc = SPDK_NVME_SC_ABORTED_BY_REQUEST;
 			status = SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		} else if (req->conn->type == CONN_TYPE_AQ) {

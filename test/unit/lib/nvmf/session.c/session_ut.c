@@ -120,6 +120,70 @@ test_process_aer_rsp(void)
 	free(rsp);
 }
 
+bool
+spdk_nvmf_valid_nqn(const char *nqn)
+{
+	if (!memchr(nqn, '\0', SPDK_NVMF_NQN_MAX_LEN)) {
+		SPDK_ERRLOG("Invalid NQN length > max %d\n", SPDK_NVMF_NQN_MAX_LEN - 1);
+		return false;
+	}
+
+	if (strncmp(nqn, "nqn.", 4) != 0) {
+		SPDK_ERRLOG("Invalid NQN \"%s\": NQN must begin with \"nqn.\".\n", nqn);
+		return false;
+	}
+
+	/* yyyy-mm. */
+	if (!(isdigit(nqn[4]) && isdigit(nqn[5]) && isdigit(nqn[6]) && isdigit(nqn[7]) &&
+	      nqn[8] == '-' && isdigit(nqn[9]) && isdigit(nqn[10]) && nqn[11] == '.')) {
+		SPDK_ERRLOG("Invalid date code in NQN \"%s\"\n", nqn);
+		return false;
+	}
+
+	return true;
+}
+
+#if 0
+static const char *session_ut_small_host_nqn = "fc small host";
+static const char *session_ut_big_host_nqn = "fc big host";
+#endif
+
+static struct spdk_nvmf_host session_ut_small_host = {
+	.nqn = "nqn.2017-11.small_host",
+	.max_aq_depth = 32,
+	.max_queue_depth = 16,
+	.max_connections_allowed = 2,
+};
+
+static struct spdk_nvmf_host session_ut_big_host = {
+	.nqn = "nqn.2017-11.big_host",
+	.max_aq_depth = 128,
+	.max_queue_depth = 1024,
+	.max_connections_allowed = 32,
+};
+
+struct spdk_nvmf_host *
+spdk_nvmf_find_subsystem_host(struct spdk_nvmf_subsystem *subsystem, const char *hostnqn)
+{
+	if (!hostnqn) {
+		SPDK_ERRLOG("hostnqn is NULL\n");
+		return NULL;
+	}
+
+	if (strcmp(hostnqn, session_ut_small_host.nqn) == 0) {
+		return &session_ut_small_host;
+	}
+
+	if (strcmp(hostnqn, session_ut_big_host.nqn) == 0) {
+		return &session_ut_big_host;
+	}
+
+	SPDK_ERRLOG("Hostnqn %s not found on Subsystem %s\n", hostnqn, subsystem->subnqn);
+
+	return NULL;
+}
+
+
 int main(int argc, char **argv)
 {
 	CU_pSuite	suite = NULL;

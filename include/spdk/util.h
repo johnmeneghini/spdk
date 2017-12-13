@@ -86,6 +86,28 @@ spdk_nvmf_uuids_equal(struct spdk_uuid *uuid1, struct spdk_uuid *uuid2)
 	return ((val1[0] == val2[0]) && (val1[1] == val2[1]));
 }
 
+static inline const char *
+spdk_print_fabric_cmd(uint8_t fctype)
+{
+
+	switch (fctype) {
+	case SPDK_NVMF_FABRIC_COMMAND_PROPERTY_SET: /* 0x00 */
+		return "PROPERTY_SET";
+	case SPDK_NVMF_FABRIC_COMMAND_CONNECT:      /* 0x01 */
+		return "CONNECT";
+	case SPDK_NVMF_FABRIC_COMMAND_PROPERTY_GET: /* 0x04 */
+		return "PROPERTY_GET";
+	case SPDK_NVMF_FABRIC_COMMAND_AUTHENTICATION_SEND: /* 0x05 */
+		return "AUTHENTICATION_SEND";
+	case SPDK_NVMF_FABRIC_COMMAND_AUTHENTICATION_RECV: /* 0x06 */
+		return "AUTHENTICATION_RECV";
+	case SPDK_NVMF_FABRIC_COMMAND_START_VENDOR_SPECIFIC:  /* 0xC0 */
+		return "VENDOR_SPECIFIC";
+	default:
+		return "Unknown";
+	}
+}
+
 #ifdef __cplusplus
 }
 #endif
