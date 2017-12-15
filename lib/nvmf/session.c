@@ -794,18 +794,26 @@ spdk_nvmf_session_set_features_keep_alive_timer(struct spdk_nvmf_request *req)
 	struct spdk_nvmf_session *session = req->conn->sess;
 	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
 	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
+	uint32_t remainder;
+	uint16_t cdw11 = cmd->cdw11;
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Set Features - Keep Alive Timer (%u ms)\n", cmd->cdw11);
 
-	if (cmd->cdw11 == 0) {
+	if (cdw11 == 0) {
 		rsp->status.sc = SPDK_NVME_SC_KEEP_ALIVE_INVALID;
-	} else if (cmd->cdw11 < MIN_KEEP_ALIVE_TIMEOUT) {
+	} else if (cdw11 < MIN_KEEP_ALIVE_TIMEOUT) {
 		session->kato = MIN_KEEP_ALIVE_TIMEOUT;
 	} else {
-		session->kato = cmd->cdw11;
+		remainder = cdw11 % (SPDK_NVME_KAS_GRANULARITY_IN_MSECS * session->vcdata.kas);
+		/* We are ceiling kato value up to the second */
+		if (remainder) {
+			cdw11 += ((SPDK_NVME_KAS_GRANULARITY_IN_MSECS * session->vcdata.kas) - remainder);
+		}
+		session->kato = cdw11;
 	}
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Set Features - Keep Alive Timer set to %u ms\n", session->kato);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Set Features - Keep Alive Timer (KATO) set to %u ms, KAS is %u\n",
+		      session->kato, session->vcdata.kas);
 
 	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 }
