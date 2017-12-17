@@ -1357,6 +1357,8 @@ nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req)
 			switch (spdk_nvmf_request_exec(&fc_req->req)) {
 			case SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_READY:
 				break;
+			case SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE:
+				return 0;
 			case SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING:
 				SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
 					      "Write buffer alloc failed. Requeue\n");
