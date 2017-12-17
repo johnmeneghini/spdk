@@ -54,7 +54,6 @@
  * byte0: queue number (0-255) - currently there is a max of 16 queues
  * byte1 - byte2: unique value per queue number (0-65535)
  * byte3 - byte7: unused */
-#define SPDK_NVMF_FC_BCM_MRQ_CONNID_QUEUE_MASK  0xff
 #define SPDK_NVMF_FC_BCM_MRQ_CONNID_UV_SHIFT    8
 
 /* Validation Error indexes into the string table below */
@@ -463,15 +462,6 @@ nvmf_fc_ls_find_assoc(struct spdk_nvmf_bcm_fc_nport *tgtport, uint64_t assoc_id)
 	return assoc;
 }
 
-static inline struct spdk_nvmf_bcm_fc_hwqp *
-nvmf_fc_ls_get_hwqp(struct spdk_nvmf_bcm_fc_nport *tgtport, uint64_t conn_id)
-{
-	struct spdk_nvmf_bcm_fc_port *fc_port = tgtport->fc_port;
-	return (&fc_port->io_queues[(conn_id &
-				     SPDK_NVMF_FC_BCM_MRQ_CONNID_QUEUE_MASK) %
-				    fc_port->max_io_queues]);
-}
-
 static inline uint64_t
 nvmf_fc_gen_conn_id(uint32_t qnum, struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 {
@@ -807,7 +797,7 @@ nvmf_fc_delete_association(struct spdk_nvmf_bcm_fc_nport *tgtport,
 		api_data->args.cb_info.cb_func = nvmf_fc_del_all_conns_cb;
 		api_data->args.cb_info.cb_data = opd;
 		api_data->send_abts = send_abts;
-		api_data->args.hwqp = nvmf_fc_ls_get_hwqp(assoc->tgtport,
+		api_data->args.hwqp = spdk_nvmf_bcm_fc_get_hwqp(assoc->tgtport,
 				      fc_conn->conn_id);
 
 		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,

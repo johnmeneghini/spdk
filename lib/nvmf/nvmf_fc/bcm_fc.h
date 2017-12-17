@@ -66,6 +66,8 @@
 #define BCM_MAX_RESP_BUFFER_SIZE 	64
 #define BCM_MAX_IOVECS			(MAX_NUM_OF_IOVECTORS + 2) /* 2 for skips */
 
+#define SPDK_NVMF_FC_BCM_MRQ_CONNID_QUEUE_MASK  0xff
+
 /*
  * PRLI service parameters
  */
@@ -421,6 +423,7 @@ typedef enum {
 	SPDK_NVMF_BCM_FC_POLLER_API_ABTS_RECEIVED,
 	SPDK_NVMF_BCM_FC_POLLER_API_ADAPTER_EVENT,
 	SPDK_NVMF_BCM_FC_POLLER_API_AEN,
+	SPDK_NVMF_BCM_FC_POLLER_API_NS_DETACH_ON_CONN,
 } spdk_nvmf_bcm_fc_poller_api_t;
 
 /*
@@ -470,6 +473,19 @@ struct spdk_nvmf_bcm_fc_poller_api_abts_recvd_args {
 	fc_abts_ctx_t *ctx;
 	struct spdk_nvmf_bcm_fc_hwqp *hwqp;
 	struct spdk_nvmf_bcm_fc_poller_api_cb_info cb_info;
+};
+
+typedef void (*spdk_nvmf_bcm_fc_detach_ns_cb)(void *arg1, void *arg2);
+
+/* This is the args used by the poller API to issue aborts for NS unmap on a particular conection */
+struct spdk_nvmf_bcm_fc_poller_api_detach_ns_on_conn_args {
+	struct spdk_nvmf_bcm_fc_conn *fc_conn;
+	struct spdk_nvmf_bcm_fc_hwqp *hwqp;
+	uint32_t nsid;
+	/* Delete context transparent to the poller thread */
+	void *ctx;
+	/* Needed for the poller to callback master thread if no IO is found */
+	spdk_nvmf_bcm_fc_detach_ns_cb detach_ns_cb;
 };
 
 /*
@@ -530,7 +546,19 @@ void spdk_nvmf_bcm_fc_ls_init(struct spdk_nvmf_bcm_fc_port *fc_port);
 //void spdk_nvmf_bcm_fc_ls_fini(void);
 void spdk_nvmf_bcm_fc_ls_fini(struct spdk_nvmf_bcm_fc_port *fc_port);
 
+void spdk_nvmf_bcm_fc_ns_detach_cb(void *arg1, void *arg2);
+
+int
+spdk_nvmf_bcm_fc_drain_nsid_on_conn(struct spdk_nvmf_bcm_fc_association *assoc,
+				    struct spdk_nvmf_bcm_fc_conn *fc_conn,
+				    uint32_t nsid,
+				    void *ctx,
+				    spdk_nvmf_bcm_fc_detach_ns_cb detach_ns_cb);
+
 typedef void (*spdk_nvmf_fc_del_assoc_cb)(void *arg, uint32_t err);
+
+struct spdk_nvmf_bcm_fc_hwqp *spdk_nvmf_bcm_fc_get_hwqp(struct spdk_nvmf_bcm_fc_nport *tgtport,
+		uint64_t conn_id);
 
 int spdk_nvmf_bcm_fc_delete_association(struct spdk_nvmf_bcm_fc_nport *tgtport,
 					uint64_t assoc_id, bool send_abts,
@@ -548,6 +576,8 @@ void spdk_nvmf_bcm_fc_port_list_add(struct spdk_nvmf_bcm_fc_port *fc_port);
 struct spdk_nvmf_bcm_fc_nport *spdk_nvmf_bcm_fc_nport_get(uint8_t port_hdl, uint16_t nport_hdl);
 
 struct spdk_nvmf_bcm_fc_nport *spdk_nvmf_bcm_req_fc_nport_get(struct spdk_nvmf_request *req);
+
+struct spdk_nvmf_bcm_fc_session *spdk_nvmf_bcm_fc_get_fc_session(struct spdk_nvmf_session *session);
 
 struct spdk_nvmf_bcm_fc_port *spdk_nvmf_bcm_fc_port_list_get(uint8_t port_hdl);
 

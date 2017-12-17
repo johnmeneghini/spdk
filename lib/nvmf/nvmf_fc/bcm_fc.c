@@ -71,8 +71,6 @@ extern void spdk_nvmf_bcm_fc_release_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 		struct spdk_nvmf_bcm_fc_xri *xri, bool xb);
 
 /* locals */
-static inline struct spdk_nvmf_bcm_fc_session *nvmf_fc_get_fc_session(
-	struct spdk_nvmf_session *session);
 static inline struct spdk_nvmf_bcm_fc_conn *nvmf_fc_get_fc_conn(struct spdk_nvmf_conn *conn);
 static int nvmf_fc_fini(void);
 static struct spdk_nvmf_session *nvmf_fc_session_init(void);
@@ -131,6 +129,65 @@ spdk_nvmf_bcm_fc_add_poller(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 			     period_microseconds);
 }
 
+struct spdk_nvmf_bcm_fc_hwqp *
+spdk_nvmf_bcm_fc_get_hwqp(struct spdk_nvmf_bcm_fc_nport *tgtport, uint64_t conn_id)
+{
+	struct spdk_nvmf_bcm_fc_port *fc_port = tgtport->fc_port;
+	return (&fc_port->io_queues[(conn_id &
+				     SPDK_NVMF_FC_BCM_MRQ_CONNID_QUEUE_MASK) %
+				    fc_port->max_io_queues]);
+}
+
+/* Master thread NS unmap/detach handler for cases when NS unmap/detach found no IOs to drain in bdev.
+ * In case an IO was found and needs to be drained, this callback will happen
+ * when that particular IO (or the last IO aborted) completes and returns.
+ */
+void
+spdk_nvmf_bcm_fc_ns_detach_cb(void *arg1, void *arg2)
+{
+	struct spdk_nvmf_bcm_fc_poller_api_detach_ns_on_conn_args *args = (struct
+			spdk_nvmf_bcm_fc_poller_api_detach_ns_on_conn_args *)arg1;
+	uint32_t pending_cb = 1;
+
+	/* The pending CB will be one */
+	args->detach_ns_cb(args->ctx, (void *)&pending_cb);
+	spdk_free(args);
+	return;
+}
+
+/* This is called from Master thread in order to drain IOs on bdev per connection
+ * and specific NSID. The callback is needed to inform master thread/caller
+ * of the completion.
+ */
+int
+spdk_nvmf_bcm_fc_drain_nsid_on_conn(struct spdk_nvmf_bcm_fc_association *assoc,
+				    struct spdk_nvmf_bcm_fc_conn        *fc_conn,
+				    uint32_t                            nsid,
+				    void                                *ctx,
+				    spdk_nvmf_bcm_fc_detach_ns_cb      detach_ns_cb)
+{
+	struct spdk_nvmf_bcm_fc_poller_api_detach_ns_on_conn_args *detach_ns_args = spdk_calloc(1,
+			sizeof(struct spdk_nvmf_bcm_fc_poller_api_detach_ns_on_conn_args));
+
+	if (detach_ns_args) {
+
+		detach_ns_args->fc_conn = fc_conn;
+		detach_ns_args->nsid    = nsid;
+		detach_ns_args->hwqp    = spdk_nvmf_bcm_fc_get_hwqp(assoc->tgtport, fc_conn->conn_id);
+		/* Fill in the NS delete context */
+		detach_ns_args->ctx  = ctx;
+		detach_ns_args->detach_ns_cb = detach_ns_cb;
+
+		/* Send an event to the poller to drain IOs on bdev for a NSID on a conn */
+		spdk_nvmf_bcm_fc_poller_api(detach_ns_args->hwqp,
+					    SPDK_NVMF_BCM_FC_POLLER_API_NS_DETACH_ON_CONN,
+					    detach_ns_args);
+	} else {
+		assert(detach_ns_args);
+	}
+
+	return SPDK_SUCCESS;
+}
 
 /*
  * Return a fc nport with a matching handle.
@@ -501,8 +558,8 @@ spdk_nvmf_bcm_fc_rport_set_state(struct spdk_nvmf_bcm_fc_remote_port_info *rport
 /*** Accessor functions for the bcm-fc structures - END */
 
 
-static inline struct spdk_nvmf_bcm_fc_session *
-nvmf_fc_get_fc_session(struct spdk_nvmf_session *session)
+struct spdk_nvmf_bcm_fc_session *
+spdk_nvmf_bcm_fc_get_fc_session(struct spdk_nvmf_session *session)
 {
 	return (struct spdk_nvmf_bcm_fc_session *)
 	       ((uintptr_t)session - offsetof(struct spdk_nvmf_bcm_fc_session, session));
@@ -590,7 +647,7 @@ spdk_nvmf_bcm_fc_is_spdk_session_on_nport(uint8_t port_hdl, uint16_t nport_hdl,
 		return false;
 	}
 
-	struct spdk_nvmf_bcm_fc_session *fc_session = nvmf_fc_get_fc_session(session);
+	struct spdk_nvmf_bcm_fc_session *fc_session = spdk_nvmf_bcm_fc_get_fc_session(session);
 	if (fc_session) {
 		if (fc_session->fc_assoc) {
 			if (fc_session->fc_assoc->tgtport == fc_nport) {
@@ -687,7 +744,7 @@ nvmf_fc_session_init(void)
 static void
 nvmf_fc_session_fini(struct spdk_nvmf_session *session)
 {
-	struct spdk_nvmf_bcm_fc_session *sess = nvmf_fc_get_fc_session(session);
+	struct spdk_nvmf_bcm_fc_session *sess = spdk_nvmf_bcm_fc_get_fc_session(session);
 
 	if (sess) {
 		free(sess);
@@ -698,7 +755,7 @@ static int
 nvmf_fc_session_add_conn(struct spdk_nvmf_session *session,
 			 struct spdk_nvmf_conn *conn)
 {
-	struct spdk_nvmf_bcm_fc_session *fc_sess = nvmf_fc_get_fc_session(session);
+	struct spdk_nvmf_bcm_fc_session *fc_sess = spdk_nvmf_bcm_fc_get_fc_session(session);
 	struct spdk_nvmf_bcm_fc_conn *fc_conn = nvmf_fc_get_fc_conn(conn);
 
 	if (fc_sess) {
@@ -758,20 +815,7 @@ nvmf_fc_request_complete_process(void *arg1, void *arg2)
 static int
 nvmf_fc_request_complete(struct spdk_nvmf_request *req)
 {
-	struct spdk_nvmf_bcm_fc_request *fc_req = nvmf_fc_get_fc_req(req);
-	struct spdk_event *event = NULL;
-
-	/* Check if we need to switch to correct lcore of HWQP. */
-	if (spdk_env_get_current_core() != fc_req->poller_lcore) {
-		/* Switch to correct HWQP lcore. */
-		event = spdk_event_allocate(fc_req->poller_lcore,
-					    nvmf_fc_request_complete_process,
-					    (void *)req, NULL);
-		spdk_post_event(fc_req->hwqp->context, event);
-
-	} else {
-		nvmf_fc_request_complete_process(req, NULL);
-	}
+	nvmf_fc_request_complete_process(req, NULL);
 	return 0;
 }
 

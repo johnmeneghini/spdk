@@ -68,6 +68,10 @@ int spdk_nvmf_bcm_fc_xmt_ls_rsp(struct spdk_nvmf_bcm_fc_nport *tgtport,
 				struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst);
 void spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req, bool send_abts,
 				spdk_nvmf_bcm_fc_caller_cb cb, void *cb_args);
+void spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io,
+			void *ctx);
+
+void spdk_nvmf_bcm_fc_ns_detach_cb(void *arg1, void *arg2);
 
 void *
 spdk_dma_malloc(size_t size, size_t align, uint64_t *phys_addr)
@@ -234,6 +238,28 @@ nvmf_fc_ls_ut_remove_conn(struct spdk_nvmf_session *session,
 			  struct spdk_nvmf_conn *conn)
 {
 	return 0;
+}
+
+struct spdk_nvmf_bcm_fc_hwqp *
+spdk_nvmf_bcm_fc_get_hwqp(struct spdk_nvmf_bcm_fc_nport *tgtport, uint64_t conn_id)
+{
+	struct spdk_nvmf_bcm_fc_port *fc_port = tgtport->fc_port;
+	return (&fc_port->io_queues[(conn_id &
+				     SPDK_NVMF_FC_BCM_MRQ_CONNID_QUEUE_MASK) %
+				    fc_port->max_io_queues]);
+}
+
+void
+spdk_nvmf_bcm_fc_ns_detach_cb(void *arg1, void *arg2)
+{
+	struct spdk_nvmf_bcm_fc_poller_api_detach_ns_on_conn_args *args = (struct
+			spdk_nvmf_bcm_fc_poller_api_detach_ns_on_conn_args *)arg1;
+	uint32_t pending_cb = 1;
+
+	/* The pending CB will be one */
+	args->detach_ns_cb(args->ctx, (void *)&pending_cb);
+	spdk_free(args);
+	return;
 }
 
 struct spdk_nvmf_subsystem g_nvmf_subsys;
@@ -852,6 +878,13 @@ void
 spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 			   bool send_abts, spdk_nvmf_bcm_fc_caller_cb cb,
 			   void *cb_args)
+{
+	return;
+}
+
+void
+spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io,
+		   void *ctx)
 {
 	return;
 }
