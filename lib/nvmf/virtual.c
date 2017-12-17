@@ -685,25 +685,23 @@ nvmf_virtual_ctrlr_process_io_cleanup(struct spdk_nvmf_request *req)
 	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
 
 	nsid = cmd->nsid;
-	if (nsid > subsystem->dev.virt.max_nsid || nsid == 0) {
-		return;
-	}
 
 	bdev = subsystem->dev.virt.ns_list[nsid - 1];
-	if (!bdev) {
-		return;
-	}
 
 	/* Cleanup any buffers allocated by bdev. */
 	switch (cmd->opc) {
 	case SPDK_NVME_OPC_READ:
-		if (req->iovcnt) {
+		if (bdev && req->iovcnt) {
 			spdk_bdev_read_fini(bdev, req->iov, req->iovcnt, req->iovctx);
 		}
 		break;
 	case SPDK_NVME_OPC_WRITE:
 		if (req->iovcnt) {
-			spdk_bdev_write_fini(bdev, req->iov, req->iovcnt, req->iovctx);
+			if (!bdev) {
+				spdk_iovec_put(req->iovctx);
+			} else {
+				spdk_bdev_write_fini(bdev, req->iov, req->iovcnt, req->iovctx);
+			}
 		}
 	default:
 		break; /* Do nothing. */
