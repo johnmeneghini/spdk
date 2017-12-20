@@ -457,7 +457,7 @@ nvmf_fc_parse_subsystem(struct spdk_conf_section *sp)
 		if ((queue_str = spdk_conf_section_get_nmval(sp, "Host", i, 1))) {
 			hosts[i].max_queue_depth = (uint16_t) atoi(queue_str);
 		} else {
-			SPDK_ERRLOG("max_queue_depth not defined for Host %s\n", hosts[i].hostnqn);
+			SPDK_NOTICELOG("max_queue_depth not defined for Host %s\n", hosts[i].hostnqn);
 			hosts[i].max_queue_depth = tgt_opts.max_queue_depth;
 			hosts[i].max_queue_num = tgt_opts.max_queues_per_session;
 			continue;
@@ -466,7 +466,7 @@ nvmf_fc_parse_subsystem(struct spdk_conf_section *sp)
 		if ((queue_str = spdk_conf_section_get_nmval(sp, "Host", i, 2))) {
 			hosts[i].max_queue_num = (uint16_t) atoi(queue_str);
 		} else {
-			SPDK_ERRLOG("max_queue_num not defined for Host %s\n", hosts[i].hostnqn);
+			SPDK_NOTICELOG("max_queue_num not defined for Host %s\n", hosts[i].hostnqn);
 			hosts[i].max_queue_num = tgt_opts.max_queues_per_session;
 		}
 	}

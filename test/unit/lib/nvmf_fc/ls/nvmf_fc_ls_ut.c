@@ -706,6 +706,21 @@ ls_tests_fini(void)
 }
 
 static void
+create_single_assoc_test(void)
+{
+	/* main test driver */
+	g_test_run_type = TEST_RUN_TYPE_CREATE_ASSOC;
+	run_create_assoc_test(fc_ut_good_subsystem, fc_ut_host, &tgtport);
+
+	if (g_last_rslt == 0) {
+		/* disconnect the association */
+		g_test_run_type = TEST_RUN_TYPE_DISCONNECT;
+		run_disconn_test(&tgtport, g_curr_assoc_id);
+		g_create_conn_test_cnt = 0;
+	}
+}
+
+static void
 create_assoc_test(void)
 {
 	/* main test driver */
@@ -866,6 +881,13 @@ usage(const char *program_name)
 	       fc_ut_target.max_queue_depth);
 	printf("\t[-c <value> IO Queue count (default: %u)]\n",
 	       fc_ut_target.max_connections_allowed);
+	printf("\t[-t 0 : Run all tests (default)]\n");
+	printf("\t[   1 : CASS/DISC create single assoc test]\n");
+	printf("\t[   2 : CASS/CIOC/DISC create_assoc_test]\n");
+	printf("\t[   3 : CIOC to invalid assoc_id connection test]\n");
+	printf("\t[   4 : Create max assoc conns test]\n");
+	printf("\t[   5 : Delete assoc test]\n");
+
 }
 
 int main(int argc, char **argv)
@@ -873,12 +895,13 @@ int main(int argc, char **argv)
 	unsigned int	num_failures = 0;
 	CU_pSuite	suite = NULL;
 	int trace_level = 0;
+	int test = 0;
 	uint16_t max_aq_depth = 32;
 	uint16_t max_queue_depth = 16;
 	uint16_t max_connections_allowed = 2;
 	int op;
 
-	while ((op = getopt(argc, argv, "a:q:c:d:")) != -1) {
+	while ((op = getopt(argc, argv, "a:q:c:d:t:")) != -1) {
 		switch (op) {
 		case 'a':
 			max_aq_depth = (uint16_t) atoi(optarg);
@@ -891,6 +914,9 @@ int main(int argc, char **argv)
 			break;
 		case 'd':
 			trace_level = atoi(optarg);
+			break;
+		case 't':
+			test = atoi(optarg);
 			break;
 		default:
 			usage(argv[0]);
@@ -927,26 +953,73 @@ int main(int argc, char **argv)
 		return CU_get_error();
 	}
 
-	if (CU_add_test(suite, "CASS/CIOC/DISC", create_assoc_test) == NULL) {
-		CU_cleanup_registry();
-		return CU_get_error();
-	}
+	if (test == 0) {
+
+		if (CU_add_test(suite, "CASS/DISC", create_single_assoc_test) == NULL) {
+			CU_cleanup_registry();
+			return CU_get_error();
+		}
+
+		if (CU_add_test(suite, "CASS/CIOC/DISC", create_assoc_test) == NULL) {
+			CU_cleanup_registry();
+			return CU_get_error();
+		}
 
 
-	if (CU_add_test(suite, "CIOC to bad assoc_id", invalid_connection_test) == NULL) {
-		CU_cleanup_registry();
-		return CU_get_error();
+		if (CU_add_test(suite, "CIOC to bad assoc_id", invalid_connection_test) == NULL) {
+			CU_cleanup_registry();
+			return CU_get_error();
+		}
+
+		if (CU_add_test(suite, "Max. assocs/conns", create_max_assoc_conns_test) == NULL) {
+			CU_cleanup_registry();
+			return CU_get_error();
+		}
+
+		if (CU_add_test(suite, "Delete assoc API", direct_delete_assoc_test) == NULL) {
+			CU_cleanup_registry();
+			return CU_get_error();
+		}
+	} else {
+
+		switch (test) {
+		case 1:
+			if (CU_add_test(suite, "CASS/DISC", create_single_assoc_test) == NULL) {
+				CU_cleanup_registry();
+				return CU_get_error();
+			}
+			break;
+		case 2:
+			if (CU_add_test(suite, "CASS/CIOC/DISC", create_assoc_test) == NULL) {
+				CU_cleanup_registry();
+				return CU_get_error();
+			}
+			break;
+		case 3:
+			if (CU_add_test(suite, "CIOC to bad assoc_id", invalid_connection_test) == NULL) {
+				CU_cleanup_registry();
+				return CU_get_error();
+			}
+			break;
+		case 4:
+			if (CU_add_test(suite, "Max. assocs/conns", create_max_assoc_conns_test) == NULL) {
+				CU_cleanup_registry();
+				return CU_get_error();
+			}
+			break;
+		case 5:
+			if (CU_add_test(suite, "Delete assoc API", direct_delete_assoc_test) == NULL) {
+				CU_cleanup_registry();
+				return CU_get_error();
+			}
+			break;
+		default:
+			CU_cleanup_registry();
+			return CU_get_error();
+			break;
+		}
 	}
 
-	if (CU_add_test(suite, "Max. assocs/conns", create_max_assoc_conns_test) == NULL) {
-		CU_cleanup_registry();
-		return CU_get_error();
-	}
-
-	if (CU_add_test(suite, "Delete assoc API", direct_delete_assoc_test) == NULL) {
-		CU_cleanup_registry();
-		return CU_get_error();
-	}
 
 	ls_tests_init();
 
