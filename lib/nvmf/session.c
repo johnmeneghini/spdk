@@ -105,7 +105,13 @@ nvmf_init_nvme_session_properties(struct spdk_nvmf_session *session)
 	/* Init the controller details */
 	session->subsys->ops->ctrlr_get_data(session);
 
-	session->vcdata.aerl = g_nvmf_tgt.opts.aerl;
+	/* Adjust the aerl field for zero's based value */
+	if (g_nvmf_tgt.opts.aerl > 0) {
+		session->vcdata.aerl = (g_nvmf_tgt.opts.aerl - 1);
+	} else {
+		session->vcdata.aerl = g_nvmf_tgt.opts.aerl;
+	}
+
 	session->vcdata.cntlid = session->cntlid;
 	session->vcdata.kas = g_nvmf_tgt.opts.kas;
 	session->vcdata.maxcmd = session->host->max_queue_depth;
@@ -889,7 +895,8 @@ spdk_nvmf_session_async_event_request(struct spdk_nvmf_request *req)
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Async Event Request\n");
 
-	assert(session->vcdata.aerl == 1);
+	/* aerl is zero's based value */
+	assert(session->vcdata.aerl == 0);
 	if (session->aer_req != NULL) {
 		SPDK_TRACELOG(SPDK_TRACE_NVMF, "AERL exceeded\n");
 		rsp->status.sct = SPDK_NVME_SCT_COMMAND_SPECIFIC;
