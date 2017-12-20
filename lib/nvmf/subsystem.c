@@ -97,9 +97,9 @@ spdk_nvmf_find_subsystem_host(struct spdk_nvmf_subsystem *subsystem, const char 
 	}
 
 	if (TAILQ_EMPTY(&subsystem->hosts)) {
-		SPDK_ERRLOG("No Hosts defined for Subsystem %s\n", subsystem->subnqn);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF, "No Hosts defined for Subsystem %s\n", subsystem->subnqn);
 		if (spdk_nvmf_subsystem_get_allow_any_host(subsystem)) {
-			SPDK_ERRLOG("AllowAnyHost: Hostnqn %s\n", hostnqn);
+			SPDK_TRACELOG(SPDK_TRACE_NVMF, "AllowAnyHost: Hostnqn %s\n", hostnqn);
 			return &subsystem->host0;
 		} else {
 			/* No hosts are defined and allow_any_host is false, no one can connect */
@@ -113,12 +113,13 @@ spdk_nvmf_find_subsystem_host(struct spdk_nvmf_subsystem *subsystem, const char 
 		}
 	}
 
-	SPDK_ERRLOG("Hostnqn %s not found on Subsystem %s\n", hostnqn, subsystem->subnqn);
-
 	if (spdk_nvmf_subsystem_get_allow_any_host(subsystem)) {
-		SPDK_ERRLOG("AllowAnyHost: Hostnqn %s\n", hostnqn);
+		SPDK_TRACELOG(SPDK_TRACE_NVMF, "AllowAnyHost: Hostnqn %s\n", hostnqn);
 		return &subsystem->host0;
 	}
+
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Hostnqn %s not found on Subsystem %s\n", hostnqn,
+		      subsystem->subnqn);
 
 	return NULL;
 }

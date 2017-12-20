@@ -261,10 +261,21 @@ spdk_nvmf_validate_sqsize(struct spdk_nvmf_host *host,
 	 * (minimum queue depth is 2) and strictly less than
 	 * max_queue_depth.
 	 */
+
+	/*
+	 * TODO: Currently the sqsize check is spec FC-NVMe 1.17 compliant.
+	 * To make it 1.19 compliant we need to change the check below
+	 * to '>=' max_queue_depth, not '>= max_queue_depth + 1.
+	 *
+	 * Testing with the Linux initiator shows that we see this
+	 * off-by-one error only on the conection queues.  The admin
+	 * queue sqsize doesn't display this bug. However other FC-NVMe
+	 * intiators display this problem with both the admin and io queues.
+	 */
 	if (qid == 0) {
 		SPDK_TRACELOG(SPDK_TRACE_NVMF, "%s: Admin SQSIZE %u (max %u) qid %u\n", func, sqsize,
 			      (host->max_aq_depth - 1), qid);
-		if (sqsize == 0 || sqsize >= host->max_aq_depth) {
+		if (sqsize == 0 || sqsize >= host->max_aq_depth + 1) {
 			SPDK_ERRLOG("%s: Invalid Admin SQSIZE %u (min 1, max %u) qid %u\n", func,
 				    sqsize, (host->max_aq_depth - 1), qid);
 			return false;
@@ -272,14 +283,6 @@ spdk_nvmf_validate_sqsize(struct spdk_nvmf_host *host,
 	} else {
 		SPDK_TRACELOG(SPDK_TRACE_NVMF, "%s: IO SQSIZE %u (max %u) qid %u\n", func, sqsize,
 			      (host->max_queue_depth - 1), qid);
-		/*
-		 * TODO: Currently sqsize check is spec FC-NVMe 1.17 compliant.
-		 * To make it 1.19 compliant, we need to change the check below
-		 *  to '>=' max_queue_depth, not '>= max_queue_depth + 1.
-		 * Testing with the Linux initiator shows that we see this
-		 * off-by-one error only on the conection queues.  The admin
-		 * queue sqsize doesn't display this bug.
-		 */
 		if (sqsize == 0 || sqsize >= (host->max_queue_depth + 1)) {
 			SPDK_ERRLOG("%s: Invalid IO SQSIZE %u (min 1, max %u) qid %u\n", func,
 				    sqsize, (host->max_queue_depth - 1), qid);
