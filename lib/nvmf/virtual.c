@@ -104,14 +104,46 @@ nvmf_virtual_ctrlr_get_data(struct spdk_nvmf_session *session)
 	memcpy(session->vcdata.ieee, g_nvmf_tgt.opts.ieee, 3 * sizeof(uint8_t));
 	memcpy(&session->vcdata.cmic, &g_nvmf_tgt.opts.cmic, sizeof(uint32_t));
 	memcpy(&session->vcdata.oaes, &g_nvmf_tgt.opts.oaes, sizeof(uint32_t));
-	session->vcdata.acl = g_nvmf_tgt.opts.acl;
-	session->vcdata.aerl = g_nvmf_tgt.opts.aerl;
-	session->vcdata.elpe = g_nvmf_tgt.opts.elpe;
-	session->vcdata.npss = g_nvmf_tgt.opts.npss;
+
+	/* Set appropriate values for 0's based fields */
+	if (g_nvmf_tgt.opts.acl > 0) {
+		session->vcdata.acl = (g_nvmf_tgt.opts.acl - 1);
+	} else {
+		session->vcdata.acl = g_nvmf_tgt.opts.acl;
+	}
+
+	if (g_nvmf_tgt.opts.aerl > 0) {
+		session->vcdata.aerl = (g_nvmf_tgt.opts.aerl - 1);
+	} else {
+		session->vcdata.aerl = g_nvmf_tgt.opts.aerl;
+	}
+
+	if (g_nvmf_tgt.opts.elpe > 0) {
+		session->vcdata.elpe = (g_nvmf_tgt.opts.elpe - 1);
+	} else {
+		session->vcdata.elpe = g_nvmf_tgt.opts.elpe;
+	}
+
+	if (g_nvmf_tgt.opts.npss > 0) {
+		session->vcdata.npss = (g_nvmf_tgt.opts.npss - 1);
+	} else {
+		session->vcdata.npss = g_nvmf_tgt.opts.npss;
+	}
+
+	if (g_nvmf_tgt.opts.awun > 0) {
+		session->vcdata.awun = (g_nvmf_tgt.opts.awun - 1);
+	} else {
+		session->vcdata.awun = g_nvmf_tgt.opts.awun;
+	}
+
+	if (g_nvmf_tgt.opts.awupf > 0) {
+		session->vcdata.awupf = (g_nvmf_tgt.opts.awupf - 1);
+	} else {
+		session->vcdata.awupf = g_nvmf_tgt.opts.awupf;
+	}
+
 	session->vcdata.kas = g_nvmf_tgt.opts.kas;
 	memcpy(&session->vcdata.vwc, &g_nvmf_tgt.opts.vwc, sizeof(uint8_t));
-	session->vcdata.awun = g_nvmf_tgt.opts.awun;
-	session->vcdata.awupf = g_nvmf_tgt.opts.awupf;
 	memcpy(&session->vcdata.sgls, &g_nvmf_tgt.opts.sgls, sizeof(uint32_t));
 
 	if (g_nvmf_tgt.opts.nvmever == SPDK_NVME_VERSION(1, 3, 0)) {
