@@ -51,6 +51,6 @@ int ocs_nvme_process_hw_port_offline(ocs_t *ocs);
 int ocs_nvme_process_prli(ocs_io_t *io, uint16_t ox_id);
 int ocs_nvme_process_prlo(ocs_io_t *io, uint16_t ox_id);
 int ocs_nvme_node_lost(ocs_node_t *node);
-int ocs_nvme_process_abts(uint16_t oxid, uint16_t rxid, uint32_t rpi);
+int ocs_nvme_process_abts(ocs_t *ocs, uint16_t oxid, uint16_t rxid, uint32_t rpi);
 
 #endif //__OCS_SPDK_NVMET_H__

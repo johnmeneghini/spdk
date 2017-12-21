@@ -586,7 +586,7 @@ ocs_process_abts(ocs_io_t *io, fc_header_t *hdr)
 			    ox_id, (abortio != NULL));
 
 #if defined(OCS_NETAPP)
-		ocs_nvme_process_abts(ox_id, rx_id, node->rnode.indicator);
+		ocs_nvme_process_abts(ocs, ox_id, rx_id, node->rnode.indicator);
 #else
 		/* Send a BA_ACC */
 		ocs_bls_send_acc_hdr(io, hdr);

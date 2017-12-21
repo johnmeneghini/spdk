@@ -423,7 +423,7 @@ ocs_cb_abts_cb(uint8_t port_handle, spdk_fc_event_t event_type,
 }
 
 int
-ocs_nvme_process_abts(uint16_t oxid, uint16_t rxid, uint32_t rpi)
+ocs_nvme_process_abts(ocs_t *ocs, uint16_t oxid, uint16_t rxid, uint32_t rpi)
 {
 	spdk_nvmf_bcm_fc_abts_args_t *args;
 	spdk_err_t rc;
@@ -437,7 +437,7 @@ ocs_nvme_process_abts(uint16_t oxid, uint16_t rxid, uint32_t rpi)
 		goto err;
 	}
 
-	args->port_handle = 0;
+	args->port_handle = ocs->instance_index;
 	args->nport_handle = 0;
 	args->oxid = oxid;
 	args->rxid = rxid;
@@ -457,6 +457,15 @@ err:
 	}
 
 	return -1;
+}
+
+static void
+ocs_nvme_prli_resp_cb(ocs_node_t *node, ocs_node_cb_t *cbdata, void *cbarg)
+{
+	if (cbdata->status != SLI4_FC_WCQE_STATUS_SUCCESS) {
+		ocs_log_info(node->ocs, "Failed to send PRI resp. \n");
+		ocs_nvme_node_lost(node);
+	}
 }
 
 int
@@ -486,7 +495,8 @@ ocs_nvme_process_prli(ocs_io_t *io, uint16_t ox_id)
 	}
 
 	ocs_log_info(ocs, "NVME IT add success.\n");
-	ocs_send_prli_acc(io, ox_id, FC_TYPE_NVME, NULL, NULL);
+
+	ocs_send_prli_acc(io, ox_id, FC_TYPE_NVME, ocs_nvme_prli_resp_cb, NULL);
 	return 0;
 err:
 	ocs_send_ls_rjt(io, ox_id, FC_REASON_UNABLE_TO_PERFORM,
