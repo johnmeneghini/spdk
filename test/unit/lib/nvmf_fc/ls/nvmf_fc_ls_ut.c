@@ -405,7 +405,8 @@ run_create_assoc_test(const char *subnqn,
 static void
 run_create_conn_test(struct spdk_nvmf_host *host,
 		     struct spdk_nvmf_bcm_fc_nport *tgtport,
-		     uint64_t assoc_id)
+		     uint64_t assoc_id,
+		     uint16_t qid)
 {
 	struct spdk_nvmf_bcm_fc_ls_rqst ls_rqst;
 	struct nvmf_fc_ls_cr_conn_rqst cc_rqst;
@@ -427,6 +428,8 @@ run_create_conn_test(struct spdk_nvmf_host *host,
 
 	to_be16(&cc_rqst.connect_cmd.ersp_ratio, (host->max_queue_depth / 2));
 	to_be16(&cc_rqst.connect_cmd.sqsize, host->max_queue_depth);
+	to_be16(&cc_rqst.connect_cmd.qid, qid);
+
 
 	/* fill in association id descriptor */
 	to_be32(&cc_rqst.assoc_id.desc_tag, FCNVME_LSDESC_ASSOC_ID),
@@ -723,6 +726,7 @@ create_single_assoc_test(void)
 static void
 create_assoc_test(void)
 {
+	uint16_t qid = 1;
 	/* main test driver */
 	g_test_run_type = TEST_RUN_TYPE_CREATE_ASSOC;
 	run_create_assoc_test(fc_ut_good_subsystem, fc_ut_host, &tgtport);
@@ -731,7 +735,7 @@ create_assoc_test(void)
 		g_test_run_type = TEST_RUN_TYPE_CREATE_CONN;
 		/* create connections until we get too many connections error */
 		while (g_last_rslt == 0)
-			run_create_conn_test(fc_ut_host, &tgtport, g_curr_assoc_id);
+			run_create_conn_test(fc_ut_host, &tgtport, g_curr_assoc_id, qid++);
 
 		/* disconnect the association */
 		g_test_run_type = TEST_RUN_TYPE_DISCONNECT;
@@ -745,7 +749,7 @@ invalid_connection_test(void)
 {
 	/* run test to create connection to invalid association */
 	g_test_run_type = TEST_RUN_TYPE_CONN_BAD_ASSOC;
-	run_create_conn_test(fc_ut_host, &tgtport, g_curr_assoc_id);
+	run_create_conn_test(fc_ut_host, &tgtport, g_curr_assoc_id, 1);
 }
 
 static void
@@ -765,7 +769,7 @@ create_max_assoc_conns_test(void)
 			g_test_run_type = TEST_RUN_TYPE_CREATE_CONN;
 			for (j = 1; j < fc_ut_host->max_connections_allowed; j++) {
 				if (g_last_rslt == 0) {
-					run_create_conn_test(fc_ut_host, &tgtport, g_curr_assoc_id);
+					run_create_conn_test(fc_ut_host, &tgtport, g_curr_assoc_id, (uint16_t) j);
 				}
 			}
 		}
