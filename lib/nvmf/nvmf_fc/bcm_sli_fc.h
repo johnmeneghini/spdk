@@ -393,10 +393,13 @@ typedef struct fc_caller_ctx {
 /* WQ related */
 typedef void (*bcm_fc_wqe_cb)(void *hwqp, uint8_t *cqe, int32_t status, void *args);
 
-typedef struct fc_wqe_ctx {
+#define MAX_WQ_WQEC_CNT 5
+#define MAX_REQTAG_POOL_SIZE 8191 /* Should be one less than DPDK ring */
+typedef struct fc_wqe_reqtag {
+	uint16_t index;
 	bcm_fc_wqe_cb cb;
 	void *cb_args;
-} fc_wqe_ctx_t;
+} fc_reqtag_t;
 
 #define MAX_WQ_ENTRIES 4096
 typedef struct fc_wrkq {
@@ -405,7 +408,10 @@ typedef struct fc_wrkq {
 	bcm_buffer_desc_t *buffer;  /* BDE buffer descriptor array */
 
 	/* internal */
-	fc_wqe_ctx_t ctx_map[MAX_WQ_ENTRIES];
+	uint32_t wqec_count;
+	struct spdk_ring *reqtag_ring;
+	fc_reqtag_t *reqtag_objs;
+	fc_reqtag_t *p_reqtags[MAX_REQTAG_POOL_SIZE];
 } fc_wrkq_t;
 
 #define MAX_RQ_ENTRIES 4096

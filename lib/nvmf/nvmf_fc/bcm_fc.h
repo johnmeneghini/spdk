@@ -312,6 +312,7 @@ typedef enum {
 	SPDK_NVMF_BCM_FC_REQ_READ_BDEV,
 	SPDK_NVMF_BCM_FC_REQ_READ_XFER,
 	SPDK_NVMF_BCM_FC_REQ_READ_RSP,
+	SPDK_NVMF_BCM_FC_REQ_WRITE_BUFFS,
 	SPDK_NVMF_BCM_FC_REQ_WRITE_XFER,
 	SPDK_NVMF_BCM_FC_REQ_WRITE_BDEV,
 	SPDK_NVMF_BCM_FC_REQ_WRITE_RSP,
@@ -342,6 +343,7 @@ struct spdk_nvmf_bcm_fc_request {
 	int state;
 	uint32_t transfered_len;
 	bool is_aborted;
+	uint32_t magic;
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_request) link;
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_request) pending_link;
 	TAILQ_HEAD(, fc_caller_ctx) abort_cbs;

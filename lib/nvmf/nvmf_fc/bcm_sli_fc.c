@@ -61,6 +61,7 @@ char *fc_req_state_strs[] = {
 	"SPDK_NVMF_BCM_FC_REQ_NONE_RSP",
 	"SPDK_NVMF_BCM_FC_REQ_SUCCESS",
 	"SPDK_NVMF_BCM_FC_REQ_FAILED",
+	"SPDK_NVMF_BCM_FC_REQ_ABORTED",
 	"SPDK_NVMF_BCM_FC_REQ_PENDING"
 };
 
@@ -90,6 +91,7 @@ void spdk_nvmf_bcm_fc_req_abort_complete(void *arg1, void *arg2);
 void spdk_nvmf_bcm_fc_release_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 				  struct spdk_nvmf_bcm_fc_xri *xri, bool xb);
 static int nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req);
+int spdk_nvmf_bcm_fc_create_reqtag_pool(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
 
 static inline uint16_t
 nvmf_fc_advance_conn_sqhead(struct spdk_nvmf_conn *conn)
@@ -242,6 +244,9 @@ nvmf_fc_record_req_trace_point(struct spdk_nvmf_bcm_fc_request *fc_req,
 	case SPDK_NVMF_BCM_FC_REQ_READ_RSP:
 		tpoint_id = TRACE_FC_REQ_READ_RSP;
 		break;
+	case SPDK_NVMF_BCM_FC_REQ_WRITE_BUFFS:
+		tpoint_id = TRACE_FC_REQ_WRITE_BUFFS;
+		break;
 	case SPDK_NVMF_BCM_FC_REQ_WRITE_XFER:
 		tpoint_id = TRACE_FC_REQ_WRITE_XFER;
 		break;
@@ -280,6 +285,98 @@ nvmf_fc_record_req_trace_point(struct spdk_nvmf_bcm_fc_request *fc_req,
 	}
 }
 
+int
+spdk_nvmf_bcm_fc_create_reqtag_pool(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
+{
+	char name[48];
+	int i;
+	struct fc_wrkq *wq = &hwqp->queues.wq;
+	fc_reqtag_t *obj;
+	static int unique_number = 0;
+
+	unique_number++;
+
+	snprintf(name, sizeof(name), "NVMF_FC_REQTAG_POOL:%d", unique_number);
+
+	/* Create reqtag ring */
+	wq->reqtag_ring = spdk_ring_create(name, (MAX_REQTAG_POOL_SIZE + 1), SPDK_ENV_SOCKET_ID_ANY, 0);
+	if (!wq->reqtag_ring) {
+		SPDK_ERRLOG("create fc reqtag ring failed\n");
+		return -1;
+	}
+
+	/* Create ring objects */
+	wq->reqtag_objs = spdk_calloc(MAX_REQTAG_POOL_SIZE, sizeof(fc_reqtag_t));
+	if (!wq->reqtag_objs) {
+		SPDK_ERRLOG("create fc reqtag ring objects failed\n");
+		goto error;
+	}
+
+	/* Initialise index value in ring objects and queue the objects to ring */
+	for (i = 0; i < MAX_REQTAG_POOL_SIZE; i ++) {
+		obj = wq->reqtag_objs + i;
+
+		obj->index = i;
+		if (spdk_ring_enqueue(wq->reqtag_ring, (void *)obj)) {
+			SPDK_ERRLOG("fc reqtag ring enqueue objects failed %d\n", i);
+			goto error;
+		}
+		wq->p_reqtags[i] = NULL;
+	}
+
+	/* Init the wqec counter */
+	wq->wqec_count = 0;
+
+	return 0;
+error:
+	if (wq->reqtag_objs) {
+		spdk_free(wq->reqtag_objs);
+	}
+
+	if (wq->reqtag_ring) {
+		spdk_ring_free(wq->reqtag_ring);
+	}
+	return -1;
+}
+
+static fc_reqtag_t *
+nvmf_fc_get_reqtag(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
+{
+	struct fc_wrkq *wq = &hwqp->queues.wq;
+	fc_reqtag_t *tag;
+
+	if (spdk_ring_dequeue(wq->reqtag_ring, (void **)&tag)) {
+		return NULL;
+	}
+
+	/* Save the pointer for lookup */
+	wq->p_reqtags[tag->index] = tag;
+	return tag;
+}
+
+static fc_reqtag_t *
+nvmf_fc_lookup_reqtag(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint16_t index)
+{
+	assert(index < MAX_REQTAG_POOL_SIZE);
+
+	return hwqp->queues.wq.p_reqtags[index];
+}
+
+static int
+nvmf_fc_release_reqtag(struct spdk_nvmf_bcm_fc_hwqp *hwqp, fc_reqtag_t *tag)
+{
+	struct fc_wrkq *wq = &hwqp->queues.wq;
+	int rc;
+
+	rc = spdk_ring_enqueue(wq->reqtag_ring, tag);
+
+	wq->p_reqtags[tag->index] = NULL;
+	tag->cb = NULL;
+	tag->cb_args = NULL;
+
+	return rc;
+}
+
 static inline struct spdk_nvmf_bcm_fc_request *
 nvmf_fc_alloc_req_buf(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 {
@@ -305,14 +402,30 @@ nvmf_fc_free_req_buf(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct spdk_nvmf_bcm_fc
 		spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_FAILED);
 	}
 
+	/* set the magic to mark req as no longer valid. */
+	fc_req->magic = 0xDEADBEEF;
+
 	TAILQ_REMOVE(&hwqp->in_use_reqs, fc_req, link);
 	spdk_mempool_put(hwqp->fc_request_pool, (void *)fc_req);
+}
+
+static inline bool
+nvmf_fc_req_is_valid(struct spdk_nvmf_bcm_fc_request *fc_req)
+{
+	if (fc_req->magic == 0xDEADBEEF) {
+		return false;
+	} else {
+		return true;
+	}
 }
 
 void
 spdk_nvmf_bcm_fc_req_set_state(struct spdk_nvmf_bcm_fc_request *fc_req,
 			       spdk_nvmf_bcm_fc_request_state_t state)
 {
+	if (!nvmf_fc_req_is_valid(fc_req)) {
+		SPDK_ERRLOG("Changing dead FC Request(%p) states.\n", fc_req);
+	}
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
 		      "FC Request(%p):\n\tState Old:%s New:%s\n", fc_req,
@@ -329,6 +442,17 @@ nvmf_fc_req_in_bdev(struct spdk_nvmf_bcm_fc_request *fc_req)
 	case SPDK_NVMF_BCM_FC_REQ_READ_BDEV:
 	case SPDK_NVMF_BCM_FC_REQ_WRITE_BDEV:
 	case SPDK_NVMF_BCM_FC_REQ_NONE_BDEV:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static inline bool
+nvmf_fc_req_in_get_buff(struct spdk_nvmf_bcm_fc_request *fc_req)
+{
+	switch (fc_req->state) {
+	case SPDK_NVMF_BCM_FC_REQ_WRITE_BUFFS:
 		return true;
 	default:
 		return false;
@@ -495,6 +619,8 @@ spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 		/* Remove from pending */
 		TAILQ_REMOVE(&fc_req->fc_conn->pending_queue, fc_req, pending_link);
 		goto complete;
+	} else if (nvmf_fc_req_in_get_buff(fc_req)) {
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "Abort req when getting buffers.\n");
 	} else {
 		/* Should never happen */
 		SPDK_ERRLOG("%s: Request in invalid state\n", __func__);
@@ -682,34 +808,58 @@ nvmf_fc_post_wqe(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint8_t *entry, bool notify
 		 bcm_fc_wqe_cb cb, void *cb_args)
 {
 	int rc = -1;
-	fc_wqe_ctx_t *wqe_ctx;
 	bcm_generic_wqe_t *wqe = (bcm_generic_wqe_t *)entry;
 	struct fc_wrkq *wq = &hwqp->queues.wq;
+	fc_reqtag_t *reqtag = NULL;
 
 	if (!entry || !cb) {
-		goto done;
+		goto error;
 	}
 
-	/* Fill the context for callback */
-	wqe_ctx = &wq->ctx_map[wq->q.head];
-	wqe_ctx->cb = cb;
-	wqe_ctx->cb_args = cb_args;
+	/* Make sure queue is not full */
+	if (nvmf_fc_queue_full(&wq->q)) {
+		SPDK_ERRLOG("%s queue full. type = %#x\n", __func__, wq->q.type);
+		goto error;
+	}
+
+	/* Alloc a reqtag */
+	reqtag = nvmf_fc_get_reqtag(hwqp);
+	if (!reqtag) {
+		SPDK_ERRLOG("%s No reqtag available\n", __func__);
+		goto error;
+	}
+	reqtag->cb = cb;
+	reqtag->cb_args = cb_args;
 
 	/* Update request tag in the WQE entry */
-	wqe->request_tag = wq->q.head;
+	wqe->request_tag = reqtag->index;
+	wq->wqec_count ++;
+
+	if (wq->wqec_count == MAX_WQ_WQEC_CNT) {
+		wqe->wqec = 1;
+	}
 
 	rc = nvmf_fc_write_queue_entry(&wq->q, entry);
 	if (rc) {
 		SPDK_ERRLOG("%s: WQE write failed. \n", __func__);
 		hwqp->counters.wqe_write_err++;
-		goto done;
+		goto error;
 	}
+
 	wq->q.used++;
+	if (wqe->wqec) {
+		/* Reset wqec count. */
+		wq->wqec_count = 0;
+	}
 
 	if (notify) {
 		nvmf_fc_bcm_notify_queue(&wq->q, false, 1);
 	}
-done:
+	return 0;
+error:
+	if (reqtag) {
+		nvmf_fc_release_reqtag(hwqp, reqtag);
+	}
 	return rc;
 }
 
@@ -744,11 +894,45 @@ nvmf_fc_parse_eq_entry(struct eqe *qe, uint16_t *cq_id)
 	return rc;
 }
 
+static uint32_t
+nvmf_fc_parse_cqe_ext_status(uint8_t *cqe)
+{
+	cqe_t *cqe_entry = (void *)cqe;
+	uint32_t mask;
+
+	switch (cqe_entry->u.wcqe.status) {
+	case BCM_FC_WCQE_STATUS_FCP_RSP_FAILURE:
+		mask = UINT32_MAX;
+		break;
+	case BCM_FC_WCQE_STATUS_LOCAL_REJECT:
+	case BCM_FC_WCQE_STATUS_CMD_REJECT:
+		mask = 0xff;
+		break;
+	case BCM_FC_WCQE_STATUS_NPORT_RJT:
+	case BCM_FC_WCQE_STATUS_FABRIC_RJT:
+	case BCM_FC_WCQE_STATUS_NPORT_BSY:
+	case BCM_FC_WCQE_STATUS_FABRIC_BSY:
+	case BCM_FC_WCQE_STATUS_LS_RJT:
+		mask = UINT32_MAX;
+		break;
+	case BCM_FC_WCQE_STATUS_DI_ERROR:
+		mask = UINT32_MAX;
+		break;
+	default:
+		mask = 0;
+	}
+
+	return cqe_entry->u.wcqe.wqe_specific_2 & mask;
+}
+
+
+
 static int
 nvmf_fc_parse_cq_entry(struct fc_eventq *cq, uint8_t *cqe, bcm_qentry_type_e *etype, uint16_t *r_id)
 {
 	int     rc = -1;
 	cqe_t *cqe_entry = (cqe_t *)cqe;
+	uint32_t ext_status = 0;
 
 	if (!cq || !cqe || !etype || !r_id) {
 		SPDK_ERRLOG("%s: bad parameters cq=%p cqe=%p etype=%p q_id=%p\n",
@@ -762,17 +946,29 @@ nvmf_fc_parse_cq_entry(struct fc_eventq *cq, uint8_t *cqe, bcm_qentry_type_e *et
 		*r_id = cqe_entry->u.wcqe.request_tag;
 		rc = cqe_entry->u.wcqe.status;
 		if (rc) {
-
-			SPDK_ERRLOG("WCQE: status=%#x hw_status=%#x tag=%#x w1=%#x w2=%#x xb=%d\n",
-				    cqe_entry->u.wcqe.status,
-				    cqe_entry->u.wcqe.hw_status,
-				    cqe_entry->u.wcqe.request_tag,
-				    cqe_entry->u.wcqe.wqe_specific_1,
-				    cqe_entry->u.wcqe.wqe_specific_2,
-				    cqe_entry->u.wcqe.xb);
-			SPDK_ERRLOG("  %08X %08X %08X %08X\n",
-				    ((uint32_t *)cqe)[0], ((uint32_t *)cqe)[1],
-				    ((uint32_t *)cqe)[2], ((uint32_t *)cqe)[3]);
+			ext_status = nvmf_fc_parse_cqe_ext_status(cqe);
+			if ((rc == BCM_FC_WCQE_STATUS_LOCAL_REJECT) &&
+			    ((ext_status == BCM_FC_LOCAL_REJECT_NO_XRI) ||
+			     (ext_status == BCM_FC_LOCAL_REJECT_ABORT_REQUESTED))) {
+				SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
+					      "WCQE: status=%#x hw_status=%#x tag=%#x w1=%#x w2=%#x\n",
+					      cqe_entry->u.wcqe.status,
+					      cqe_entry->u.wcqe.hw_status,
+					      cqe_entry->u.wcqe.request_tag,
+					      cqe_entry->u.wcqe.wqe_specific_1,
+					      cqe_entry->u.wcqe.wqe_specific_2);
+			} else {
+				SPDK_NOTICELOG("WCQE: status=%#x hw_status=%#x tag=%#x w1=%#x w2=%#x xb=%d\n",
+					       cqe_entry->u.wcqe.status,
+					       cqe_entry->u.wcqe.hw_status,
+					       cqe_entry->u.wcqe.request_tag,
+					       cqe_entry->u.wcqe.wqe_specific_1,
+					       cqe_entry->u.wcqe.wqe_specific_2,
+					       cqe_entry->u.wcqe.xb);
+				SPDK_NOTICELOG("  %08X %08X %08X %08X\n",
+					       ((uint32_t *)cqe)[0], ((uint32_t *)cqe)[1],
+					       ((uint32_t *)cqe)[2], ((uint32_t *)cqe)[3]);
+			}
 		}
 		break;
 	}
@@ -1006,6 +1202,8 @@ spdk_nvmf_bcm_fc_release_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 		/* Post an abort to clean XRI state */
 		spdk_nvmf_bcm_fc_issue_abort(hwqp, xri, false, NULL, NULL);
 		nvmf_fc_nvmf_add_xri_pending(hwqp, xri);
+	} else if (xb) {
+		nvmf_fc_nvmf_add_xri_pending(hwqp, xri);
 	} else {
 		xri->is_active = false;
 		spdk_nvmf_bcm_fc_put_xri(hwqp, xri);
@@ -1042,9 +1240,9 @@ nvmf_fc_abort_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 {
 	struct spdk_nvmf_bcm_fc_hwqp *hwqp = ctx;
 	fc_caller_ctx_t *carg = arg;
-	struct spdk_nvmf_bcm_fc_xri *xri = carg->ctx;
 
-	SPDK_NOTICELOG("IO Aborted(XRI:0x%x, Status=%d)\n", xri->xri, status);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "IO Aborted(XRI:0x%x, Status=%d)\n",
+		      ((struct spdk_nvmf_bcm_fc_xri *)carg->ctx)->xri, status);
 
 	if (carg->cb) {
 		carg->cb(hwqp, status, carg->cb_args);
@@ -1061,7 +1259,7 @@ nvmf_fc_bls_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 	fc_caller_ctx_t *carg 	= arg;
 	struct spdk_nvmf_bcm_fc_xri *xri = carg->ctx;
 
-	SPDK_NOTICELOG("BLS WQE Compl(%d) \n", status);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "BLS WQE Compl(%d) \n", status);
 
 	spdk_nvmf_bcm_fc_release_xri(hwqp, xri, cqe_entry->u.generic.xb);
 
@@ -1080,7 +1278,7 @@ nvmf_fc_srsr_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 	fc_caller_ctx_t *carg 	= arg;
 	struct spdk_nvmf_bcm_fc_xri *xri = carg->ctx;
 
-	SPDK_NOTICELOG("SRSR WQE Compl(%d) \n", status);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "SRSR WQE Compl(%d) \n", status);
 
 	spdk_nvmf_bcm_fc_release_xri(hwqp, xri, cqe_entry->u.generic.xb);
 
@@ -1114,6 +1312,13 @@ nvmf_fc_io_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 	struct spdk_nvmf_bcm_fc_request *fc_req = arg;
 	cqe_t *cqe_entry = (cqe_t *)cqe;
 	int rc;
+
+	/* Check if its valid completion. */
+	if (!nvmf_fc_req_is_valid(fc_req)) {
+		SPDK_ERRLOG("WQE Compl(status = %d) for unknown request(%p)\n",
+			    status, fc_req);
+		return;
+	}
 
 	if (status || fc_req->is_aborted) {
 		goto io_done;
@@ -1163,20 +1368,38 @@ io_done:
 }
 
 static void
-nvmf_fc_process_wqe_completion(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint16_t req_tag, int status,
+nvmf_fc_process_wqe_completion(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint16_t tag, int status,
 			       uint8_t *cqe)
 {
-	fc_wqe_ctx_t *wqe_ctx;
+	fc_reqtag_t *reqtag;
+
+	reqtag = nvmf_fc_lookup_reqtag(hwqp, tag);
+	if (!reqtag) {
+		SPDK_ERRLOG("Could not find reqtag(%d) for WQE Compl HWQP = %d\n",
+			    tag, hwqp->hwqp_id);
+		return;
+	}
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "WQE Compl(%d)\n", status);
 
-	/* Free WQE slot */
-	hwqp->queues.wq.q.used--;
-	nvmf_fc_queue_tail_inc(&hwqp->queues.wq.q);
-
 	/* Call the callback */
-	wqe_ctx = &hwqp->queues.wq.ctx_map[req_tag];
-	wqe_ctx->cb(hwqp, cqe, status, wqe_ctx->cb_args);
+	if (reqtag->cb) {
+		reqtag->cb(hwqp, cqe, status, reqtag->cb_args);
+	} else {
+		SPDK_ERRLOG("reqtag(%d) cb NULL for WQE Compl\n", tag);
+	}
+
+	/* Release reqtag */
+	if (nvmf_fc_release_reqtag(hwqp, reqtag)) {
+		SPDK_ERRLOG("%s: reqtag(%d) release failed\n", __func__, tag);
+	}
+}
+
+static void
+nvmf_fc_process_wqe_release(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint16_t wqid)
+{
+	hwqp->queues.wq.q.used -= MAX_WQ_WQEC_CNT;
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "WQE RELEASE\n");
 }
 
 static uint32_t
@@ -1298,9 +1521,10 @@ nvmf_fc_recv_data(struct spdk_nvmf_bcm_fc_request *fc_req)
 	trecv->ct = BCM_ELS_REQUEST64_CONTEXT_RPI;
 
 	trecv->remote_xid = fc_req->oxid;
-	trecv->nvme = 1;
-	trecv->iod = 1;
-	trecv->len_loc = 0x2;
+	trecv->nvme 	= 1;
+	trecv->iod 	= 1;
+	trecv->len_loc 	= 0x2;
+	trecv->timer 	= 30;
 
 	trecv->cmd_type = BCM_CMD_FCP_TRECEIVE64_WQE;
 	trecv->cq_id = 0xFFFF;
@@ -1354,16 +1578,21 @@ nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req)
 		/* For IOQ Writes, alloc bdev buffers */
 		else if (fc_conn->conn.type == CONN_TYPE_IOQ &&
 			 cmd->opc == SPDK_NVME_OPC_WRITE) {
+
+			spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_WRITE_BUFFS);
+
 			switch (spdk_nvmf_request_exec(&fc_req->req)) {
 			case SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_READY:
 				break;
-			case SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE:
-				return 0;
 			case SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING:
 				SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
 					      "Write buffer alloc failed. Requeue\n");
 				fc_req->hwqp->counters.write_buf_alloc_err++;
 				goto pending;
+			case SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE:
+			case SPDK_NVMF_REQUEST_EXEC_STATUS_ASYNCHRONOUS:
+				/* Aborted in nvmf layer, request_complete with take of cleanup. */
+				return 0;
 			default:
 				goto error;
 			}
@@ -1724,7 +1953,7 @@ nvmf_fc_process_cq_entry(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_eventq *c
 			nvmf_fc_process_wqe_completion(hwqp, rid, rc, cqe);
 			break;
 		case BCM_FC_QENTRY_WQ_RELEASE:
-			SPDK_WARNLOG("%s: WQE Release not implemented.\n", __func__);
+			nvmf_fc_process_wqe_release(hwqp, rid);
 			break;
 		case BCM_FC_QENTRY_RQ:
 			nvmf_fc_process_rqpair(hwqp, cq, cqe);
@@ -2066,6 +2295,7 @@ done:
 
 	if (!rc) {
 		xri->is_active = false;
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "Abort WQE posted for XRI = %d\n", xri->xri);
 	}
 	return rc;
 }

@@ -529,7 +529,7 @@ run_direct_disconn_test(struct spdk_nvmf_bcm_fc_nport *tgtport,
 			disconnect_assoc_cb, 0);
 
 	CU_ASSERT(ret == 0);
-#if 0
+#ifdef NVMF_FC_LS_SEND_LS_DISCONNECT
 	if (ret == 0) {
 		/* check that LS disconnect was sent */
 		CU_ASSERT(g_spdk_nvmf_bcm_fc_xmt_srsr_req);

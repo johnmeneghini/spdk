@@ -83,6 +83,7 @@ static bool nvmf_fc_conn_is_idle(struct spdk_nvmf_conn *conn);
 extern uint32_t spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
 extern int spdk_nvmf_bcm_fc_init_rqpair_buffers(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
 extern int spdk_nvmf_bcm_fc_create_req_mempool(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
+extern int spdk_nvmf_bcm_fc_create_reqtag_pool(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
 
 struct spdk_nvmf_fc_buf {
 	SLIST_ENTRY(spdk_nvmf_fc_buf) link;
@@ -112,6 +113,7 @@ spdk_nvmf_bcm_fc_init_poller(struct spdk_nvmf_bcm_fc_port *fc_port,
 
 	spdk_nvmf_bcm_fc_init_poller_queues(hwqp);
 	(void)spdk_nvmf_bcm_fc_create_req_mempool(hwqp);
+	(void)spdk_nvmf_bcm_fc_create_reqtag_pool(hwqp);
 }
 
 void
@@ -364,7 +366,6 @@ spdk_nvmf_bcm_fc_queue_poller(void *arg)
 
 	return 0;
 }
-
 
 /*** Accessor functions for the bcm-fc structures - BEGIN */
 /*
@@ -795,6 +796,8 @@ nvmf_fc_request_complete_process(void *arg1, void *arg2)
 	} else {
 		if (req->xfer == SPDK_NVME_DATA_HOST_TO_CONTROLLER) {
 			spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_WRITE_RSP);
+		} else if (req->xfer == SPDK_NVME_DATA_CONTROLLER_TO_HOST) {
+			spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_READ_RSP);
 		} else {
 			spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_NONE_RSP);
 		}
