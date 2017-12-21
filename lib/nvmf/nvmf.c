@@ -190,6 +190,8 @@ SPDK_TRACE_REGISTER_FN(nvmf_trace)
 					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
 	spdk_trace_register_description("NVMF_FC_REQ_READ_RSP", "", TRACE_FC_REQ_READ_RSP,
 					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_REQ_WRITE_BUFFS", "", TRACE_FC_REQ_WRITE_BUFFS,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
 	spdk_trace_register_description("NVMF_FC_REQ_WRITE_XFER", "", TRACE_FC_REQ_WRITE_XFER,
 					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
 	spdk_trace_register_description("NVMF_FC_REQ_WRITE_BDEV", "", TRACE_FC_REQ_WRITE_BDEV,
