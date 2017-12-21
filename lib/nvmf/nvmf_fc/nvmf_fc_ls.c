@@ -456,8 +456,12 @@ nvmf_fc_ls_find_assoc(struct spdk_nvmf_bcm_fc_nport *tgtport, uint64_t assoc_id)
 {
 	struct spdk_nvmf_bcm_fc_association *assoc = NULL;
 	TAILQ_FOREACH(assoc, &tgtport->fc_associations, link) {
-		if (assoc->assoc_id == assoc_id)
+		if (assoc->assoc_id == assoc_id) {
+			if (assoc->assoc_state == SPDK_NVMF_BCM_FC_OBJECT_ZOMBIE) {
+				assoc = NULL;
+			}
 			break;
+		}
 	}
 	return assoc;
 }
