@@ -299,14 +299,15 @@ spdk_nvmf_bcm_fc_create_reqtag_pool(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	snprintf(name, sizeof(name), "NVMF_FC_REQTAG_POOL:%d", unique_number);
 
 	/* Create reqtag ring */
-	wq->reqtag_ring = spdk_ring_create(name, (MAX_REQTAG_POOL_SIZE + 1), SPDK_ENV_SOCKET_ID_ANY, 0);
+	wq->reqtag_ring = spdk_ring_create(SPDK_RING_TYPE_MP_SC, (MAX_REQTAG_POOL_SIZE + 1),
+					   SPDK_ENV_SOCKET_ID_ANY);
 	if (!wq->reqtag_ring) {
 		SPDK_ERRLOG("create fc reqtag ring failed\n");
 		return -1;
 	}
 
 	/* Create ring objects */
-	wq->reqtag_objs = spdk_calloc(MAX_REQTAG_POOL_SIZE, sizeof(fc_reqtag_t));
+	wq->reqtag_objs = calloc(MAX_REQTAG_POOL_SIZE, sizeof(fc_reqtag_t));
 	if (!wq->reqtag_objs) {
 		SPDK_ERRLOG("create fc reqtag ring objects failed\n");
 		goto error;
@@ -317,7 +318,7 @@ spdk_nvmf_bcm_fc_create_reqtag_pool(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 		obj = wq->reqtag_objs + i;
 
 		obj->index = i;
-		if (spdk_ring_enqueue(wq->reqtag_ring, (void *)obj)) {
+		if (spdk_ring_enqueue(wq->reqtag_ring, (void **)&obj, 1) == 0) {
 			SPDK_ERRLOG("fc reqtag ring enqueue objects failed %d\n", i);
 			goto error;
 		}
@@ -330,7 +331,7 @@ spdk_nvmf_bcm_fc_create_reqtag_pool(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	return 0;
 error:
 	if (wq->reqtag_objs) {
-		spdk_free(wq->reqtag_objs);
+		free(wq->reqtag_objs);
 	}
 
 	if (wq->reqtag_ring) {
@@ -345,7 +346,7 @@ nvmf_fc_get_reqtag(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	struct fc_wrkq *wq = &hwqp->queues.wq;
 	fc_reqtag_t *tag;
 
-	if (spdk_ring_dequeue(wq->reqtag_ring, (void **)&tag)) {
+	if (spdk_ring_dequeue(wq->reqtag_ring, (void **)&tag, 1) == 0) {
 		return NULL;
 	}
 
@@ -368,7 +369,7 @@ nvmf_fc_release_reqtag(struct spdk_nvmf_bcm_fc_hwqp *hwqp, fc_reqtag_t *tag)
 	struct fc_wrkq *wq = &hwqp->queues.wq;
 	int rc;
 
-	rc = spdk_ring_enqueue(wq->reqtag_ring, tag);
+	rc = spdk_ring_enqueue(wq->reqtag_ring, (void **)&tag, 1) != 1;
 
 	wq->p_reqtags[tag->index] = NULL;
 	tag->cb = NULL;

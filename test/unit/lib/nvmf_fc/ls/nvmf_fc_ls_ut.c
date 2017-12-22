@@ -258,7 +258,7 @@ spdk_nvmf_bcm_fc_ns_detach_cb(void *arg1, void *arg2)
 
 	/* The pending CB will be one */
 	args->detach_ns_cb(args->ctx, (void *)&pending_cb);
-	spdk_free(args);
+	free(args);
 	return;
 }
 

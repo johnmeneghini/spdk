@@ -286,7 +286,7 @@ spdk_nvmf_bcm_fc_poller_api_detach_ns_on_conn(void *arg1, void *arg2)
 		return;
 	}
 
-	spdk_free(args);
+	free(args);
 }
 
 spdk_nvmf_bcm_fc_poller_api_ret_t

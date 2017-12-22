@@ -153,7 +153,7 @@ spdk_nvmf_bcm_fc_ns_detach_cb(void *arg1, void *arg2)
 
 	/* The pending CB will be one */
 	args->detach_ns_cb(args->ctx, (void *)&pending_cb);
-	spdk_free(args);
+	free(args);
 	return;
 }
 
@@ -168,7 +168,7 @@ spdk_nvmf_bcm_fc_drain_nsid_on_conn(struct spdk_nvmf_bcm_fc_association *assoc,
 				    void                                *ctx,
 				    spdk_nvmf_bcm_fc_detach_ns_cb      detach_ns_cb)
 {
-	struct spdk_nvmf_bcm_fc_poller_api_detach_ns_on_conn_args *detach_ns_args = spdk_calloc(1,
+	struct spdk_nvmf_bcm_fc_poller_api_detach_ns_on_conn_args *detach_ns_args = calloc(1,
 			sizeof(struct spdk_nvmf_bcm_fc_poller_api_detach_ns_on_conn_args));
 
 	if (detach_ns_args) {
