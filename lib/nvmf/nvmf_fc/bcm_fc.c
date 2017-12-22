@@ -677,6 +677,14 @@ spdk_nvmf_bcm_fc_find_rport_from_sid(uint32_t s_id,
 	return rc;
 }
 
+inline uint32_t
+spdk_nvmf_bcm_fc_get_hwqp_id(struct spdk_nvmf_request *req)
+{
+	struct spdk_nvmf_bcm_fc_request *fc_req = nvmf_fc_get_fc_req(req);
+	assert(fc_req->hwqp);
+	return fc_req->hwqp->hwqp_id;
+}
+
 
 /* Transport API callbacks begin here */
 
