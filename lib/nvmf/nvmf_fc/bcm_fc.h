@@ -667,4 +667,6 @@ spdk_nvmf_bcm_fc_find_rport_from_sid(uint32_t s_id,
 				     struct spdk_nvmf_bcm_fc_nport *tgtport,
 				     struct spdk_nvmf_bcm_fc_remote_port_info **rport);
 
+uint32_t spdk_nvmf_bcm_fc_get_hwqp_id(struct spdk_nvmf_request *req);
+
 #endif
