@@ -692,7 +692,7 @@ nvmf_virtual_ctrlr_process_io_cleanup(struct spdk_nvmf_request *req)
 	switch (cmd->opc) {
 	case SPDK_NVME_OPC_READ:
 		if (bdev && req->iovcnt) {
-			spdk_bdev_read_fini(bdev, req->iov, req->iovcnt, req->iovctx);
+			spdk_bdev_read_fini(bdev, req->iov, req->iovcnt, req->bdev_io);
 		}
 		break;
 	case SPDK_NVME_OPC_WRITE:
