@@ -52,6 +52,9 @@
 #endif
 
 #define NVMF_BCM_FC_TRANSPORT_NAME       "bcm_nvmf_fc"
+// 5 byte string("nn-0x") + 8 byte node wwn + 6 byte string(":pn-0x")+ 8 byte port wwn
+#define NVMF_TGT_FC_TR_ADDR_LENGTH 256
+
 #define NVMF_FC_MAX_IO_QUEUES            16
 
 /*
