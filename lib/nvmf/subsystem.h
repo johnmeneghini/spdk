@@ -52,4 +52,8 @@ extern const struct spdk_nvmf_ctrlr_ops spdk_nvmf_discovery_ctrlr_ops;
 struct spdk_nvmf_host *spdk_nvmf_find_subsystem_host(struct spdk_nvmf_subsystem *subsystem,
 		const char *hostnqn);
 
+struct spdk_nvmf_listen_addr *
+spdk_nvmf_find_subsystem_listener(struct spdk_nvmf_subsystem *subsystem,
+				  struct spdk_nvmf_listen_addr *listen_addr);
+
 #endif /* SPDK_NVMF_SUBSYSTEM_H */

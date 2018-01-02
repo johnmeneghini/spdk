@@ -89,6 +89,7 @@ int
 spdk_nvmf_construct_subsystem(const char *name,
 			      const char *mode_str, int32_t lcore,
 			      int num_listen_addresses, struct rpc_listen_address *addresses,
+			      bool allow_any_listener,
 			      int num_hosts, struct spdk_host_conf *hosts, bool allow_any_host, const char *bdf,
 			      const char *sn, int num_devs, char *dev_list[], char *dev_nidt[], char *dev_nid[]);
 

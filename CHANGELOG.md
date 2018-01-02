@@ -64,6 +64,11 @@ This directive allows a Host with 8 io queues, and each io queue supports a dept
 
 Note: The Admin queue depth is programmed by the global `MaxAqDepth` Nvmf directive.  The default for this setting is still set to 32, and the Admin queue is not counted in the `MaxQueuesPerSession` calculation. 
 
+A new listener address directive is added. If AllowAnyListener is true, then listening address can connect to a subsystem.
+```
+ AllowAnyListener false
+```
+
 ## v17.03: Blobstore and userspace vhost-scsi target
 
 ### Blobstore and BlobFS

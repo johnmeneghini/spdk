@@ -137,12 +137,7 @@ struct spdk_nvmf_ctrlr_ops {
 };
 
 struct spdk_nvmf_subsystem_allowed_listener {
-	union {
-		struct spdk_nvmf_listen_addr *listen_addr;
-#ifdef SPDK_CONFIG_BCM_FC
-		struct spdk_nvmf_bcm_fc_nport *fc_nport;
-#endif
-	};
+	struct spdk_nvmf_listen_addr *listen_addr;
 	TAILQ_ENTRY(spdk_nvmf_subsystem_allowed_listener)	link;
 };
 
@@ -196,6 +191,7 @@ struct spdk_nvmf_subsystem {
 	struct spdk_nvmf_host                   host0;
 
 	TAILQ_HEAD(, spdk_nvmf_subsystem_allowed_listener)	allowed_listeners;
+	bool					allow_any_listener;
 
 	TAILQ_ENTRY(spdk_nvmf_subsystem)	entries;
 };
@@ -225,6 +221,7 @@ struct spdk_nvmf_tgt_opts {
 	uint16_t				oncs;
 	uint8_t                                 mn[SPDK_NVME_SPEC_MPDEL_NUMBER_SIZE];
 	bool                                    allow_any_host;
+	bool                                    allow_any_listener;
 };
 
 struct spdk_nvmf_subsystem *spdk_nvmf_create_subsystem(const char *nqn,
@@ -286,6 +283,27 @@ spdk_nvmf_subsystem_add_listener(struct spdk_nvmf_subsystem *subsystem,
 int
 spdk_nvmf_subsystem_remove_listener(struct spdk_nvmf_subsystem *subsystem,
 				    struct spdk_nvmf_listen_addr *listen_addr);
+
+/**
+ * Set whether a subsystem should allow any listener or only listeners in the allowed list.
+ *
+ * \param subsystem Subsystem to modify.
+ * \param allow_any_listener true to allow any listener to connect to this subsystem, or false to enforce
+ *                       the whitelist configured with spdk_nvmf_subsystem_add_listener().
+ */
+void
+spdk_nvmf_subsystem_set_allow_any_listener(struct spdk_nvmf_subsystem *subsystem,
+		bool allow_any_listener);
+
+/**
+ * Check whether a subsystem should allow any listener or only listeners in the allowed list.
+ *
+ * \param subsystem Subsystem to check.
+ * \return true if any listener is allowed to connect to this subsystem, or false if connecting listeners
+ *         must be in the whitelist configured with spdk_nvmf_subsystem_add_listener().
+ */
+bool
+spdk_nvmf_subsystem_get_allow_any_listener(const struct spdk_nvmf_subsystem *subsystem);
 
 bool
 spdk_nvmf_subsystem_listener_allowed(struct spdk_nvmf_subsystem *subsystem,
