@@ -1066,3 +1066,97 @@ int main(int argc, char **argv)
 
 	return num_failures;
 }
+
+bool
+spdk_nvmf_listen_addr_compare(struct spdk_nvmf_listen_addr *a, struct spdk_nvmf_listen_addr *b)
+{
+	if ((strcmp(a->trname, b->trname) == 0) &&
+	    (strcmp(a->traddr, b->traddr) == 0) &&
+	    (strcmp(a->trsvcid, b->trsvcid) == 0)) {
+		return true;
+	} else {
+		return false;
+	}
+}
+
+struct spdk_nvmf_listen_addr *
+spdk_nvmf_listen_addr_create(const char *trname, const char *traddr, const char *trsvcid)
+{
+	struct spdk_nvmf_listen_addr *listen_addr;
+
+	listen_addr = calloc(1, sizeof(*listen_addr));
+	if (!listen_addr) {
+		return NULL;
+	}
+
+	listen_addr->traddr = strdup(traddr);
+	if (!listen_addr->traddr) {
+		free(listen_addr);
+		return NULL;
+	}
+
+	listen_addr->trsvcid = strdup(trsvcid);
+	if (!listen_addr->trsvcid) {
+		free(listen_addr->traddr);
+		free(listen_addr);
+		return NULL;
+	}
+
+	listen_addr->trname = strdup(trname);
+	if (!listen_addr->trname) {
+		free(listen_addr->traddr);
+		free(listen_addr->trsvcid);
+		free(listen_addr);
+		return NULL;
+	}
+
+	return listen_addr;
+}
+
+struct spdk_nvmf_listen_addr *
+spdk_nvmf_find_subsystem_listener(struct spdk_nvmf_subsystem *subsystem,
+				  struct spdk_nvmf_listen_addr *listen_addr)
+{
+	if (!listen_addr) {
+		SPDK_ERRLOG("listen_addr is NULL\n");
+		return NULL;
+	}
+
+	if (spdk_nvmf_subsystem_listener_allowed(subsystem, listen_addr)) {
+		return listen_addr;
+	}
+
+	return NULL;
+}
+
+bool
+spdk_nvmf_subsystem_listener_allowed(struct spdk_nvmf_subsystem *subsystem,
+				     struct spdk_nvmf_listen_addr *listen_addr)
+{
+	struct spdk_nvmf_subsystem_allowed_listener *allowed_listener;
+
+	/* We expect some ports to exist. Subsystems are not created without
+	 * any listening addr.
+	 */
+	if (TAILQ_EMPTY(&subsystem->allowed_listeners)) {
+		return true;
+	}
+
+	TAILQ_FOREACH(allowed_listener, &subsystem->allowed_listeners, link) {
+		if (spdk_nvmf_listen_addr_compare(allowed_listener->listen_addr, listen_addr)) {
+
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void
+spdk_nvmf_listen_addr_cleanup(struct spdk_nvmf_listen_addr *addr)
+{
+	spdk_free(addr->trname);
+	spdk_free(addr->trsvcid);
+	spdk_free(addr->traddr);
+	spdk_free(addr);
+}

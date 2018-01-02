@@ -91,7 +91,8 @@ enum {
 	VERR_SUBNQN = 30,
 	VERR_HOSTNQN = 31,
 	VERR_SQSIZE = 32,
-	VERR_NO_RPORT = 33
+	VERR_NO_RPORT = 33,
+	VERR_SUBLISTENER = 34,
 };
 
 static char *validation_errors[] = {
@@ -128,7 +129,8 @@ static char *validation_errors[] = {
 	"Invalid subnqn or subsystem not found",
 	"Invalid hostnqn or subsystem doesn't allow host",
 	"SQ size = 0 or too big",
-	"No Remote Port"
+	"No Remote Port",
+	"Bad Subsystem Port",
 };
 
 /* Poller API structures (arguments and callback data */
@@ -920,6 +922,8 @@ nvmf_fc_ls_process_cass(uint32_t s_id,
 	uint8_t rc = FCNVME_RJT_RC_NONE;
 	uint8_t ec = FCNVME_RJT_EXP_NONE;
 	spdk_err_t err;
+	char traddr[NVMF_TGT_FC_TR_ADDR_LENGTH + 1];
+	struct spdk_nvmf_listen_addr *listen_addr, *listener;
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
 		      "LS_CASS: ls_rqst_len=%d, desc_list_len=%d, cmd_len=%d, sq_size=%d\n",
@@ -934,6 +938,12 @@ nvmf_fc_ls_process_cass(uint32_t s_id,
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
 		      "LS_CASS: Hostnqn: %s\n",
 		      rqst->assoc_cmd.hostnqn);
+
+	/* Construct the listen addr */
+	snprintf(traddr, NVMF_TGT_FC_TR_ADDR_LENGTH, "nn-0x%lx:pn-0x%lx",
+		 be64_to_cpu(&tgtport->fc_nodename.u.wwn), be64_to_cpu(&tgtport->fc_portname.u.wwn));
+
+	listen_addr = spdk_nvmf_listen_addr_create(NVMF_BCM_FC_TRANSPORT_NAME, traddr, "none");
 
 	if (ls_rqst->rqst_len < LS_CREATE_ASSOC_MIN_LEN) {
 		SPDK_ERRLOG("assoc_cmd req len = %d, should be at least %d\n",
@@ -981,6 +991,10 @@ nvmf_fc_ls_process_cass(uint32_t s_id,
 		errmsg_ind = VERR_SQSIZE;
 		rc = FCNVME_RJT_RC_INV_PARAM;
 		ec = FCNVME_RJT_EXP_SQ_SIZE;
+	} else if ((listener = spdk_nvmf_find_subsystem_listener(subsystem, listen_addr)) == NULL) {
+		errmsg_ind = VERR_SUBLISTENER;
+		rc = FCNVME_RJT_RC_UNAB;
+		ec = FCNVME_RJT_EXP_NONE;
 	} else {
 		/* new association w/ admin queue */
 		err = spdk_nvmf_bcm_fc_find_rport_from_sid(s_id, tgtport, &rport);
@@ -1044,6 +1058,7 @@ nvmf_fc_ls_process_cass(uint32_t s_id,
 		nvmf_fc_ls_add_conn_to_poller(assoc, ls_rqst,
 					      fc_conn, 0, true);
 	}
+	spdk_nvmf_listen_addr_cleanup(listen_addr);
 }
 
 static void

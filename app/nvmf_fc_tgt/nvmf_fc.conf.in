@@ -134,6 +134,10 @@
   # Per-Subsystem setting can be used to override global
   AllowAnyHost Yes 
 
+  # Global setting allows all listeners to connect to all subsystems
+  # Per-Subsystem setting can be used to override global
+  AllowAnyListener Yes 
+
 [Nvme]
   # NVMe Device Whitelist
   # Users may specify which NVMe devices to claim by their transport id.
@@ -193,6 +197,12 @@
 #     is used for the Subsytem.
 #   . When AllowAnyHost is false a valid Host NQN must be added to
 #     the Subsystem. Valid NQNs must contain no upper case letters.
+# - AllowAnyListener may be either true or false. If it is set, any listener can
+#   access the subsytem.
+#   . When AllowAnyListener is missing, the global AllowAnyListener setting
+#     is used for the Subsytem.
+#   . When AllowAnyListener is false a valid Listener Addr must be added to
+#     the Subsystem.
 #   Optionally, max_queue_depth and max_queue_num parameter can be
 #   defined on the Host directive line. The format of the Host 
 #   directive line is:  
@@ -223,6 +233,7 @@
   Mode Virtual
   SN SPDK00000000000002
   AllowAnyHost No
+  AllowAnyListener No
   Host nqn.2014-08.org.nvmexpress:nvmf:uuid:6a007efc-2f43-4123-9c41-9c48896855e1
   Host nqn.2016-06.io.spdk1:init 24 2 
   Host nqn.2016-06.io.spdk2:init 128 4
