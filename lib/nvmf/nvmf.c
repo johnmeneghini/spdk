@@ -101,6 +101,19 @@ spdk_nvmf_tgt_fini(void)
 	return 0;
 }
 
+/* Returns true if the listen addrs match */
+bool
+spdk_nvmf_listen_addr_compare(struct spdk_nvmf_listen_addr *a, struct spdk_nvmf_listen_addr *b)
+{
+	if ((strcmp(a->trname, b->trname) == 0) &&
+	    (strcmp(a->traddr, b->traddr) == 0) &&
+	    (strcmp(a->trsvcid, b->trsvcid) == 0)) {
+		return true;
+	} else {
+		return false;
+	}
+}
+
 struct spdk_nvmf_listen_addr *
 spdk_nvmf_listen_addr_create(const char *trname, enum spdk_nvmf_adrfam adrfam, const char *traddr,
 			     const char *trsvcid)

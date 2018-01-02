@@ -148,6 +148,9 @@
   # Global setting allows all hosts to connect to all subsystems
   # Per-Subsystem setting can be used to override global
   AllowAnyHost No
+  # Global setting allows all listeners to connect to all subsystems
+  # Per-Subsystem setting can be used to override global
+  AllowAnyListener No
 
 [Nvme]
   # NVMe Device Whitelist
@@ -219,6 +222,12 @@
 #     is used for the Subsytem.
 #   . When AllowAnyHost is false a valid Host NQN must be added to
 #     the Subsystem. Valid NQNs must contain no upper case letters.
+# - AllowAnyListener may be either true or false. If it is set, any listener can
+#   access the subsytem even thougth it is not added to it.
+#   . When AllowAnyListener is missing, the global AllowAnyListener setting
+#     is used for the Subsytem.
+#   . When AllowAnyListener is false a valid Listener address must be added to
+#     the Subsystem.
 #
 # Note: Valid host NQNs can be generated with the Linux 'nvme get-hostnqn' utility.
 #      To make the The Linux host NQN persistent, add to the /etc/nvme/hostnqn file.
@@ -237,6 +246,7 @@
   Listen RDMA 15.15.15.2:4420
   Host nqn.2016-06.io.spdk:init
   AllowAnyHost Yes
+  AllowAnyListener Yes
   NVMe 0000:00:00.0
 
 # Multiple subsystems are allowed.

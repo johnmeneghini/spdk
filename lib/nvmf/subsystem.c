@@ -391,65 +391,6 @@ spdk_nvmf_subsystem_host_allowed(struct spdk_nvmf_subsystem *subsystem, const ch
 }
 
 int
-spdk_nvmf_subsystem_remove_listener(struct spdk_nvmf_subsystem *subsystem,
-				    struct spdk_nvmf_listen_addr *listen_addr)
-{
-	struct spdk_nvmf_subsystem_allowed_listener	*allowed_listener, *allowed_listener_tmp;
-
-	TAILQ_FOREACH_SAFE(allowed_listener,
-			   &subsystem->allowed_listeners, link, allowed_listener_tmp) {
-		if (allowed_listener->listen_addr == listen_addr) {
-			TAILQ_REMOVE(&subsystem->allowed_listeners, allowed_listener, link);
-			free(allowed_listener);
-			g_nvmf_tgt.discovery_genctr++;
-			return 0;
-		}
-	}
-	return -1;
-}
-
-int
-spdk_nvmf_subsystem_add_listener(struct spdk_nvmf_subsystem *subsystem,
-				 struct spdk_nvmf_listen_addr *listen_addr)
-{
-	struct spdk_nvmf_subsystem_allowed_listener *allowed_listener;
-
-	allowed_listener = calloc(1, sizeof(*allowed_listener));
-	if (!allowed_listener) {
-		return -1;
-	}
-
-	allowed_listener->listen_addr = listen_addr;
-
-	TAILQ_INSERT_HEAD(&subsystem->allowed_listeners, allowed_listener, link);
-
-	g_nvmf_tgt.discovery_genctr++;
-	return 0;
-}
-
-/*
- * TODO: this is the whitelist and will be called during connection setup
- */
-bool
-spdk_nvmf_subsystem_listener_allowed(struct spdk_nvmf_subsystem *subsystem,
-				     struct spdk_nvmf_listen_addr *listen_addr)
-{
-	struct spdk_nvmf_subsystem_allowed_listener *allowed_listener;
-
-	if (TAILQ_EMPTY(&subsystem->allowed_listeners)) {
-		return true;
-	}
-
-	TAILQ_FOREACH(allowed_listener, &subsystem->allowed_listeners, link) {
-		if (allowed_listener->listen_addr == listen_addr) {
-			return true;
-		}
-	}
-
-	return false;
-}
-
-int
 spdk_nvmf_subsystem_add_host(struct spdk_nvmf_subsystem *subsystem, const char *host_nqn,
 			     uint16_t max_queue_depth, uint16_t max_connections_allowed)
 {
@@ -508,6 +449,96 @@ spdk_nvmf_subsystem_remove_host(struct spdk_nvmf_subsystem *subsystem, const cha
 			return;
 		}
 	}
+}
+
+struct spdk_nvmf_listen_addr *
+spdk_nvmf_find_subsystem_listener(struct spdk_nvmf_subsystem *subsystem,
+				  struct spdk_nvmf_listen_addr *listen_addr)
+{
+	if (!listen_addr) {
+		SPDK_ERRLOG("listen_addr is NULL\n");
+		return NULL;
+	}
+
+	if (spdk_nvmf_subsystem_listener_allowed(subsystem, listen_addr)) {
+		return listen_addr;
+	}
+
+	return NULL;
+}
+
+void
+spdk_nvmf_subsystem_set_allow_any_listener(struct spdk_nvmf_subsystem *subsystem,
+		bool allow_any_listener)
+{
+	subsystem->allow_any_listener = allow_any_listener;
+}
+
+bool
+spdk_nvmf_subsystem_get_allow_any_listener(const struct spdk_nvmf_subsystem *subsystem)
+{
+	return subsystem->allow_any_listener;
+}
+
+int
+spdk_nvmf_subsystem_remove_listener(struct spdk_nvmf_subsystem *subsystem,
+				    struct spdk_nvmf_listen_addr *listen_addr)
+{
+	struct spdk_nvmf_subsystem_allowed_listener	*allowed_listener, *allowed_listener_tmp;
+
+	TAILQ_FOREACH_SAFE(allowed_listener,
+			   &subsystem->allowed_listeners, link, allowed_listener_tmp) {
+		if (allowed_listener->listen_addr == listen_addr) {
+			TAILQ_REMOVE(&subsystem->allowed_listeners, allowed_listener, link);
+			free(allowed_listener);
+			g_nvmf_tgt.discovery_genctr++;
+			return 0;
+		}
+	}
+	return -1;
+}
+
+int
+spdk_nvmf_subsystem_add_listener(struct spdk_nvmf_subsystem *subsystem,
+				 struct spdk_nvmf_listen_addr *listen_addr)
+{
+	struct spdk_nvmf_subsystem_allowed_listener *allowed_listener;
+
+	allowed_listener = calloc(1, sizeof(*allowed_listener));
+	if (!allowed_listener) {
+		return -1;
+	}
+
+	allowed_listener->listen_addr = listen_addr;
+
+	TAILQ_INSERT_HEAD(&subsystem->allowed_listeners, allowed_listener, link);
+
+	g_nvmf_tgt.discovery_genctr++;
+	return 0;
+}
+
+/*
+ * Returns true if the listener is allowed on the subsystem.
+ */
+bool
+spdk_nvmf_subsystem_listener_allowed(struct spdk_nvmf_subsystem *subsystem,
+				     struct spdk_nvmf_listen_addr *listen_addr)
+{
+	struct spdk_nvmf_subsystem_allowed_listener *allowed_listener;
+
+	if (spdk_nvmf_subsystem_get_allow_any_listener(subsystem)) {
+		SPDK_TRACELOG(SPDK_TRACE_NVMF, "AllowAnyListener: Subsystem %s\n", subsystem->subnqn);
+		return true;
+	} else {
+		TAILQ_FOREACH(allowed_listener, &subsystem->allowed_listeners, link) {
+			if (spdk_nvmf_listen_addr_compare(allowed_listener->listen_addr, listen_addr)) {
+
+				return true;
+			}
+		}
+	}
+
+	return false;
 }
 
 int
