@@ -100,6 +100,29 @@ nvmf_fc_tgt_get_next_lcore(uint32_t prev_core)
 }
 
 /*
+ * Copy over reqtag pool information from previous wq queues.
+ */
+static void
+nvmf_fc_tgt_hwqp_queues_reqtag_copy(struct spdk_nvmf_bcm_fc_hw_queues *queues_prev,
+				    struct spdk_nvmf_bcm_fc_hw_queues *queues_curr)
+{
+	struct fc_wrkq *wq_prev, *wq_curr;
+	int i;
+
+	wq_prev = &queues_prev->wq;
+	wq_curr = &queues_curr->wq;
+
+	wq_curr->reqtag_ring = wq_prev->reqtag_ring;
+	wq_curr->reqtag_objs = wq_prev->reqtag_objs;
+
+	wq_curr->wqec_count = 0;
+	for (i = 0; i < MAX_REQTAG_POOL_SIZE; i++) {
+		DEV_VERIFY(wq_prev->p_reqtags[i] == NULL);
+		wq_curr->p_reqtags[i] = NULL;
+	}
+}
+
+/*
  * Re-initialize the FC-Port after an offline event.
  * Only the queue information needs to be populated. XRI, lcore and other hwqp information remains
  * unchanged after the first initialization.
@@ -119,12 +142,16 @@ nvmf_fc_tgt_hw_port_reinit_validate(struct spdk_nvmf_bcm_fc_port *fc_port,
 		goto err;
 	}
 
+	/* Copy reqtag information from previous wq queues before re-init */
+	nvmf_fc_tgt_hwqp_queues_reqtag_copy(&fc_port->ls_queue.queues, &args->ls_queue);
+
 	/* Initialize the LS queue */
 	fc_port->ls_queue.queues = args->ls_queue;
 	spdk_nvmf_bcm_fc_init_poller_queues(&fc_port->ls_queue);
 
 	/* Initialize the IO queues */
 	for (i = 0; i < NVMF_FC_MAX_IO_QUEUES; i++) {
+		nvmf_fc_tgt_hwqp_queues_reqtag_copy(&fc_port->io_queues[i].queues, &args->io_queues[i]);
 		fc_port->io_queues[i].queues = args->io_queues[i];
 		spdk_nvmf_bcm_fc_init_poller_queues(&fc_port->io_queues[i]);
 	}
