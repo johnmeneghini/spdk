@@ -489,7 +489,6 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 	uint64_t io_bytes;
 	uint64_t offset;
 	uint64_t llen;
-	int error;
 	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
 	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
 	struct nvme_read_cdw12 *cdw12 = (struct nvme_read_cdw12 *)&cmd->cdw12;
@@ -516,10 +515,6 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 	if (cmd->opc == SPDK_NVME_OPC_READ) {
 		/* modified to for SGL iovs */
 		if (req->data) {
-			req->iovcnt = 1;
-			req->iov[0].iov_base = req->data;
-			req->iov[0].iov_len  = req->length;
-
 			if ((req->bdev_io = spdk_bdev_read(bdev, req->io_rsrc_pool, ch, req->data, offset, req->length,
 							   nvmf_virtual_ctrlr_complete_cmd, req)) == NULL) {
 				response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
@@ -527,46 +522,37 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 			}
 		} else {
 			/* acquire IOV buffers from backend */
-			error = spdk_bdev_read_init(bdev, req->length, req->iov, &req->iovcnt);
-			if (error < 0) {
-				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING;
-			} else if (error == 0) {
-				if ((req->bdev_io = spdk_bdev_readv(bdev, req->io_rsrc_pool, ch, req->iov, req->iovcnt, offset,
-								    req->length,
-								    nvmf_virtual_ctrlr_complete_cmd, req)) == NULL) {
+			req->bdev_io = spdk_bdev_read_init(bdev, ch, req->io_rsrc_pool, nvmf_virtual_ctrlr_complete_cmd,
+							   req, req->iov, &req->iovcnt, req->length, offset);
+			if (req->bdev_io) {
+				if (spdk_bdev_readv(req->bdev_io) < 0) {
 					response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
 					return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 				}
 			} else {
-				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_ERROR;
+				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING;
 			}
 		}
 	} else { /* SPDK_NVME_OPC_WRITE */
 		if (req->data) {
-			spdk_bdev_write_init(bdev, req->length, req->iov, &req->iovcnt, &req->iovctx);
-			bcopy(req->data, req->iov[0].iov_base, req->length); // TODO: bcopy each elements
-			if ((req->bdev_io = spdk_bdev_writev(bdev, req->io_rsrc_pool, ch, req->iov, req->iovcnt, offset,
-							     req->length,
-							     nvmf_virtual_ctrlr_complete_cmd, req)) == NULL) {
+			if ((req->bdev_io = spdk_bdev_write(bdev, req->io_rsrc_pool, ch, req->data, offset, req->length,
+							    nvmf_virtual_ctrlr_complete_cmd, req)) == NULL) {
 				response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 			}
 		} else if (req->iovcnt) {
-			if ((req->bdev_io = spdk_bdev_writev(bdev, req->io_rsrc_pool, ch, req->iov, req->iovcnt, offset,
-							     req->length,
-							     nvmf_virtual_ctrlr_complete_cmd, req)) == NULL) {
+			if (spdk_bdev_writev(req->bdev_io) < 0) {
 				response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 			}
 		} else {
 			/* Acquire IOV buffers from backend */
-			error = spdk_bdev_write_init(bdev, req->length, req->iov, &req->iovcnt, &req->iovctx);
-			if (error < 0) {
-				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING;
-			} else if (error == 0) {
+			req->bdev_io = spdk_bdev_write_init(bdev, ch, req->io_rsrc_pool, nvmf_virtual_ctrlr_complete_cmd,
+							    req, req->iov, &req->iovcnt, req->length, offset);
+			if (req->bdev_io) {
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_READY;
 			} else {
-				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_ERROR;
+				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING;
 			}
 		}
 	}
@@ -715,40 +701,26 @@ nvmf_virtual_ctrlr_process_io_abort(struct spdk_nvmf_request *req)
 static void
 nvmf_virtual_ctrlr_process_io_cleanup(struct spdk_nvmf_request *req)
 {
-	uint32_t nsid;
-	struct spdk_bdev *bdev;
-	struct spdk_nvmf_subsystem *subsystem = req->conn->sess->subsys;
 	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
-
-	nsid = cmd->nsid;
-
-	bdev = subsystem->dev.virt.ns_list[nsid - 1];
 
 	/* Cleanup any buffers allocated by bdev. */
 	switch (cmd->opc) {
 	case SPDK_NVME_OPC_READ:
-		if (bdev && req->iovcnt) {
-			spdk_bdev_read_fini(bdev, req->iov, req->iovcnt, req->bdev_io);
+		if (req->iovcnt) {
+			spdk_bdev_read_fini(req->bdev_io);
 		}
 		break;
 	case SPDK_NVME_OPC_WRITE:
 		if (req->iovcnt) {
-			if (!bdev) {
-				spdk_iovec_put(req->iovctx);
-			} else {
-				spdk_bdev_write_fini(bdev, req->iov, req->iovcnt, req->iovctx);
-			}
+			spdk_bdev_write_fini(req->bdev_io);
 		}
 	default:
 		break; /* Do nothing. */
 	}
 
-	if (req->bdev_io) {
-		spdk_bdev_free_io(req->bdev_io);
-	}
+	spdk_bdev_free_io(req->bdev_io);
 
 	req->iovcnt = 0;
-	req->iovctx = NULL;
 	req->bdev_io = NULL;
 	return;
 }

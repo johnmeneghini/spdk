@@ -349,21 +349,12 @@ struct spdk_bdev_io *spdk_bdev_read(struct spdk_bdev *bdev, struct spdk_mempool 
 				    struct spdk_io_channel *ch,
 				    void *buf, uint64_t offset, uint64_t nbytes,
 				    spdk_bdev_io_completion_cb cb, void *cb_arg);
-struct spdk_bdev_io *
-spdk_bdev_readv(struct spdk_bdev *bdev, struct spdk_mempool *bdev_io_pool,
-		struct spdk_io_channel *ch,
-		struct iovec *iov, int iovcnt,
-		uint64_t offset, uint64_t nbytes,
-		spdk_bdev_io_completion_cb cb, void *cb_arg);
+
 struct spdk_bdev_io *spdk_bdev_write(struct spdk_bdev *bdev, struct spdk_mempool *bdev_io_pool,
 				     struct spdk_io_channel *ch,
 				     void *buf, uint64_t offset, uint64_t nbytes,
 				     spdk_bdev_io_completion_cb cb, void *cb_arg);
-struct spdk_bdev_io *spdk_bdev_writev(struct spdk_bdev *bdev, struct spdk_mempool *bdev_io_pool,
-				      struct spdk_io_channel *ch,
-				      struct iovec *iov, int iovcnt,
-				      uint64_t offset, uint64_t len,
-				      spdk_bdev_io_completion_cb cb, void *cb_arg);
+
 struct spdk_bdev_io *spdk_bdev_unmap(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 				     struct spdk_scsi_unmap_bdesc *unmap_d,
 				     uint16_t bdesc_count,
@@ -379,14 +370,30 @@ struct spdk_io_channel *spdk_bdev_get_io_channel(struct spdk_bdev *bdev, uint32_
 void spdk_bdev_io_set_scsi_error(struct spdk_bdev_io *bdev_io, enum spdk_scsi_status sc,
 				 enum spdk_scsi_sense sk, uint8_t asc, uint8_t ascq);
 
-int spdk_bdev_read_init(struct spdk_bdev *bdev, int32_t length, struct iovec *iov,
-			int32_t *iovcnt);
-int spdk_bdev_read_fini(struct spdk_bdev *bdev, struct iovec *iov, int32_t iovcnt,
-			void *iovctx);
-int spdk_bdev_write_init(struct spdk_bdev *bdev, int32_t length, struct iovec *iov,
-			 int32_t *iovcnt, void **iovctx);
-int spdk_bdev_write_fini(struct spdk_bdev *bdev, struct iovec *iov, int32_t iovcnt,
-			 void *iovctx);
+struct spdk_bdev_io *spdk_bdev_read_init(struct spdk_bdev *bdev,
+		struct spdk_io_channel *ch,
+		struct spdk_mempool *bdev_io_pool,
+		spdk_bdev_io_completion_cb io_complete_cb,
+		void *io_complete_cb_arg,
+		struct iovec *iov,
+		int32_t *iovcnt,
+		int32_t length,
+		uint64_t offset);
+int spdk_bdev_readv(struct spdk_bdev_io *bdev_io);
+int spdk_bdev_read_fini(struct spdk_bdev_io *bdev_io);
+
+struct spdk_bdev_io   *spdk_bdev_write_init(struct spdk_bdev *bdev,
+		struct spdk_io_channel *ch,
+		struct spdk_mempool *bdev_io_pool,
+		spdk_bdev_io_completion_cb io_complete_cb,
+		void *io_complete_cb_arg,
+		struct iovec *iov,
+		int32_t *iovcnt,
+		int32_t length,
+		uint64_t offset);
+int spdk_bdev_writev(struct spdk_bdev_io *bdev_io);
+int spdk_bdev_write_fini(struct spdk_bdev_io *bdev_io);
+
 void spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io, void *abt_ctx);
 
 int spdk_bdev_module_get_max_ctx_size(void);

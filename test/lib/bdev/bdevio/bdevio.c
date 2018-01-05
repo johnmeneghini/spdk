@@ -186,8 +186,13 @@ __blockdev_write(void *arg1, void *arg2)
 	struct spdk_bdev_io *bdev_io;
 
 	if (req->iovcnt) {
-		bdev_io = spdk_bdev_writev(target->bdev, NULL, target->ch, req->iov, req->iovcnt, req->offset,
-					   req->data_len, quick_test_complete, NULL);
+		bdev_io = spdk_bdev_write_init(target->bdev, target->ch, NULL, quick_test_complete, NULL, req->iov,
+					       &req->iovcnt, req->data_len, req->offset);
+		if (bdev_io) {
+			if (spdk_bdev_writev(bdev_io) < 0) {
+				bdev_io = NULL;
+			}
+		}
 	} else {
 		bdev_io = spdk_bdev_write(target->bdev, NULL, target->ch, req->buf, req->offset,
 					  req->data_len, quick_test_complete, NULL);
@@ -248,8 +253,13 @@ __blockdev_read(void *arg1, void *arg2)
 	struct spdk_bdev_io *bdev_io;
 
 	if (req->iovcnt) {
-		bdev_io = spdk_bdev_readv(target->bdev, NULL, target->ch, req->iov, req->iovcnt, req->offset,
-					  req->data_len, quick_test_complete, NULL);
+		bdev_io = spdk_bdev_read_init(target->bdev, target->ch, NULL, quick_test_complete, NULL, req->iov,
+					      &req->iovcnt, req->data_len, req->offset);
+		if (bdev_io) {
+			if (spdk_bdev_readv(bdev_io) < 0) {
+				bdev_io = NULL;
+			}
+		}
 	} else {
 		bdev_io = spdk_bdev_read(target->bdev, NULL, target->ch, req->buf, req->offset,
 					 req->data_len, quick_test_complete, NULL);

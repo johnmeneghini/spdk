@@ -475,15 +475,6 @@ request_transfer_out(struct spdk_nvmf_request *req)
 	SPDK_TRACELOG(SPDK_TRACE_RDMA, "RDMA RECV POSTED. Recv: %p Connection: %p\n", rdma_req->recv,
 		      rdma_conn);
 
-#ifdef NETAPP
-	/* ONTAP-HACK: to get RDMA working with backend supplied buffers. */
-	if (req->conn->type == CONN_TYPE_IOQ) {
-		if (req->iovcnt) {
-			bcopy(req->iov[0].iov_base, req->data, req->length);
-		}
-	}
-#endif
-
 	rc = ibv_post_recv(rdma_conn->cm_id->qp, &rdma_req->recv->wr, &bad_recv_wr);
 	if (rc) {
 		SPDK_ERRLOG("Unable to re-post rx descriptor\n");

@@ -134,16 +134,16 @@ struct spdk_bdev_fn_table {
 	struct spdk_io_channel *(*get_io_channel)(void *ctx, uint32_t priority);
 
 	/** API to acquire/init vector of I/O Buffers for read */
-	int (*init_read)(int32_t length, struct iovec *iov, int32_t *iovcnt);
+	int (*init_read)(int32_t length, struct iovec *iov, int32_t *iovcnt, struct spdk_bdev_io *bdev_io);
 
 	/** API to release vector of I/O Buffers  acquired for read */
-	int (*fini_read)(struct iovec *iov, int32_t iovcnt, void *ctx);
+	int (*fini_read)(struct spdk_bdev_io *bdev_io);
 
 	/** API to acquire vector of I/O Buffers for write */
-	int (*init_write)(int32_t length, struct iovec *iov, int32_t *iovcnt, void **iovctx);
+	int (*init_write)(int32_t length, struct iovec *iov, int32_t *iovcnt, struct spdk_bdev_io *bdev_io);
 
 	/** API to release vector of I/O Buffers  acquired for write */
-	int (*fini_write)(struct iovec *iov, int32_t iovcnt, void *ctx);
+	int (*fini_write)(struct spdk_bdev_io *bdev_io);
 
 	/**
 	 * Output driver-specific configuration to a JSON stream. Optional - may be NULL.
@@ -160,7 +160,6 @@ struct spdk_bdev_fn_table {
 
 void spdk_bdev_register(struct spdk_bdev *bdev);
 void spdk_bdev_io_get_rbuf(struct spdk_bdev_io *bdev_io, spdk_bdev_io_get_rbuf_cb cb);
-struct spdk_bdev_io *spdk_bdev_get_io(struct spdk_mempool *bdev_io_pool);
 struct spdk_bdev_io *spdk_bdev_get_child_io(struct spdk_bdev_io *parent,
 		struct spdk_bdev *bdev,
 		spdk_bdev_io_completion_cb cb,

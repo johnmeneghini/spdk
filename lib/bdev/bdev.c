@@ -325,7 +325,8 @@ spdk_bdev_finish(void)
 	return (rc != 0);
 }
 
-struct spdk_bdev_io *spdk_bdev_get_io(struct spdk_mempool *pool)
+static struct spdk_bdev_io *
+spdk_bdev_get_io(struct spdk_mempool *pool)
 {
 	struct spdk_bdev_io *bdev_io;
 
@@ -343,6 +344,8 @@ struct spdk_bdev_io *spdk_bdev_get_io(struct spdk_mempool *pool)
 		spdk_abort();
 	}
 	memset(bdev_io, 0, sizeof(*bdev_io));
+
+	bdev_io->bdev_io_pool = pool;
 
 	return bdev_io;
 }
@@ -590,44 +593,14 @@ spdk_bdev_read(struct spdk_bdev *bdev, struct spdk_mempool *bdev_io_pool,
 	return bdev_io;
 }
 
-struct spdk_bdev_io *
-spdk_bdev_readv(struct spdk_bdev *bdev, struct spdk_mempool *bdev_io_pool,
-		struct spdk_io_channel *ch,
-		struct iovec *iov, int iovcnt,
-		uint64_t offset, uint64_t nbytes,
-		spdk_bdev_io_completion_cb cb, void *cb_arg)
+int
+spdk_bdev_readv(struct spdk_bdev_io *bdev_io)
 {
-	struct spdk_bdev_io *bdev_io;
 	int rc;
 
-	assert(bdev->status != SPDK_BDEV_STATUS_UNCLAIMED);
-	if (spdk_bdev_io_valid(bdev, offset, nbytes) != 0) {
-		return NULL;
-	}
-
-	bdev_io = spdk_bdev_get_io(bdev_io_pool);
-	if (!bdev_io) {
-		SPDK_ERRLOG("spdk_bdev_io memory allocation failed duing read\n");
-		return NULL;
-	}
-
-	bdev_io->ch = ch;
-	bdev_io->type = SPDK_BDEV_IO_TYPE_READ;
-	bdev_io->u.read.iovs = iov;
-	bdev_io->u.read.iovcnt = iovcnt;
-	bdev_io->u.read.len = nbytes;
-	bdev_io->u.read.offset = offset;
-	bdev_io->u.read.put_rbuf = false;
-	bdev_io->bdev_io_pool = bdev_io_pool;
-	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb);
-
 	rc = spdk_bdev_io_submit(bdev_io);
-	if (rc < 0) {
-		spdk_bdev_put_io(bdev_io);
-		return NULL;
-	}
 
-	return bdev_io;
+	return rc;
 }
 
 struct spdk_bdev_io *
@@ -670,43 +643,14 @@ spdk_bdev_write(struct spdk_bdev *bdev, struct spdk_mempool *bdev_io_pool,
 	return bdev_io;
 }
 
-struct spdk_bdev_io *
-spdk_bdev_writev(struct spdk_bdev *bdev, struct spdk_mempool *bdev_io_pool,
-		 struct spdk_io_channel *ch,
-		 struct iovec *iov, int iovcnt,
-		 uint64_t offset, uint64_t len,
-		 spdk_bdev_io_completion_cb cb, void *cb_arg)
+int
+spdk_bdev_writev(struct spdk_bdev_io *bdev_io)
 {
-	struct spdk_bdev_io *bdev_io;
 	int rc;
 
-	assert(bdev->status != SPDK_BDEV_STATUS_UNCLAIMED);
-	if (spdk_bdev_io_valid(bdev, offset, len) != 0) {
-		return NULL;
-	}
-
-	bdev_io = spdk_bdev_get_io(bdev_io_pool);
-	if (!bdev_io) {
-		SPDK_ERRLOG("bdev_io memory allocation failed duing writev\n");
-		return NULL;
-	}
-
-	bdev_io->ch = ch;
-	bdev_io->type = SPDK_BDEV_IO_TYPE_WRITE;
-	bdev_io->u.write.iovs = iov;
-	bdev_io->u.write.iovcnt = iovcnt;
-	bdev_io->u.write.len = len;
-	bdev_io->u.write.offset = offset;
-	bdev_io->bdev_io_pool = bdev_io_pool;
-	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb);
-
 	rc = spdk_bdev_io_submit(bdev_io);
-	if (rc < 0) {
-		spdk_bdev_put_io(bdev_io);
-		return NULL;
-	}
 
-	return bdev_io;
+	return rc;
 }
 
 struct spdk_bdev_io *
@@ -1126,14 +1070,37 @@ spdk_bdev_put_buff(struct iovec *iov, int32_t iovcnt)
 	return 0;
 }
 
-int
-spdk_bdev_read_init(struct spdk_bdev *bdev, int32_t length, struct iovec *iov,
-		    int32_t *iovcnt)
+struct spdk_bdev_io *
+spdk_bdev_read_init(struct spdk_bdev *bdev,
+		    struct spdk_io_channel *ch,
+		    struct spdk_mempool *bdev_io_pool,
+		    spdk_bdev_io_completion_cb cb,
+		    void *cb_arg,
+		    struct iovec *iov,
+		    int32_t *iovcnt,
+		    int32_t length,
+		    uint64_t offset)
 {
 	int rc = 0;
+	struct spdk_bdev_io *bdev_io;
+
+	assert(bdev->status != SPDK_BDEV_STATUS_UNCLAIMED);
+	if (spdk_bdev_io_valid(bdev, offset, length) != 0) {
+		return NULL;
+	}
+
+	bdev_io = spdk_bdev_get_io(bdev_io_pool);
+
+	if (!bdev_io) {
+		SPDK_ERRLOG("spdk_bdev_io memory allocation failed during readv\n");
+		return NULL;
+	}
+
+	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb);
+
 
 	if (bdev->fn_table->init_read) {
-		rc = bdev->fn_table->init_read(length, iov, iovcnt);
+		rc = bdev->fn_table->init_read(length, iov, iovcnt, bdev_io);
 	} else {
 		rc = spdk_bdev_get_buff(iov, iovcnt, length);
 	}
@@ -1141,28 +1108,62 @@ spdk_bdev_read_init(struct spdk_bdev *bdev, int32_t length, struct iovec *iov,
 	if (rc) {
 		/* In case of failure reset iovcnt */
 		*iovcnt = 0;
-	}
-	return rc;
-}
-
-int
-spdk_bdev_read_fini(struct spdk_bdev *bdev, struct iovec *iov, int32_t iovcnt, void *iovctx)
-{
-	if (bdev->fn_table->fini_read) {
-		return bdev->fn_table->fini_read(iov, iovcnt, iovctx);
+		spdk_bdev_put_io(bdev_io);
+		bdev_io = NULL;
 	} else {
-		return spdk_bdev_put_buff(iov, iovcnt);
+		bdev_io->ch = ch;
+		bdev_io->type = SPDK_BDEV_IO_TYPE_READ;
+		bdev_io->u.read.iovs = iov;
+		bdev_io->u.read.iovcnt = *iovcnt;
+		bdev_io->u.read.len = length;
+		bdev_io->u.read.offset = offset;
+		bdev_io->u.read.put_rbuf = false;
 	}
+
+	return bdev_io;
 }
 
 int
-spdk_bdev_write_init(struct spdk_bdev *bdev, int32_t length, struct iovec *iov, int32_t *iovcnt,
-		     void **iovctx)
+spdk_bdev_read_fini(struct spdk_bdev_io *bdev_io)
+{
+	struct spdk_bdev *bdev = bdev_io->bdev;
+	if (bdev->fn_table->fini_read) {
+		return bdev->fn_table->fini_read(bdev_io);
+	} else {
+		return spdk_bdev_put_buff(bdev_io->u.read.iovs, bdev_io->u.read.iovcnt);
+	}
+}
+
+struct spdk_bdev_io *
+spdk_bdev_write_init(struct spdk_bdev *bdev,
+		     struct spdk_io_channel *ch,
+		     struct spdk_mempool *bdev_io_pool,
+		     spdk_bdev_io_completion_cb cb,
+		     void *cb_arg,
+		     struct iovec *iov,
+		     int32_t *iovcnt,
+		     int32_t length,
+		     uint64_t offset)
 {
 	int rc = 0;
+	struct spdk_bdev_io *bdev_io;
+
+	assert(bdev->status != SPDK_BDEV_STATUS_UNCLAIMED);
+	if (spdk_bdev_io_valid(bdev, offset, length) != 0) {
+		return NULL;
+	}
+
+	bdev_io = spdk_bdev_get_io(bdev_io_pool);
+
+	if (!bdev_io) {
+		SPDK_ERRLOG("bdev_io memory allocation failed during writev\n");
+		return NULL;
+	}
+
+	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb);
 
 	if (bdev->fn_table->init_write) {
-		rc = bdev->fn_table->init_write(length, iov, iovcnt, iovctx);
+		rc = bdev->fn_table->init_write(length, iov, iovcnt, bdev_io);
 	} else {
 		rc = spdk_bdev_get_buff(iov, iovcnt, length);
 	}
@@ -1170,17 +1171,28 @@ spdk_bdev_write_init(struct spdk_bdev *bdev, int32_t length, struct iovec *iov, 
 	if (rc) {
 		/* In case of failure reset iovcnt */
 		*iovcnt = 0;
+		spdk_bdev_put_io(bdev_io);
+		bdev_io = NULL;
+	} else {
+		bdev_io->ch = ch;
+		bdev_io->type = SPDK_BDEV_IO_TYPE_WRITE;
+		bdev_io->u.write.iovs = iov;
+		bdev_io->u.write.iovcnt = *iovcnt;
+		bdev_io->u.write.len = length;
+		bdev_io->u.write.offset = offset;
 	}
-	return rc;
+
+	return bdev_io;
 }
 
 int
-spdk_bdev_write_fini(struct spdk_bdev *bdev, struct iovec *iov, int32_t iovcnt, void *iovctx)
+spdk_bdev_write_fini(struct spdk_bdev_io *bdev_io)
 {
+	struct spdk_bdev *bdev = bdev_io->bdev;
 	if (bdev->fn_table->fini_write) {
-		return bdev->fn_table->fini_write(iov, iovcnt, iovctx);
+		return bdev->fn_table->fini_write(bdev_io);
 	} else {
-		return spdk_bdev_put_buff(iov, iovcnt);
+		return spdk_bdev_put_buff(bdev_io->u.write.iovs, bdev_io->u.write.iovcnt);
 	}
 }
 
