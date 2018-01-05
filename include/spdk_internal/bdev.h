@@ -144,16 +144,16 @@ struct spdk_bdev_fn_table {
 	struct spdk_io_channel *(*get_io_channel)(void *ctx);
 
 	/** API to acquire/init vector of I/O Buffers for read */
-	int (*init_read)(int32_t length, struct iovec *iov, int32_t *iovcnt);
+	int (*init_read)(int32_t length, struct iovec *iov, int32_t *iovcnt, struct spdk_bdev_io *bdev_io);
 
 	/** API to release vector of I/O Buffers  acquired for read */
-	int (*fini_read)(struct iovec *iov, int32_t iovcnt, void *ctx);
+	int (*fini_read)(struct spdk_bdev_io *bdev_io);
 
 	/** API to acquire vector of I/O Buffers for write */
-	int (*init_write)(int32_t length, struct iovec *iov, int32_t *iovcnt, void **iovctx);
+	int (*init_write)(int32_t length, struct iovec *iov, int32_t *iovcnt, struct spdk_bdev_io *bdev_io);
 
 	/** API to release vector of I/O Buffers  acquired for write */
-	int (*fini_write)(struct iovec *iov, int32_t iovcnt, void *ctx);
+	int (*fini_write)(struct spdk_bdev_io *bdev_io);
 
 	/**
 	 * Output driver-specific configuration to a JSON stream. Optional - may be NULL.
@@ -428,7 +428,6 @@ void spdk_bdev_poller_start(struct spdk_bdev_poller **ppoller,
 void spdk_bdev_poller_stop(struct spdk_bdev_poller **ppoller);
 
 void spdk_bdev_io_get_buf(struct spdk_bdev_io *bdev_io, spdk_bdev_io_get_buf_cb cb);
-struct spdk_bdev_io *spdk_bdev_get_io(struct spdk_mempool *bdev_io_pool);
 void spdk_bdev_io_resubmit(struct spdk_bdev_io *bdev_io, struct spdk_bdev_desc *new_bdev_desc);
 void spdk_bdev_io_complete(struct spdk_bdev_io *bdev_io,
 			   enum spdk_bdev_io_status status);

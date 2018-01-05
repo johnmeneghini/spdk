@@ -53,7 +53,7 @@ struct spdk_vhost_blk_task {
 	uint16_t req_idx;
 
 	uint32_t length;
-	uint16_t iovcnt;
+	uint32_t iovcnt;
 	struct iovec iovs[SPDK_VHOST_IOVS_MAX];
 };
 
@@ -120,7 +120,7 @@ invalid_blk_request(struct spdk_vhost_blk_task *task, uint8_t status)
  */
 static int
 blk_iovs_setup(struct spdk_vhost_dev *vdev, struct rte_vhost_vring *vq, uint16_t req_idx,
-	       struct iovec *iovs, uint16_t *iovs_cnt, uint32_t *length)
+	       struct iovec *iovs, uint32_t *iovs_cnt, uint32_t *length)
 {
 	struct vring_desc *desc = spdk_vhost_vq_get_desc(vq, req_idx);
 	uint16_t out_cnt = 0, cnt = 0;
@@ -194,6 +194,7 @@ process_blk_request(struct spdk_vhost_blk_task *task, struct spdk_vhost_blk_dev 
 {
 	struct rte_vhost_vring *vq = &bvdev->vdev.virtqueue[0];
 	const struct virtio_blk_outhdr *req;
+	struct spdk_bdev_io *bdev_io;
 	struct iovec *iov;
 	uint32_t type;
 	int rc;
@@ -250,13 +251,23 @@ process_blk_request(struct spdk_vhost_blk_task *task, struct spdk_vhost_blk_dev 
 		}
 
 		if (type == VIRTIO_BLK_T_IN) {
-			rc = spdk_bdev_readv(bvdev->bdev_desc, NULL, bvdev->bdev_io_channel,
-					     &task->iovs[1], task->iovcnt, req->sector * 512,
-					     task->length, blk_request_complete_cb, task);
+			bdev_io = spdk_bdev_read_init(bvdev->bdev_desc, bvdev->bdev_io_channel, NULL,
+						      blk_request_complete_cb, task,
+						      &task->iovs[1], &task->iovcnt, req->sector * 512, task->length);
+			if (bdev_io) {
+				rc = spdk_bdev_readv(bdev_io);
+			} else {
+				rc = -1;
+			}
 		} else if (!bvdev->readonly) {
-			rc = spdk_bdev_writev(bvdev->bdev_desc, NULL, bvdev->bdev_io_channel,
-					      &task->iovs[1], task->iovcnt, req->sector * 512,
-					      task->length, blk_request_complete_cb, task);
+			bdev_io = spdk_bdev_write_init(bvdev->bdev_desc, bvdev->bdev_io_channel, NULL,
+						       blk_request_complete_cb, task,
+						       &task->iovs[1], &task->iovcnt, req->sector * 512, task->length);
+			if (bdev_io) {
+				rc = spdk_bdev_writev(bdev_io);
+			} else {
+				rc = -1;
+			}
 		} else {
 			SPDK_TRACELOG(SPDK_TRACE_VHOST_BLK, "Device is in read-only mode!\n");
 			rc = -1;
@@ -320,8 +331,8 @@ no_bdev_vdev_worker(void *arg)
 	struct spdk_vhost_blk_dev *bvdev = arg;
 	struct rte_vhost_vring *vq = &bvdev->vdev.virtqueue[0];
 	struct iovec iovs[SPDK_VHOST_IOVS_MAX];
-	uint32_t length;
-	uint16_t iovcnt, req_idx;
+	uint32_t length, iovcnt;
+	uint16_t req_idx;
 
 	if (spdk_vhost_vq_avail_ring_get(vq, &req_idx, 1) != 1) {
 		return;

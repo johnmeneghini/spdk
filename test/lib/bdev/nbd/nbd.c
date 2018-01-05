@@ -185,11 +185,11 @@ nbd_submit_bdev_io(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 	switch (io->type) {
 	case SPDK_BDEV_IO_TYPE_READ:
 		rc = spdk_bdev_read(desc, NULL, ch, io->payload, from_be64(&io->req.from),
-				    io->payload_size, nbd_io_done, io);
+				    io->payload_size, nbd_io_done, io, NULL);
 		break;
 	case SPDK_BDEV_IO_TYPE_WRITE:
 		rc = spdk_bdev_write(desc, NULL, ch, io->payload, from_be64(&io->req.from),
-				     io->payload_size, nbd_io_done, io);
+				     io->payload_size, nbd_io_done, io, NULL);
 		break;
 	case SPDK_BDEV_IO_TYPE_UNMAP:
 		to_be64(&io->unmap.lba, from_be64(&io->req.from) / spdk_bdev_get_block_size(bdev));

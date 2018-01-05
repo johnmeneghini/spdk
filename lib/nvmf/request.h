@@ -70,7 +70,6 @@ struct spdk_nvmf_request {
 	enum spdk_nvme_data_transfer	xfer;
 	struct iovec 			iov[MAX_NUM_OF_IOVECTORS];
 	int 				iovcnt;
-	void				*iovctx;
 	void				*data;
 	union nvmf_h2c_msg		*cmd;
 	union nvmf_c2h_msg		*rsp;

@@ -269,7 +269,7 @@ struct spdk_io_channel *spdk_bdev_get_io_channel(struct spdk_bdev_desc *desc);
 int spdk_bdev_read(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
 		   struct spdk_io_channel *ch,
 		   void *buf, uint64_t offset, uint64_t nbytes,
-		   spdk_bdev_io_completion_cb cb, void *cb_arg);
+		   spdk_bdev_io_completion_cb cb, void *cb_arg, struct spdk_bdev_io **result_bdev_io);
 
 /**
  * Submit a read request to the bdev on the given channel. This differs from
@@ -278,25 +278,11 @@ int spdk_bdev_read(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_poo
  * data and may not be able to directly transfer into the buffers provided. In
  * this case, the request may fail.
  *
- * \param bdev Block device
- * \param bdev_io_pool I/O request pool used to obtain a bdev_io  NULL to use global pool.
- * \param ch I/O channel. Obtained by calling spdk_bdev_get_io_channel().
- * \param iov A scatter gather list of buffers to be read into.
- * \param iovcnt The number of elements in iov.
- * \param offset The offset, in bytes, from the start of the block device.
- * \param nbytes The number of bytes to read.
- * \param cb Called when the request is complete.
- * \param cb_arg Argument passed to cb.
+ * \param bdev_io io descriptor
  *
- * \return 0 on success. On success, the callback will always
- * be called (even if the request ultimately failed). Return
- * negated errno on failure, in which case the callback will not be called.
+ * \return 0 on success.
  */
-int spdk_bdev_readv(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
-		    struct spdk_io_channel *ch,
-		    struct iovec *iov, int iovcnt,
-		    uint64_t offset, uint64_t nbytes,
-		    spdk_bdev_io_completion_cb cb, void *cb_arg);
+int spdk_bdev_readv(struct spdk_bdev_io *bdev_io);
 
 /**
  * Submit a write request to the bdev on the given channel.
@@ -317,7 +303,7 @@ int spdk_bdev_readv(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_po
 int spdk_bdev_write(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
 		    struct spdk_io_channel *ch,
 		    void *buf, uint64_t offset, uint64_t nbytes,
-		    spdk_bdev_io_completion_cb cb, void *cb_arg);
+		    spdk_bdev_io_completion_cb cb, void *cb_arg, struct spdk_bdev_io **result_bdev_io);
 
 /**
  * Submit a write request to the bdev on the given channel. This differs from
@@ -326,25 +312,11 @@ int spdk_bdev_write(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_po
  * data and may not be able to directly transfer out of the buffers provided. In
  * this case, the request may fail.
  *
- * \param bdev Block device
- * \param bdev_io_pool I/O request pool used to obtain a bdev_io  NULL to use global pool.
- * \param ch I/O channel. Obtained by calling spdk_bdev_get_io_channel().
- * \param iov A scatter gather list of buffers to be written from.
- * \param iovcnt The number of elements in iov.
- * \param offset The offset, in bytes, from the start of the block device.
- * \param nbytes The number of bytes to read. buf must be greater than or equal to this size.
- * \param cb Called when the request is complete.
- * \param cb_arg Argument passed to cb.
+ * \param bdev_io io descriptor
  *
- * \return 0 on success. On success, the callback will always
- * be called (even if the request ultimately failed). Return
- * negated errno on failure, in which case the callback will not be called.
+ * \return 0 on success.
  */
-int spdk_bdev_writev(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
-		     struct spdk_io_channel *ch,
-		     struct iovec *iov, int iovcnt,
-		     uint64_t offset, uint64_t len,
-		     spdk_bdev_io_completion_cb cb, void *cb_arg);
+int spdk_bdev_writev(struct spdk_bdev_io *bdev_io);
 
 /**
  * Submit an unmap request to the block device. Unmap is sometimes also called trim or
@@ -479,14 +451,28 @@ int spdk_bdev_free_io(struct spdk_bdev_io *bdev_io);
 void spdk_bdev_get_io_stat(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 			   struct spdk_bdev_io_stat *stat);
 
-int spdk_bdev_read_init(struct spdk_bdev *bdev, int32_t length, struct iovec *iov,
-			int32_t *iovcnt);
-int spdk_bdev_read_fini(struct spdk_bdev_io *bdev_io, struct iovec *iov, int32_t iovcnt,
-			void *iovctx);
-int spdk_bdev_write_init(struct spdk_bdev *bdev, int32_t length, struct iovec *iov,
-			 int32_t *iovcnt, void **iovctx);
-int spdk_bdev_write_fini(struct spdk_bdev_io *bdev_io, struct iovec *iov, int32_t iovcnt,
-			 void *iovctx);
+struct spdk_bdev_io *spdk_bdev_read_init(struct spdk_bdev_desc *desc,
+		struct spdk_io_channel *ch,
+		struct spdk_mempool *bdev_io_pool,
+		spdk_bdev_io_completion_cb io_complete_cb,
+		void *io_complete_cb_arg,
+		struct iovec *iov,
+		int32_t *iovcnt,
+		int32_t length,
+		uint64_t offset);
+int spdk_bdev_read_fini(struct spdk_bdev_io *bdev_io);
+
+struct spdk_bdev_io   *spdk_bdev_write_init(struct spdk_bdev_desc *desc,
+		struct spdk_io_channel *ch,
+		struct spdk_mempool *bdev_io_pool,
+		spdk_bdev_io_completion_cb io_complete_cb,
+		void *io_complete_cb_arg,
+		struct iovec *iov,
+		int32_t *iovcnt,
+		int32_t length,
+		uint64_t offset);
+int spdk_bdev_write_fini(struct spdk_bdev_io *bdev_io);
+
 void spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io, void *abt_ctx);
 
 int spdk_bdev_module_get_max_ctx_size(void);
