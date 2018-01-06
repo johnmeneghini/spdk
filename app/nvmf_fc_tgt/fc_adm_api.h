@@ -42,9 +42,14 @@
  */
 #define SPDK_FC_HW_DUMP_BUF_SIZE (10 * 4096)
 #define SPDK_FC_HW_DUMP_REASON_STR_MAX_SIZE 256
+#define SPDK_MAX_NUM_OF_FC_PORTS 32
+#define SPDK_NVMF_PORT_ID_MAX_LEN 32
+#define SPDK_NVMF_FC_LOG_STR_SIZE 255
+
+#define FC_LS_HWQP_ID 0xff
 
 /*
- * Queue poller intevals (microseconds)
+ * Queue poller intervals (microseconds)
  */
 #define SPDK_NVMF_BCM_FC_IOQ_POLLER_INTERVAL 0
 #define SPDK_NVMF_BCM_FC_AQ_POLLER_INTERVAL  100000
@@ -72,6 +77,19 @@ typedef enum {
 } spdk_fc_event_t;
 
 /**
+ * \struct spdk_nvmf_bcm_fc_dump_assoc_id_args
+ *
+ * \brief  Arguments for to dump assoc id
+ */
+struct spdk_nvmf_bcm_fc_dump_assoc_id_args {
+	uint8_t                           pport_handle;
+	uint16_t                          nport_handle;
+	uint32_t                          assoc_id;
+};
+
+typedef struct spdk_nvmf_bcm_fc_dump_assoc_id_args spdk_nvmf_bcm_fc_dump_assoc_id_args_t;
+
+/**
  * \struct spdk_nvmf_bcm_fc_hw_port_init_args
  *
  * \brief  Arguments for HW port init event.
@@ -85,7 +103,7 @@ struct spdk_nvmf_bcm_fc_hw_port_init_args {
 	struct spdk_nvmf_bcm_fc_hw_queues io_queues[NVMF_FC_MAX_IO_QUEUES];
 	void                             *cb_ctx;
 	void                             *port_ctx;
-	uint16_t                          fcp_rq_id;
+	uint16_t                          fcp_rq_id; /* Base rq ID of SCSI queue */
 };
 
 typedef struct spdk_nvmf_bcm_fc_hw_port_init_args spdk_nvmf_bcm_fc_hw_port_init_args_t;
@@ -124,18 +142,6 @@ struct spdk_nvmf_bcm_fc_hw_port_offline_args {
 typedef struct spdk_nvmf_bcm_fc_hw_port_offline_args spdk_nvmf_bcm_fc_hw_port_offline_args_t;
 
 /**
- * \struct spdk_nvmf_bcm_fc_hw_port_reset_args
- *
- * \brief  Arguments for HW port reset event.
- */
-struct spdk_nvmf_bcm_fc_hw_port_reset_args {
-	uint8_t port_handle;
-	void   *cb_ctx;
-};
-
-typedef struct spdk_nvmf_bcm_fc_hw_port_reset_args spdk_nvmf_bcm_fc_hw_port_reset_args_t;
-
-/**
  * \struct spdk_nvmf_bcm_fc_nport_create_args
  *
  * \brief  Arguments for n-port add event.
@@ -149,6 +155,7 @@ struct spdk_nvmf_bcm_fc_nport_create_args {
 	struct spdk_nvmf_bcm_fc_wwn fc_nodename;
 	struct spdk_nvmf_bcm_fc_wwn fc_portname;
 	uint32_t                    subsys_id; /* Subsystemid */
+	char                        port_id[SPDK_NVMF_PORT_ID_MAX_LEN];
 	void                       *cb_ctx;
 };
 
@@ -231,18 +238,19 @@ struct spdk_nvmf_bcm_fc_link_break_args {
 typedef struct spdk_nvmf_bcm_fc_link_break_args spdk_nvmf_bcm_fc_link_break_args_t;
 
 /**
- * \struct spdk_nvmf_bcm_fc_hw_port_dump_args
+ * \struct spdk_nvmf_bcm_fc_hw_port_reset_args
  *
- * \brief  Arguments for port dump event.
+ * \brief  Arguments for port reset event.
  */
-struct spdk_nvmf_bcm_fc_hw_port_dump_args {
+struct spdk_nvmf_bcm_fc_hw_port_reset_args {
 	uint8_t    port_handle;
+	bool       dump_queues;
 	char       reason[SPDK_FC_HW_DUMP_REASON_STR_MAX_SIZE];
 	uint32_t **dump_buf;
 	void      *cb_ctx;
 };
 
-typedef struct spdk_nvmf_bcm_fc_hw_port_dump_args spdk_nvmf_bcm_fc_hw_port_dump_args_t;
+typedef struct spdk_nvmf_bcm_fc_hw_port_reset_args spdk_nvmf_bcm_fc_hw_port_reset_args_t;
 
 /**
  * \struct spdk_nvmf_bcm_fc_unrecoverable_error_args
@@ -366,16 +374,16 @@ struct spdk_nvmf_bcm_fc_hw_port_quiesce_ctx {
 typedef struct spdk_nvmf_bcm_fc_hw_port_quiesce_ctx spdk_nvmf_bcm_fc_hw_port_quiesce_ctx_t;
 
 /**
- * \struct spdk_nvmf_bcm_fc_hw_port_dump_ctx
+ * \struct spdk_nvmf_bcm_fc_hw_port_reset_ctx
  *
- * \brief Context structure for dumping a hardware port
+ * \brief Context structure used to reset a hardware port
  */
-struct spdk_nvmf_bcm_fc_hw_port_dump_ctx {
-	void       *dump_args;
-	spdk_nvmf_bcm_fc_callback dump_cb_func;
+struct spdk_nvmf_bcm_fc_hw_port_reset_ctx {
+	void       *reset_args;
+	spdk_nvmf_bcm_fc_callback reset_cb_func;
 };
 
-typedef struct spdk_nvmf_bcm_fc_hw_port_dump_ctx spdk_nvmf_bcm_fc_hw_port_dump_ctx_t;
+typedef struct spdk_nvmf_bcm_fc_hw_port_reset_ctx spdk_nvmf_bcm_fc_hw_port_reset_ctx_t;
 
 /**
  * \struct spdk_nvmf_bcm_fc_hw_port_dump_ctx
@@ -393,5 +401,37 @@ typedef struct spdk_nvmf_bcm_fc_queue_dump_info spdk_nvmf_bcm_fc_queue_dump_info
   * \brief Pass the given event to the associated lcore with an application context
   */
 void spdk_post_event(void *context, struct spdk_event *event);
+
+/**
+  * \brief Function to print the contents of all the FC ports
+  */
+void spdk_nvmf_bcm_fc_tgt_print_ports(void *arg1, void *arg2);
+
+/**
+  * \brief Function to print the contents of a given FC Nport
+  * \param[in] port_hdl - The global id of the FC port
+  * \param[in] nport_hdl - The id of the Nport in that FC port
+  */
+void spdk_nvmf_bcm_fc_tgt_print_nport(void *arg1, void *arg2);
+
+/**
+  * \brief Function to print the contents of a given HWQP
+  * \param[in] hwqp_id - The global id of the HWQP
+  */
+void spdk_nvmf_bcm_fc_tgt_print_hwqp(void *arg1, void *arg2);
+
+/**
+  * \brief Function to print the contents of a given association
+  * \param[in] spdk_nvmf_bcm_fc_dump_assoc_id_args_t
+  * Contains port_hdl, nport_hdl, assoc_id
+  */
+void spdk_nvmf_bcm_fc_tgt_print_assoc(void *arg1, void *arg2);
+
+/**
+  * \brief Function to print the contents of a given connection
+  * \param[in] hwqp_id - The global id of the HWQP
+  * \param[in] conn_id - The connection id
+  */
+void spdk_nvmf_bcm_fc_tgt_print_conn(void *arg1, void *arg2);
 
 #endif
