@@ -560,7 +560,7 @@ static bool
 nvmf_fc_is_port_dead(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 {
 	switch (hwqp->fc_port->hw_port_status) {
-	case SPDK_FC_PORT_QUIESCED_FOR_DUMP:
+	case SPDK_FC_PORT_QUIESCED:
 		return true;
 	default:
 		return false;
