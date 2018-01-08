@@ -692,11 +692,11 @@ nvmf_tgt_fc_queue_quiesce_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t re
 		return;
 	}
 
-	if (fc_port->hw_port_status == SPDK_FC_PORT_QUIESCED_FOR_DUMP) {
+	if (fc_port->hw_port_status == SPDK_FC_PORT_QUIESCED) {
 		SPDK_ERRLOG("Port %d already in quiesced state.\n", fc_port->port_hdl);
 	} else {
 		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "HW port %d  quiesced.\n", fc_port->port_hdl);
-		fc_port->hw_port_status = SPDK_FC_PORT_QUIESCED_FOR_DUMP;
+		fc_port->hw_port_status = SPDK_FC_PORT_QUIESCED;
 	}
 
 	if (cb_func) {
@@ -760,7 +760,7 @@ nvmf_tgt_fc_hw_port_quiesce(struct spdk_nvmf_bcm_fc_port *fc_port, void *ctx,
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "HW port:%d is being quiesced.\n", fc_port->port_hdl);
 
-	if (fc_port->hw_port_status == SPDK_FC_PORT_QUIESCED_FOR_DUMP) {
+	if (fc_port->hw_port_status == SPDK_FC_PORT_QUIESCED) {
 		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "Port %d already in quiesced state.\n",
 			      fc_port->port_hdl);
 		/*
