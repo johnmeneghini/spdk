@@ -32,8 +32,8 @@ static void nvmf_fc_nport_delete(void *arg1, void *arg2);
 static void nvmf_fc_i_t_add(void *arg1, void *arg2);
 static void nvmf_fc_i_t_delete(void *arg1, void *arg2);
 static void nvmf_fc_abts_recv(void *arg1, void *arg2);
-static void nvmf_fc_hw_port_dump(void *arg1, void *arg2);
-static void nvmf_fc_hw_port_quiesce_dump_cb(void *ctx, spdk_err_t err);
+static void nvmf_fc_hw_port_reset(void *arg1, void *arg2);
+static void nvmf_fc_hw_port_quiesce_reset_cb(void *ctx, spdk_err_t err);
 
 /* ******************* PRIVATE HELPER FUNCTIONS - BEGIN ************** */
 
@@ -91,6 +91,7 @@ nvmf_fc_tgt_hwqp_queues_reqtag_copy(struct spdk_nvmf_bcm_fc_hw_queues *queues_pr
 				    struct spdk_nvmf_bcm_fc_hw_queues *queues_curr)
 {
 	struct fc_wrkq *wq_prev, *wq_curr;
+	int count = 0;
 	int i;
 
 	ASSERT_SPDK_FC_MASTER_THREAD();
@@ -102,9 +103,26 @@ nvmf_fc_tgt_hwqp_queues_reqtag_copy(struct spdk_nvmf_bcm_fc_hw_queues *queues_pr
 
 	wq_curr->wqec_count = 0;
 	for (i = 0; i < MAX_REQTAG_POOL_SIZE; i++) {
-		DEV_VERIFY(wq_prev->p_reqtags[i] == NULL);
+		if (wq_prev->p_reqtags[i] != NULL) {
+			/*
+			 * This condition is possible if we killed
+			 * commands that were in transfer state.
+			 */
+			wq_prev->p_reqtags[i]->cb = NULL;
+			wq_prev->p_reqtags[i]->cb_args = NULL;
+
+			(void)spdk_ring_enqueue(wq_curr->reqtag_ring, wq_prev->p_reqtags[i]);
+			wq_prev->p_reqtags[i] = NULL;
+			count = count + 1;
+		}
 		wq_curr->p_reqtags[i] = NULL;
 	}
+
+	if (count) {
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "Found %d outstanding reqtags that were released\n",
+			      count);
+	}
+
 }
 
 /*
@@ -112,6 +130,7 @@ nvmf_fc_tgt_hwqp_queues_reqtag_copy(struct spdk_nvmf_bcm_fc_hw_queues *queues_pr
  * Only the queue information needs to be populated. XRI, lcore and other hwqp information remains
  * unchanged after the first initialization.
  *
+
  */
 static spdk_err_t
 nvmf_fc_tgt_hw_port_reinit_validate(struct spdk_nvmf_bcm_fc_port *fc_port,
@@ -705,11 +724,11 @@ nvmf_tgt_fc_queue_quiesce_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t re
 		return;
 	}
 
-	if (fc_port->hw_port_status == SPDK_FC_PORT_QUIESCED_FOR_DUMP) {
+	if (fc_port->hw_port_status == SPDK_FC_PORT_QUIESCED) {
 		SPDK_ERRLOG("Port %d already in quiesced state.\n", fc_port->port_hdl);
 	} else {
 		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "HW port %d  quiesced.\n", fc_port->port_hdl);
-		fc_port->hw_port_status = SPDK_FC_PORT_QUIESCED_FOR_DUMP;
+		fc_port->hw_port_status = SPDK_FC_PORT_QUIESCED;
 	}
 
 	if (cb_func) {
@@ -775,7 +794,7 @@ nvmf_tgt_fc_hw_port_quiesce(struct spdk_nvmf_bcm_fc_port *fc_port, void *ctx,
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "HW port:%d is being quiesced.\n", fc_port->port_hdl);
 
-	if (fc_port->hw_port_status == SPDK_FC_PORT_QUIESCED_FOR_DUMP) {
+	if (fc_port->hw_port_status == SPDK_FC_PORT_QUIESCED) {
 		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "Port %d already in quiesced state.\n",
 			      fc_port->port_hdl);
 		/*
@@ -1108,9 +1127,6 @@ spdk_nvmf_bcm_fc_master_enqueue_event(spdk_fc_event_t event_type, void *args,
 		}
 		break;
 
-	case SPDK_FC_HW_PORT_RESET:
-		break;
-
 	case SPDK_FC_NPORT_CREATE:
 		event = spdk_event_allocate(spdk_env_get_master_lcore(), nvmf_fc_nport_create, args, cb_func);
 		if (event == NULL) {
@@ -1152,12 +1168,14 @@ spdk_nvmf_bcm_fc_master_enqueue_event(spdk_fc_event_t event_type, void *args,
 			err = SPDK_ERR_NOMEM;
 		}
 		break;
-	case SPDK_FC_HW_PORT_DUMP: /* Firmware Dump */
-		event = spdk_event_allocate(spdk_env_get_master_lcore(), nvmf_fc_hw_port_dump, args, cb_func);
+	case SPDK_FC_HW_PORT_RESET:
+		/* Firmware dump or reset */
+		event = spdk_event_allocate(spdk_env_get_master_lcore(), nvmf_fc_hw_port_reset, args, cb_func);
 		if (event == NULL) {
 			err = SPDK_ERR_NOMEM;
 		}
 		break;
+
 	case SPDK_FC_UNRECOVERABLE_ERR:
 		break;
 
@@ -1346,16 +1364,17 @@ nvmf_fc_hw_port_offline(void *arg1, void *arg2)
 		}
 
 		/*
-		 * 3. Remove poller for the LS queue.
+		 * 3. Remove poller for the LS queue and Admin queues.
 		 */
 		hwqp = &fc_port->ls_queue;
 		(void)spdk_nvmf_bcm_fc_hwqp_port_set_offline(hwqp);
 		spdk_nvmf_bcm_fc_delete_poller(hwqp);
+		spdk_nvmf_bcm_fc_delete_poller(&fc_port->io_queues[0]);
 
 		/*
 		 * 4. Remove poller for all the io queues.
 		 */
-		for (i = 0; i < (int)fc_port->max_io_queues; i++) {
+		for (i = 1; i < (int)fc_port->max_io_queues; i++) {
 			hwqp = &fc_port->io_queues[i];
 			(void)spdk_nvmf_bcm_fc_hwqp_port_set_offline(hwqp);
 
@@ -1396,6 +1415,7 @@ nvmf_fc_nport_create(void *arg1, void *arg2)
 	struct spdk_nvmf_bcm_fc_nport         *nport   = NULL;
 	spdk_err_t                             err     = SPDK_SUCCESS;
 	nvmf_tgt_error_t                       rc      = NVMF_TGT_OK;
+	struct nvmf_tgt_port *tgt_port = NULL;
 
 	/*
 	 * 1. Check for duplicate initialization.
@@ -1437,6 +1457,12 @@ nvmf_fc_nport_create(void *arg1, void *arg2)
 	}
 
 	/*
+	 * 4a. set the context for the nport to the appopriate lif construct.
+	 */
+	tgt_port = nvmf_tgt_get_port(nport->nport_hdl, nport->port_hdl);
+	nport->vendor_data = tgt_port->stats;
+
+	/*
 	 * 5. Add this port to the nport list (per FC port) in the library.
 	 */
 	(void)spdk_nvmf_bcm_fc_port_add_nport(nport->fc_port, nport);
@@ -1450,8 +1476,8 @@ out:
 		(void)cb_func(args->port_handle, SPDK_FC_NPORT_CREATE, args->cb_ctx, err);
 	}
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "FC nport %d create done, rc = %d.\n", args->port_handle,
-		      err);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "FC nport %d created on HW port %d done, rc = %d.\n",
+		      args->nport_handle,  args->port_handle, err);
 }
 
 static void
@@ -1732,6 +1758,13 @@ nvmf_fc_i_t_add(void *arg1, void *arg2)
 	 */
 	args->target_prli_info = spdk_nvmf_bcm_fc_get_prli_service_params();
 
+	/*
+	 * 8. Kick off the nvmf pollers on our first IT add.
+	 */
+	if (__sync_fetch_and_add(&g_ontap_nvmf_tgt.it_count, 1) == 0) {
+		nvmf_poller_start();
+	}
+
 out:
 	if (cb_func != NULL) {
 		/*
@@ -1847,6 +1880,13 @@ nvmf_fc_i_t_delete(void *arg1, void *arg2)
 	nvmf_fc_tgt_i_t_delete_assoc(nport, rport, nvmf_fc_tgt_i_t_delete_cb,
 				     (void *)cb_data);
 
+	/*
+	 * If we have removed the last IT, then we can disable our IO pollers
+	 */
+	if (__sync_sub_and_fetch(&g_ontap_nvmf_tgt.it_count, 1) == 0) {
+		nvmf_poller_stop();
+	}
+
 out:
 	if (rc != SPDK_SUCCESS) {
 		/*
@@ -1921,12 +1961,12 @@ out:
  * Callback function for hw port quiesce.
  */
 static void
-nvmf_fc_hw_port_quiesce_dump_cb(void *ctx, spdk_err_t err)
+nvmf_fc_hw_port_quiesce_reset_cb(void *ctx, spdk_err_t err)
 {
 	ASSERT_SPDK_FC_MASTER_THREAD();
-	spdk_nvmf_bcm_fc_hw_port_dump_ctx_t   *dump_ctx = (spdk_nvmf_bcm_fc_hw_port_dump_ctx_t *)ctx;
-	spdk_nvmf_bcm_fc_hw_port_dump_args_t     *args     = dump_ctx->dump_args;
-	spdk_nvmf_bcm_fc_callback                   cb_func  = dump_ctx->dump_cb_func;
+	spdk_nvmf_bcm_fc_hw_port_reset_ctx_t   *reset_ctx = (spdk_nvmf_bcm_fc_hw_port_reset_ctx_t *)ctx;
+	spdk_nvmf_bcm_fc_hw_port_reset_args_t     *args     = reset_ctx->reset_args;
+	spdk_nvmf_bcm_fc_callback                   cb_func  = reset_ctx->reset_cb_func;
 	spdk_nvmf_bcm_fc_queue_dump_info_t     dump_info;
 	struct spdk_nvmf_bcm_fc_port *fc_port       = NULL;
 	char                         *dump_buf      = NULL;
@@ -1941,6 +1981,15 @@ nvmf_fc_hw_port_quiesce_dump_cb(void *ctx, spdk_err_t err)
 		SPDK_ERRLOG("Port %d  quiesce operation failed.\n", args->port_handle);
 		goto out;
 	}
+
+	if (args->dump_queues == false) {
+		/*
+		 * Queues need not be dumped.
+		 */
+		goto out;
+	}
+
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "Dumping queues for HW port %d\n", args->port_handle);
 
 	/*
 	 * Get the fc port.
@@ -1977,28 +2026,29 @@ nvmf_fc_hw_port_quiesce_dump_cb(void *ctx, spdk_err_t err)
 	nvmf_tgt_fc_dump_all_queues(fc_port, &dump_info);
 
 out:
-	if (cb_func != NULL) {
-		(void)cb_func(args->port_handle, SPDK_FC_HW_PORT_DUMP, args->cb_ctx, err);
-	}
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "HW port %d reset done, queues_dumped = %d, rc = %d.\n",
+		      args->port_handle, args->dump_queues, err);
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "HW port %d dump done, rc = %d.\n", args->port_handle,
-		      err);
+	if (cb_func != NULL) {
+		(void)cb_func(args->port_handle, SPDK_FC_HW_PORT_RESET, args->cb_ctx, err);
+	}
 }
 
 /*
- * HW port dump
+ * HW port reset
+
  */
 static void
-nvmf_fc_hw_port_dump(void *arg1, void *arg2)
+nvmf_fc_hw_port_reset(void *arg1, void *arg2)
 {
 	ASSERT_SPDK_FC_MASTER_THREAD();
 	struct spdk_nvmf_bcm_fc_port *fc_port = NULL;
-	spdk_nvmf_bcm_fc_hw_port_dump_args_t     *args    = (spdk_nvmf_bcm_fc_hw_port_dump_args_t *)arg1;
+	spdk_nvmf_bcm_fc_hw_port_reset_args_t     *args    = (spdk_nvmf_bcm_fc_hw_port_reset_args_t *)arg1;
 	spdk_nvmf_bcm_fc_callback     cb_func = (spdk_nvmf_bcm_fc_callback)arg2;
-	spdk_nvmf_bcm_fc_hw_port_dump_ctx_t   *ctx     = NULL;
+	spdk_nvmf_bcm_fc_hw_port_reset_ctx_t   *ctx     = NULL;
 	spdk_err_t                    err     = SPDK_SUCCESS;
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "HW port %d dump\n", args->port_handle);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "HW port %d reset\n", args->port_handle);
 
 	/*
 	 * Make sure the physical port exists.
@@ -2011,31 +2061,31 @@ nvmf_fc_hw_port_dump(void *arg1, void *arg2)
 	}
 
 	/*
-	 * Save the dump event args and the callback in a context struct.
+	 * Save the reset event args and the callback in a context struct.
 	 */
-	ctx = spdk_calloc(1, sizeof(spdk_nvmf_bcm_fc_hw_port_dump_ctx_t));
+	ctx = spdk_calloc(1, sizeof(spdk_nvmf_bcm_fc_hw_port_reset_ctx_t));
 
 	if (ctx == NULL) {
 		err = SPDK_ERR_NOMEM;
-		SPDK_ERRLOG("Memory allocation for dump ctx failed, SPDK FC port %d\n", args->port_handle);
+		SPDK_ERRLOG("Memory allocation for reset ctx failed, SPDK FC port %d\n", args->port_handle);
 		goto fail;
 	}
 
-	bzero(ctx, sizeof(spdk_nvmf_bcm_fc_hw_port_dump_ctx_t));
-	ctx->dump_args    = (void *)arg1;
-	ctx->dump_cb_func = cb_func;
+	bzero(ctx, sizeof(spdk_nvmf_bcm_fc_hw_port_reset_ctx_t));
+	ctx->reset_args    = (void *)arg1;
+	ctx->reset_cb_func = cb_func;
 
 	/*
 	 * Quiesce the hw port.
 	 */
-	err = nvmf_tgt_fc_hw_port_quiesce(fc_port, ctx, nvmf_fc_hw_port_quiesce_dump_cb);
+	err = nvmf_tgt_fc_hw_port_quiesce(fc_port, ctx, nvmf_fc_hw_port_quiesce_reset_cb);
 	if (err != SPDK_SUCCESS) {
 		goto fail;
 	}
 
 	/*
-	 * Once the ports are successfully quiesced the dump processing
-	 * will continue in the callback function: spdk_fc_port_quiesce_dump_cb
+	 * Once the ports are successfully quiesced the reset processing
+	 * will continue in the callback function: spdk_fc_port_quiesce_reset_cb
 	 */
 	return;
 fail:
@@ -2044,12 +2094,12 @@ fail:
 	}
 
 out:
-	if (cb_func != NULL) {
-		(void)cb_func(args->port_handle, SPDK_FC_HW_PORT_DUMP, args->cb_ctx, err);
-	}
-
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "HW port %d dump done, rc = %d.\n", args->port_handle,
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "HW port %d reset done, rc = %d.\n", args->port_handle,
 		      err);
+
+	if (cb_func != NULL) {
+		(void)cb_func(args->port_handle, SPDK_FC_HW_PORT_RESET, args->cb_ctx, err);
+	}
 }
 
 /*
@@ -2096,16 +2146,17 @@ nvmf_fc_hw_port_link_break(void *arg1, void *arg2)
 	}
 
 	/*
-	 * 3. Remove poller for the LS queue.
+	 * 3. Remove poller for the LS and Admin queues.
 	 */
 	hwqp = &fc_port->ls_queue;
 	(void)spdk_nvmf_bcm_fc_hwqp_port_set_offline(hwqp);
 	spdk_nvmf_bcm_fc_delete_poller(hwqp);
+	spdk_nvmf_bcm_fc_delete_poller(&fc_port->io_queues[0]);
 
 	/*
 	 * 4. Remove poller for all the io queues.
 	 */
-	for (i = 0; i < (int)fc_port->max_io_queues; i++) {
+	for (i = 1; i < (int)fc_port->max_io_queues; i++) {
 		hwqp = &fc_port->io_queues[i];
 		(void)spdk_nvmf_bcm_fc_hwqp_port_set_offline(hwqp);
 
