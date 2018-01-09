@@ -1729,6 +1729,7 @@ nvmf_fc_handle_nvme_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_frame_hdr
 	fc_req->req.conn = &fc_conn->conn;
 	fc_req->req.cmd = &req_buf->cmd_iu.cmd;
 	fc_req->req.rsp = &fc_req->ersp.rsp;
+	fc_req->req.io_rsrc_pool = hwqp->fc_port->io_rsrc_pool;
 	fc_req->oxid = frame->ox_id;
 	fc_req->oxid = from_be16(&fc_req->oxid);
 	fc_req->rpi = fc_conn->rpi;
