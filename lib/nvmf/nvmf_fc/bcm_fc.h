@@ -260,6 +260,7 @@ struct spdk_nvmf_bcm_fc_port {
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_port) link;
 
 	struct spdk_nvmf_bcm_fc_ls_rsrc_pool ls_rsrc_pool;
+	struct spdk_mempool *io_rsrc_pool; /* Pools to store bdev_io's for this port */
 	void *port_ctx;
 };
 
