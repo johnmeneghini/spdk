@@ -243,6 +243,9 @@ nvmf_fc_abts_handled_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
 					     ctx->oxid, ctx->rxid, ctx->rpi, false,
 					     0, NULL, NULL);
 	}
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
+		      "BLS_%s sent for ABTS frame nport: %d, rpi: 0x%x, oxid: 0x%x, rxid: 0x%x\n",
+		      (ctx->handled) ? "ACC" : "REJ", ctx->nport->nport_hdl, ctx->rpi, ctx->oxid, ctx->rxid);
 
 	free(ctx->free_args);
 	free(ctx);
@@ -256,20 +259,28 @@ spdk_nvmf_bcm_fc_handle_abts_frame(struct spdk_nvmf_bcm_fc_nport *nport, uint16_
 	struct spdk_nvmf_bcm_fc_poller_api_abts_recvd_args *args = NULL, *poller_arg;
 	struct spdk_nvmf_bcm_fc_association *assoc = NULL;
 	struct spdk_nvmf_bcm_fc_conn *conn = NULL;
-	uint64_t hwqp_map = 0;
-	uint32_t hwqp_cnt = 0, j = 0;
+	struct spdk_nvmf_bcm_fc_hwqp *hwqps[NVMF_FC_MAX_IO_QUEUES] = { NULL };
+	int hwqp_cnt = 0;
 
-	assert(NVMF_FC_MAX_IO_QUEUES <= 64);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
+		      "Handle ABTS frame for nport: %d, rpi: 0x%x, oxid: 0x%x, rxid: 0x%x\n",
+		      nport->nport_hdl, rpi, oxid, rxid);
 
 	TAILQ_FOREACH(assoc, &nport->fc_associations, link) {
 		TAILQ_FOREACH(conn, &assoc->fc_conns, assoc_link) {
 			if (conn->rpi != rpi) {
 				continue;
 			}
-			if (!((hwqp_map >> conn->hwqp->hwqp_id) & 0x1)) {
-				hwqp_map |= (0x1 << conn->hwqp->hwqp_id);
-				hwqp_cnt ++;
+
+			for (int k = 0; k < hwqp_cnt; k ++) {
+				if (hwqps[k] == conn->hwqp) {
+					/* Skip. This is already present */
+					continue;
+				}
 			}
+			assert(hwqp_cnt < NVMF_FC_MAX_IO_QUEUES);
+			hwqps[hwqp_cnt] = conn->hwqp;
+			hwqp_cnt ++;
 		}
 	}
 
@@ -294,12 +305,9 @@ spdk_nvmf_bcm_fc_handle_abts_frame(struct spdk_nvmf_bcm_fc_nport *nport, uint16_
 	ctx->free_args	= args;
 	ctx->num_hwqps	= hwqp_cnt;
 
-	for (int i = 0; i < NVMF_FC_MAX_IO_QUEUES; i ++) {
-		if (!((hwqp_map >> i) & 0x1)) {
-			continue;
-		}
-		poller_arg = args + j;
-		poller_arg->hwqp = &nport->fc_port->io_queues[i];
+	for (int i = 0; i < hwqp_cnt; i ++) {
+		poller_arg = args + i;
+		poller_arg->hwqp = hwqps[i];
 		poller_arg->cb_info.cb_func = nvmf_fc_abts_handled_cb;
 		poller_arg->cb_info.cb_data = ctx;
 		poller_arg->ctx = ctx;
@@ -307,7 +315,6 @@ spdk_nvmf_bcm_fc_handle_abts_frame(struct spdk_nvmf_bcm_fc_nport *nport, uint16_
 		spdk_nvmf_bcm_fc_poller_api(poller_arg->hwqp,
 					    SPDK_NVMF_BCM_FC_POLLER_API_ABTS_RECEIVED,
 					    poller_arg);
-		j ++;
 	}
 
 	return;
@@ -323,6 +330,9 @@ bls_rej:
 	/* Send Reject */
 	spdk_nvmf_bcm_fc_xmt_bls_rsp(&nport->fc_port->ls_queue, oxid, rxid, rpi,
 				     true, BCM_BLS_REJECT_EXP_NOINFO, NULL, NULL);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
+		      "BLS_RJT for ABTS frame for nport: %d, rpi: 0x%x, oxid: 0x%x, rxid: 0x%x\n",
+		      nport->nport_hdl, rpi, oxid, rxid);
 	return;
 }
 

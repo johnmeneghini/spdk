@@ -220,6 +220,10 @@ nvmf_fc_poller_abts_done(void *hwqp, int32_t status, void *cb_args)
 {
 	struct spdk_nvmf_bcm_fc_poller_api_abts_recvd_args *args = cb_args;
 
+	SPDK_TRACELOG(SPDK_NVMF_BCM_FC_POLLER_API,
+		      "ABTS poller done, rpi: 0x%x, oxid: 0x%x, rxid: 0x%x\n",
+		      args->ctx->rpi, args->ctx->oxid, args->ctx->rxid);
+
 	nvmf_fc_poller_api_perform_cb(&args->cb_info,
 				      SPDK_NVMF_BCM_FC_POLLER_API_SUCCESS);
 }
