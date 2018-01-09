@@ -302,6 +302,9 @@ struct spdk_bdev_io {
 	/** Entry to the list need_buf of struct spdk_bdev. */
 	TAILQ_ENTRY(spdk_bdev_io) rbuf_link;
 
+	/** Pool that this bdev_io belongs to (and to be returned) */
+	struct spdk_mempool *bdev_io_pool;
+
 	/** Per I/O context for use by the blockdev module */
 	uint8_t driver_ctx[0];
 
@@ -342,18 +345,22 @@ bool spdk_bdev_io_type_supported(struct spdk_bdev *bdev, enum spdk_bdev_io_type 
 
 int spdk_bdev_dump_config_json(struct spdk_bdev *bdev, struct spdk_json_write_ctx *w);
 
-struct spdk_bdev_io *spdk_bdev_read(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
+struct spdk_bdev_io *spdk_bdev_read(struct spdk_bdev *bdev, struct spdk_mempool *bdev_io_pool,
+				    struct spdk_io_channel *ch,
 				    void *buf, uint64_t offset, uint64_t nbytes,
 				    spdk_bdev_io_completion_cb cb, void *cb_arg);
 struct spdk_bdev_io *
-spdk_bdev_readv(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
+spdk_bdev_readv(struct spdk_bdev *bdev, struct spdk_mempool *bdev_io_pool,
+		struct spdk_io_channel *ch,
 		struct iovec *iov, int iovcnt,
 		uint64_t offset, uint64_t nbytes,
 		spdk_bdev_io_completion_cb cb, void *cb_arg);
-struct spdk_bdev_io *spdk_bdev_write(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
+struct spdk_bdev_io *spdk_bdev_write(struct spdk_bdev *bdev, struct spdk_mempool *bdev_io_pool,
+				     struct spdk_io_channel *ch,
 				     void *buf, uint64_t offset, uint64_t nbytes,
 				     spdk_bdev_io_completion_cb cb, void *cb_arg);
-struct spdk_bdev_io *spdk_bdev_writev(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
+struct spdk_bdev_io *spdk_bdev_writev(struct spdk_bdev *bdev, struct spdk_mempool *bdev_io_pool,
+				      struct spdk_io_channel *ch,
 				      struct iovec *iov, int iovcnt,
 				      uint64_t offset, uint64_t len,
 				      spdk_bdev_io_completion_cb cb, void *cb_arg);
@@ -361,7 +368,8 @@ struct spdk_bdev_io *spdk_bdev_unmap(struct spdk_bdev *bdev, struct spdk_io_chan
 				     struct spdk_scsi_unmap_bdesc *unmap_d,
 				     uint16_t bdesc_count,
 				     spdk_bdev_io_completion_cb cb, void *cb_arg);
-struct spdk_bdev_io *spdk_bdev_flush(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
+struct spdk_bdev_io *spdk_bdev_flush(struct spdk_bdev *bdev, struct spdk_mempool *bdev_io_pool,
+				     struct spdk_io_channel *ch,
 				     uint64_t offset, uint64_t length,
 				     spdk_bdev_io_completion_cb cb, void *cb_arg);
 int spdk_bdev_free_io(struct spdk_bdev_io *bdev_io);
@@ -381,6 +389,8 @@ int spdk_bdev_write_fini(struct spdk_bdev *bdev, struct iovec *iov, int32_t iovc
 			 void *iovctx);
 void spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io, void *abt_ctx);
 
+int spdk_bdev_module_get_max_ctx_size(void);
+
 /**
  * Get the status of bdev_io as an NVMe status code.
  *
@@ -390,4 +400,13 @@ void spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io, void *abt_ctx);
  */
 void spdk_bdev_io_get_nvme_status(const struct spdk_bdev_io *bdev_io, int *sct, int *sc, int *dnr);
 
+
+/**
+ * Decide on the use of the global bdev pools
+ *  This function should be called before the bdev subsystem is initialized if
+ *  there is a need to stop the creation of the global bdev memory pools.
+ *
+ * \param value false if global pools are not used
+ */
+void spdk_bdev_set_use_global_pools(bool value);
 #endif /* SPDK_BDEV_H_ */

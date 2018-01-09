@@ -1326,7 +1326,7 @@ spdk_bdev_scsi_read(struct spdk_bdev *bdev,
 		      "Read: max=%"PRIu64", lba=%"PRIu64", len=%"PRIu64"\n",
 		      maxlba, lba, (uint64_t)task->length / blen);
 
-	task->blockdev_io = spdk_bdev_readv(bdev, task->ch, task->iovs,
+	task->blockdev_io = spdk_bdev_readv(bdev, NULL, task->ch, task->iovs,
 					    task->iovcnt, offset, nbytes,
 					    spdk_bdev_scsi_task_complete, task);
 	if (!task->blockdev_io) {
@@ -1389,7 +1389,7 @@ spdk_bdev_scsi_write(struct spdk_bdev *bdev,
 	}
 
 	offset += task->offset;
-	task->blockdev_io = spdk_bdev_writev(bdev, task->ch, task->iovs,
+	task->blockdev_io = spdk_bdev_writev(bdev, NULL, task->ch, task->iovs,
 					     task->iovcnt, offset, task->length,
 					     spdk_bdev_scsi_task_complete,
 					     task);
@@ -1445,7 +1445,7 @@ spdk_bdev_scsi_sync(struct spdk_bdev *bdev, struct spdk_scsi_task *task,
 		return SPDK_SCSI_TASK_COMPLETE;
 	}
 
-	task->blockdev_io = spdk_bdev_flush(bdev, task->ch, offset, nbytes,
+	task->blockdev_io = spdk_bdev_flush(bdev, NULL, task->ch, offset, nbytes,
 					    spdk_bdev_scsi_task_complete, task);
 
 	if (!task->blockdev_io) {

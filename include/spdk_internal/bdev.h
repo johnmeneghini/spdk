@@ -160,7 +160,7 @@ struct spdk_bdev_fn_table {
 
 void spdk_bdev_register(struct spdk_bdev *bdev);
 void spdk_bdev_io_get_rbuf(struct spdk_bdev_io *bdev_io, spdk_bdev_io_get_rbuf_cb cb);
-struct spdk_bdev_io *spdk_bdev_get_io(void);
+struct spdk_bdev_io *spdk_bdev_get_io(struct spdk_mempool *bdev_io_pool);
 struct spdk_bdev_io *spdk_bdev_get_child_io(struct spdk_bdev_io *parent,
 		struct spdk_bdev *bdev,
 		spdk_bdev_io_completion_cb cb,

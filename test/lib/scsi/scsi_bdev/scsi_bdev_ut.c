@@ -116,7 +116,7 @@ spdk_scsi_nvme_translate(struct spdk_bdev_io *bdev_io, int *sc, int *sk,
 }
 
 struct spdk_bdev_io *
-spdk_bdev_read(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
+spdk_bdev_read(struct spdk_bdev *bdev, struct spdk_mempool *pool, struct spdk_io_channel *ch,
 	       void *buf, uint64_t offset, uint64_t nbytes,
 	       spdk_bdev_io_completion_cb cb, void *cb_arg)
 {
@@ -124,7 +124,7 @@ spdk_bdev_read(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 }
 
 struct spdk_bdev_io *
-spdk_bdev_readv(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
+spdk_bdev_readv(struct spdk_bdev *bdev, struct spdk_mempool *pool, struct spdk_io_channel *ch,
 		struct iovec *iov, int iovcnt, uint64_t offset, uint64_t nbytes,
 		spdk_bdev_io_completion_cb cb, void *cb_arg)
 {
@@ -132,7 +132,7 @@ spdk_bdev_readv(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 }
 
 struct spdk_bdev_io *
-spdk_bdev_writev(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
+spdk_bdev_writev(struct spdk_bdev *bdev, struct spdk_mempool *pool, struct spdk_io_channel *ch,
 		 struct iovec *iov, int iovcnt,
 		 uint64_t offset, uint64_t len,
 		 spdk_bdev_io_completion_cb cb, void *cb_arg)
@@ -157,7 +157,7 @@ spdk_bdev_reset(struct spdk_bdev *bdev, enum spdk_bdev_reset_type reset_type,
 }
 
 struct spdk_bdev_io *
-spdk_bdev_flush(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
+spdk_bdev_flush(struct spdk_bdev *bdev, struct spdk_mempool *pool, struct spdk_io_channel *ch,
 		uint64_t offset, uint64_t length,
 		spdk_bdev_io_completion_cb cb, void *cb_arg)
 {

@@ -242,7 +242,7 @@ bdevperf_unmap_complete(struct spdk_bdev_io *bdev_io, enum spdk_bdev_io_status s
 	memset(task->buf, 0, g_io_size);
 
 	/* Read the data back in */
-	spdk_bdev_read(target->bdev, target->ch, NULL, task->offset, g_io_size,
+	spdk_bdev_read(target->bdev, NULL, target->ch, NULL, task->offset, g_io_size,
 		       bdevperf_complete, task);
 
 	spdk_bdev_free_io(bdev_io);
@@ -267,7 +267,7 @@ bdevperf_verify_write_complete(struct spdk_bdev_io *bdev_io, enum spdk_bdev_io_s
 				task);
 	} else {
 		/* Read the data back in */
-		spdk_bdev_read(target->bdev, target->ch, NULL,
+		spdk_bdev_read(target->bdev, NULL, target->ch, NULL,
 			       task->offset,
 			       g_io_size,
 			       bdevperf_complete, task);
@@ -319,17 +319,17 @@ bdevperf_submit_single(struct io_target *target)
 		memset(task->buf, rand_r(&seed) % 256, g_io_size);
 		task->iov.iov_base = task->buf;
 		task->iov.iov_len = g_io_size;
-		spdk_bdev_writev(bdev, ch, &task->iov, 1, task->offset, g_io_size,
+		spdk_bdev_writev(bdev, NULL, ch, &task->iov, 1, task->offset, g_io_size,
 				 bdevperf_verify_write_complete, task);
 	} else if ((g_rw_percentage == 100) ||
 		   (g_rw_percentage != 0 && ((rand_r(&seed) % 100) < g_rw_percentage))) {
 		rbuf = g_zcopy ? NULL : task->buf;
-		spdk_bdev_read(bdev, ch, rbuf, task->offset, g_io_size,
+		spdk_bdev_read(bdev, NULL, ch, rbuf, task->offset, g_io_size,
 			       bdevperf_complete, task);
 	} else {
 		task->iov.iov_base = task->buf;
 		task->iov.iov_len = g_io_size;
-		spdk_bdev_writev(bdev, ch, &task->iov, 1, task->offset, g_io_size,
+		spdk_bdev_writev(bdev, NULL, ch, &task->iov, 1, task->offset, g_io_size,
 				 bdevperf_complete, task);
 	}
 

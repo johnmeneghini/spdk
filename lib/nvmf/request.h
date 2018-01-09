@@ -77,6 +77,7 @@ struct spdk_nvmf_request {
 	struct spdk_scsi_unmap_bdesc	*unmap_bdesc;
 	struct spdk_bdev_io 		*bdev_io;
 	uint64_t req_state_trace[MAX_REQ_STATES];
+	struct spdk_mempool *io_rsrc_pool;
 };
 
 int

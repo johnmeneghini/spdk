@@ -51,6 +51,7 @@
 static struct spdk_mempool *spdk_bdev_g_io_pool = NULL;
 static struct spdk_mempool *g_rbuf_small_pool = NULL;
 static struct spdk_mempool *g_rbuf_large_pool = NULL;
+static bool spdk_bdev_g_use_global_pools = true;
 
 typedef TAILQ_HEAD(, spdk_bdev_io) need_rbuf_tailq_t;
 static need_rbuf_tailq_t g_need_rbuf_small[SPDK_MAX_LCORE];
@@ -127,6 +128,7 @@ spdk_bdev_io_put_rbuf(struct spdk_bdev_io *bdev_io)
 	uint64_t length;
 
 	assert(bdev_io->u.read.iovcnt == 1);
+	assert(spdk_bdev_g_use_global_pools);
 
 	length = bdev_io->u.read.len;
 	buf = bdev_io->u.read.buf_unaligned;
@@ -152,6 +154,7 @@ static int spdk_initialize_rbuf_pool(void)
 {
 	int cache_size;
 
+	assert(spdk_bdev_g_use_global_pools);
 	/**
 	 * Ensure no more than half of the total buffers end up local caches, by
 	 *   using spdk_event_get_active_core_count() to determine how many local caches we need
@@ -186,7 +189,7 @@ static int spdk_initialize_rbuf_pool(void)
 	return 0;
 }
 
-static int
+int
 spdk_bdev_module_get_max_ctx_size(void)
 {
 	struct spdk_bdev_module_if *bdev_module;
@@ -271,24 +274,28 @@ spdk_bdev_initialize(void)
 		return -1;
 	}
 
-	spdk_bdev_g_io_pool = spdk_mempool_create("blockdev_io",
-			      SPDK_BDEV_IO_POOL_SIZE,
-			      sizeof(struct spdk_bdev_io) +
-			      spdk_bdev_module_get_max_ctx_size(),
-			      64,
-			      SPDK_ENV_SOCKET_ID_ANY);
+	if (spdk_bdev_g_use_global_pools) {
 
-	if (spdk_bdev_g_io_pool == NULL) {
-		SPDK_ERRLOG("could not allocate spdk_bdev_io pool");
-		return -1;
+		spdk_bdev_g_io_pool = spdk_mempool_create("blockdev_io",
+				      SPDK_BDEV_IO_POOL_SIZE,
+				      sizeof(struct spdk_bdev_io) +
+				      spdk_bdev_module_get_max_ctx_size(),
+				      64,
+				      SPDK_ENV_SOCKET_ID_ANY);
+
+		if (spdk_bdev_g_io_pool == NULL) {
+			SPDK_ERRLOG("could not allocate spdk_bdev_io pool");
+			return -1;
+		}
+
+		for (i = 0; i < SPDK_MAX_LCORE; i++) {
+			TAILQ_INIT(&g_need_rbuf_small[i]);
+			TAILQ_INIT(&g_need_rbuf_large[i]);
+		}
+
+		return spdk_initialize_rbuf_pool();
 	}
-
-	for (i = 0; i < SPDK_MAX_LCORE; i++) {
-		TAILQ_INIT(&g_need_rbuf_small[i]);
-		TAILQ_INIT(&g_need_rbuf_large[i]);
-	}
-
-	return spdk_initialize_rbuf_pool();
+	return 0;
 }
 
 static int
@@ -310,22 +317,31 @@ spdk_bdev_finish(void)
 
 	spdk_bdev_module_finish();
 
-	rc += spdk_bdev_check_pool(g_rbuf_small_pool, RBUF_SMALL_POOL_SIZE);
-	rc += spdk_bdev_check_pool(g_rbuf_large_pool, RBUF_LARGE_POOL_SIZE);
+	if (spdk_bdev_g_use_global_pools) {
+		rc += spdk_bdev_check_pool(g_rbuf_small_pool, RBUF_SMALL_POOL_SIZE);
+		rc += spdk_bdev_check_pool(g_rbuf_large_pool, RBUF_LARGE_POOL_SIZE);
+	}
 
 	return (rc != 0);
 }
 
-struct spdk_bdev_io *spdk_bdev_get_io(void)
+struct spdk_bdev_io *spdk_bdev_get_io(struct spdk_mempool *pool)
 {
 	struct spdk_bdev_io *bdev_io;
 
-	bdev_io = spdk_mempool_get(spdk_bdev_g_io_pool);
+	if (pool == NULL) {
+		assert(spdk_bdev_g_use_global_pools);
+	}
+	if (spdk_bdev_g_use_global_pools) {
+		bdev_io = spdk_mempool_get(spdk_bdev_g_io_pool);
+	} else {
+		bdev_io = spdk_mempool_get(pool);
+	}
+
 	if (!bdev_io) {
 		SPDK_ERRLOG("Unable to get spdk_bdev_io\n");
 		spdk_abort();
 	}
-
 	memset(bdev_io, 0, sizeof(*bdev_io));
 
 	return bdev_io;
@@ -338,11 +354,19 @@ spdk_bdev_put_io(struct spdk_bdev_io *bdev_io)
 		return;
 	}
 
-	if (bdev_io->type == SPDK_BDEV_IO_TYPE_READ && bdev_io->u.read.put_rbuf) {
-		spdk_bdev_io_put_rbuf(bdev_io);
+	if (bdev_io->bdev_io_pool == NULL) {
+		assert(spdk_bdev_g_use_global_pools);
 	}
 
-	spdk_mempool_put(spdk_bdev_g_io_pool, (void *)bdev_io);
+	if (spdk_bdev_g_use_global_pools) {
+		if (bdev_io->type == SPDK_BDEV_IO_TYPE_READ && bdev_io->u.read.put_rbuf) {
+			spdk_bdev_io_put_rbuf(bdev_io);
+		}
+
+		spdk_mempool_put(spdk_bdev_g_io_pool, (void *)bdev_io);
+	} else {
+		spdk_mempool_put(bdev_io->bdev_io_pool, (void *)bdev_io);
+	}
 }
 
 static void
@@ -352,6 +376,8 @@ _spdk_bdev_io_get_rbuf(struct spdk_bdev_io *bdev_io)
 	struct spdk_mempool *pool;
 	need_rbuf_tailq_t *tailq;
 	void *buf = NULL;
+
+	assert(spdk_bdev_g_use_global_pools);
 
 	if (len <= SPDK_BDEV_SMALL_RBUF_MAX_SIZE) {
 		pool = g_rbuf_small_pool;
@@ -376,6 +402,8 @@ spdk_bdev_cleanup_pending_rbuf_io(struct spdk_bdev *bdev)
 {
 	struct spdk_bdev_io *bdev_io, *tmp;
 
+	assert(spdk_bdev_g_use_global_pools);
+
 	TAILQ_FOREACH_SAFE(bdev_io, &g_need_rbuf_small[spdk_env_get_current_core()], rbuf_link, tmp) {
 		if (bdev_io->bdev == bdev) {
 			TAILQ_REMOVE(&g_need_rbuf_small[spdk_env_get_current_core()], bdev_io, rbuf_link);
@@ -395,7 +423,7 @@ static void
 __submit_request(struct spdk_bdev *bdev, struct spdk_bdev_io *bdev_io)
 {
 	assert(bdev_io->status == SPDK_BDEV_IO_STATUS_PENDING);
-	if (bdev_io->type == SPDK_BDEV_IO_TYPE_RESET) {
+	if (bdev_io->type == SPDK_BDEV_IO_TYPE_RESET && spdk_bdev_g_use_global_pools) {
 		spdk_bdev_cleanup_pending_rbuf_io(bdev);
 	}
 	bdev_io->in_submit_request = true;
@@ -451,7 +479,7 @@ spdk_bdev_get_child_io(struct spdk_bdev_io *parent,
 {
 	struct spdk_bdev_io *child;
 
-	child = spdk_bdev_get_io();
+	child = spdk_bdev_get_io(parent->bdev_io_pool);
 	if (!child) {
 		SPDK_ERRLOG("Unable to get spdk_bdev_io\n");
 		return NULL;
@@ -464,6 +492,7 @@ spdk_bdev_get_child_io(struct spdk_bdev_io *parent,
 	spdk_bdev_io_init(child, bdev, cb_arg, cb);
 
 	child->type = parent->type;
+	child->bdev_io_pool = parent->bdev_io_pool;
 	memcpy(&child->u, &parent->u, sizeof(child->u));
 	if (child->type == SPDK_BDEV_IO_TYPE_READ) {
 		child->u.read.put_rbuf = false;
@@ -521,7 +550,8 @@ spdk_bdev_io_valid(struct spdk_bdev *bdev, uint64_t offset, uint64_t nbytes)
 }
 
 struct spdk_bdev_io *
-spdk_bdev_read(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
+spdk_bdev_read(struct spdk_bdev *bdev, struct spdk_mempool *bdev_io_pool,
+	       struct spdk_io_channel *ch,
 	       void *buf, uint64_t offset, uint64_t nbytes,
 	       spdk_bdev_io_completion_cb cb, void *cb_arg)
 {
@@ -533,7 +563,7 @@ spdk_bdev_read(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 		return NULL;
 	}
 
-	bdev_io = spdk_bdev_get_io();
+	bdev_io = spdk_bdev_get_io(bdev_io_pool);
 	if (!bdev_io) {
 		SPDK_ERRLOG("spdk_bdev_io memory allocation failed duing read\n");
 		return NULL;
@@ -548,6 +578,7 @@ spdk_bdev_read(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 	bdev_io->u.read.len = nbytes;
 	bdev_io->u.read.offset = offset;
 	bdev_io->u.read.put_rbuf = false;
+	bdev_io->bdev_io_pool = bdev_io_pool;
 	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb);
 
 	rc = spdk_bdev_io_submit(bdev_io);
@@ -560,7 +591,8 @@ spdk_bdev_read(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 }
 
 struct spdk_bdev_io *
-spdk_bdev_readv(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
+spdk_bdev_readv(struct spdk_bdev *bdev, struct spdk_mempool *bdev_io_pool,
+		struct spdk_io_channel *ch,
 		struct iovec *iov, int iovcnt,
 		uint64_t offset, uint64_t nbytes,
 		spdk_bdev_io_completion_cb cb, void *cb_arg)
@@ -573,7 +605,7 @@ spdk_bdev_readv(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 		return NULL;
 	}
 
-	bdev_io = spdk_bdev_get_io();
+	bdev_io = spdk_bdev_get_io(bdev_io_pool);
 	if (!bdev_io) {
 		SPDK_ERRLOG("spdk_bdev_io memory allocation failed duing read\n");
 		return NULL;
@@ -586,6 +618,7 @@ spdk_bdev_readv(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 	bdev_io->u.read.len = nbytes;
 	bdev_io->u.read.offset = offset;
 	bdev_io->u.read.put_rbuf = false;
+	bdev_io->bdev_io_pool = bdev_io_pool;
 	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb);
 
 	rc = spdk_bdev_io_submit(bdev_io);
@@ -598,7 +631,8 @@ spdk_bdev_readv(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 }
 
 struct spdk_bdev_io *
-spdk_bdev_write(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
+spdk_bdev_write(struct spdk_bdev *bdev, struct spdk_mempool *bdev_io_pool,
+		struct spdk_io_channel *ch,
 		void *buf, uint64_t offset, uint64_t nbytes,
 		spdk_bdev_io_completion_cb cb, void *cb_arg)
 {
@@ -610,7 +644,7 @@ spdk_bdev_write(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 		return NULL;
 	}
 
-	bdev_io = spdk_bdev_get_io();
+	bdev_io = spdk_bdev_get_io(bdev_io_pool);
 	if (!bdev_io) {
 		SPDK_ERRLOG("blockdev_io memory allocation failed duing write\n");
 		return NULL;
@@ -624,6 +658,7 @@ spdk_bdev_write(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 	bdev_io->u.write.iovcnt = 1;
 	bdev_io->u.write.len = nbytes;
 	bdev_io->u.write.offset = offset;
+	bdev_io->bdev_io_pool = bdev_io_pool;
 	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb);
 
 	rc = spdk_bdev_io_submit(bdev_io);
@@ -636,7 +671,8 @@ spdk_bdev_write(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 }
 
 struct spdk_bdev_io *
-spdk_bdev_writev(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
+spdk_bdev_writev(struct spdk_bdev *bdev, struct spdk_mempool *bdev_io_pool,
+		 struct spdk_io_channel *ch,
 		 struct iovec *iov, int iovcnt,
 		 uint64_t offset, uint64_t len,
 		 spdk_bdev_io_completion_cb cb, void *cb_arg)
@@ -649,7 +685,7 @@ spdk_bdev_writev(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 		return NULL;
 	}
 
-	bdev_io = spdk_bdev_get_io();
+	bdev_io = spdk_bdev_get_io(bdev_io_pool);
 	if (!bdev_io) {
 		SPDK_ERRLOG("bdev_io memory allocation failed duing writev\n");
 		return NULL;
@@ -661,6 +697,7 @@ spdk_bdev_writev(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 	bdev_io->u.write.iovcnt = iovcnt;
 	bdev_io->u.write.len = len;
 	bdev_io->u.write.offset = offset;
+	bdev_io->bdev_io_pool = bdev_io_pool;
 	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb);
 
 	rc = spdk_bdev_io_submit(bdev_io);
@@ -693,7 +730,7 @@ spdk_bdev_unmap(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 		return NULL;
 	}
 
-	bdev_io = spdk_bdev_get_io();
+	bdev_io = spdk_bdev_get_io(NULL);
 	if (!bdev_io) {
 		SPDK_ERRLOG("bdev_io memory allocation failed duing unmap\n");
 		return NULL;
@@ -715,7 +752,8 @@ spdk_bdev_unmap(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 }
 
 struct spdk_bdev_io *
-spdk_bdev_flush(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
+spdk_bdev_flush(struct spdk_bdev *bdev, struct spdk_mempool *bdev_io_pool,
+		struct spdk_io_channel *ch,
 		uint64_t offset, uint64_t length,
 		spdk_bdev_io_completion_cb cb, void *cb_arg)
 {
@@ -723,7 +761,7 @@ spdk_bdev_flush(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 	int rc;
 
 	assert(bdev->status != SPDK_BDEV_STATUS_UNCLAIMED);
-	bdev_io = spdk_bdev_get_io();
+	bdev_io = spdk_bdev_get_io(bdev_io_pool);
 	if (!bdev_io) {
 		SPDK_ERRLOG("bdev_io memory allocation failed duing flush\n");
 		return NULL;
@@ -733,6 +771,7 @@ spdk_bdev_flush(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 	bdev_io->type = SPDK_BDEV_IO_TYPE_FLUSH;
 	bdev_io->u.flush.offset = offset;
 	bdev_io->u.flush.length = length;
+	bdev_io->bdev_io_pool = bdev_io_pool;
 	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb);
 
 	rc = spdk_bdev_io_submit(bdev_io);
@@ -752,7 +791,7 @@ spdk_bdev_reset(struct spdk_bdev *bdev, enum spdk_bdev_reset_type reset_type,
 	int rc;
 
 	assert(bdev->status != SPDK_BDEV_STATUS_UNCLAIMED);
-	bdev_io = spdk_bdev_get_io();
+	bdev_io = spdk_bdev_get_io(NULL);
 	if (!bdev_io) {
 		SPDK_ERRLOG("bdev_io memory allocation failed duing reset\n");
 		return -1;
@@ -998,6 +1037,7 @@ spdk_bdev_io_get_rbuf(struct spdk_bdev_io *bdev_io, spdk_bdev_io_get_rbuf_cb cb)
 {
 	assert(cb != NULL);
 	assert(bdev_io->u.read.iovs != NULL);
+	assert(spdk_bdev_g_use_global_pools);
 
 	if (bdev_io->u.read.iovs[0].iov_base == NULL) {
 		bdev_io->get_rbuf_cb = cb;
@@ -1013,6 +1053,8 @@ spdk_bdev_get_buff(struct iovec *iov, int32_t *iovcnt, int32_t length)
 	struct spdk_mempool *pool;
 	void *buf = NULL;
 	int32_t i = 0, max_buff_len;
+
+	assert(spdk_bdev_g_use_global_pools);
 
 	if (!iov) {
 		goto error;
@@ -1058,6 +1100,8 @@ spdk_bdev_put_buff(struct iovec *iov, int32_t iovcnt)
 	need_rbuf_tailq_t *tailq;
 	struct spdk_bdev_io *tmp;
 	int32_t i;
+
+	assert(spdk_bdev_g_use_global_pools);
 
 	if (!iov) {
 		return -1;
@@ -1149,6 +1193,13 @@ spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io, void *abt_ctx)
 	} else {
 		SPDK_ERRLOG("Bdev abort_request not plugged in\n");
 	}
+}
+
+void
+spdk_bdev_set_use_global_pools(bool value)
+{
+	spdk_bdev_g_use_global_pools = value;
+	SPDK_TRACELOG(SPDK_TRACE_DEBUG, "Using bdev global pools: %s\n", (value) ? "true" : "false");
 }
 
 void spdk_bdev_module_list_add(struct spdk_bdev_module_if *bdev_module)
