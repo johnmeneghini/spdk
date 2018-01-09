@@ -230,6 +230,20 @@ nvmf_fc_tgt_hw_port_data_init(struct spdk_nvmf_bcm_fc_port *fc_port,
 	}
 
 	/*
+	 * Create an IO resource pool. This store the bdev_io at this point.
+	 * This ensures that we create right sized pools in our environment instead
+	 * of huge static global ones as done in SPDK.
+	 * No need to have more bdev_io's then the number of XRI's on a port.
+	 */
+	snprintf(poolname, sizeof(poolname), "blockdev_io:%d", args->port_handle);
+	fc_port->io_rsrc_pool = spdk_mempool_create(poolname,
+				poweroftwo,
+				sizeof(struct spdk_bdev_io) +
+				spdk_bdev_module_get_max_ctx_size(),
+				64,
+				SPDK_ENV_SOCKET_ID_ANY);
+
+	/*
 	 * Initialize the LS queue wherever needed.
 	 */
 	fc_port->ls_queue.queues    = args->ls_queue;
