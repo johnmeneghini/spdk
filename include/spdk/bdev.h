@@ -59,6 +59,7 @@ struct spdk_bdev_io;
 struct spdk_bdev_fn_table;
 struct spdk_io_channel;
 struct spdk_json_write_ctx;
+struct spdk_mempool;
 
 /** bdev status */
 enum spdk_bdev_status {
@@ -253,6 +254,7 @@ struct spdk_io_channel *spdk_bdev_get_io_channel(struct spdk_bdev_desc *desc);
  * Submit a read request to the bdev on the given channel.
  *
  * \param bdev Block device
+ * \param bdev_io_pool I/O request pool used to obtain a bdev_io  NULL to use global pool.
  * \param ch I/O channel. Obtained by calling spdk_bdev_get_io_channel().
  * \param buf Data buffer to read into.
  * \param offset The offset, in bytes, from the start of the block device.
@@ -264,7 +266,8 @@ struct spdk_io_channel *spdk_bdev_get_io_channel(struct spdk_bdev_desc *desc);
  * be called (even if the request ultimately failed). Return
  * negated errno on failure, in which case the callback will not be called.
  */
-int spdk_bdev_read(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+int spdk_bdev_read(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
+		   struct spdk_io_channel *ch,
 		   void *buf, uint64_t offset, uint64_t nbytes,
 		   spdk_bdev_io_completion_cb cb, void *cb_arg);
 
@@ -276,6 +279,7 @@ int spdk_bdev_read(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
  * this case, the request may fail.
  *
  * \param bdev Block device
+ * \param bdev_io_pool I/O request pool used to obtain a bdev_io  NULL to use global pool.
  * \param ch I/O channel. Obtained by calling spdk_bdev_get_io_channel().
  * \param iov A scatter gather list of buffers to be read into.
  * \param iovcnt The number of elements in iov.
@@ -288,7 +292,8 @@ int spdk_bdev_read(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
  * be called (even if the request ultimately failed). Return
  * negated errno on failure, in which case the callback will not be called.
  */
-int spdk_bdev_readv(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+int spdk_bdev_readv(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
+		    struct spdk_io_channel *ch,
 		    struct iovec *iov, int iovcnt,
 		    uint64_t offset, uint64_t nbytes,
 		    spdk_bdev_io_completion_cb cb, void *cb_arg);
@@ -297,6 +302,7 @@ int spdk_bdev_readv(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
  * Submit a write request to the bdev on the given channel.
  *
  * \param bdev Block device
+ * \param bdev_io_pool I/O request pool used to obtain a bdev_io  NULL to use global pool.
  * \param ch I/O channel. Obtained by calling spdk_bdev_get_io_channel().
  * \param buf Data buffer to written from.
  * \param offset The offset, in bytes, from the start of the block device.
@@ -308,7 +314,8 @@ int spdk_bdev_readv(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
  * be called (even if the request ultimately failed). Return
  * negated errno on failure, in which case the callback will not be called.
  */
-int spdk_bdev_write(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+int spdk_bdev_write(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
+		    struct spdk_io_channel *ch,
 		    void *buf, uint64_t offset, uint64_t nbytes,
 		    spdk_bdev_io_completion_cb cb, void *cb_arg);
 
@@ -320,6 +327,7 @@ int spdk_bdev_write(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
  * this case, the request may fail.
  *
  * \param bdev Block device
+ * \param bdev_io_pool I/O request pool used to obtain a bdev_io  NULL to use global pool.
  * \param ch I/O channel. Obtained by calling spdk_bdev_get_io_channel().
  * \param iov A scatter gather list of buffers to be written from.
  * \param iovcnt The number of elements in iov.
@@ -332,7 +340,8 @@ int spdk_bdev_write(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
  * be called (even if the request ultimately failed). Return
  * negated errno on failure, in which case the callback will not be called.
  */
-int spdk_bdev_writev(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+int spdk_bdev_writev(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
+		     struct spdk_io_channel *ch,
 		     struct iovec *iov, int iovcnt,
 		     uint64_t offset, uint64_t len,
 		     spdk_bdev_io_completion_cb cb, void *cb_arg);
@@ -364,6 +373,7 @@ int spdk_bdev_unmap(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
  * request. Call spdk_bdev_has_write_cache() to check if the bdev has a volatile cache.
  *
  * \param bdev Block device
+ * \param bdev_io_pool I/O request pool used to obtain a bdev_io  NULL to use global pool.
  * \param ch I/O channel. Obtained by calling spdk_bdev_get_io_channel().
  * \param offset The offset, in bytes, from the start of the block device.
  * \param length The number of bytes.
@@ -374,7 +384,8 @@ int spdk_bdev_unmap(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
  * be called (even if the request ultimately failed). Return
  * negated errno on failure, in which case the callback will not be called.
  */
-int spdk_bdev_flush(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+int spdk_bdev_flush(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
+		    struct spdk_io_channel *ch,
 		    uint64_t offset, uint64_t length,
 		    spdk_bdev_io_completion_cb cb, void *cb_arg);
 
@@ -478,6 +489,8 @@ int spdk_bdev_write_fini(struct spdk_bdev_io *bdev_io, struct iovec *iov, int32_
 			 void *iovctx);
 void spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io, void *abt_ctx);
 
+int spdk_bdev_module_get_max_ctx_size(void);
+
 /**
  * Get the status of bdev_io as an NVMe status code.
  *
@@ -507,5 +520,14 @@ void spdk_bdev_io_get_scsi_status(const struct spdk_bdev_io *bdev_io,
  * \param iovcntp Pointer to be filled with number of iovec entries.
  */
 void spdk_bdev_io_get_iovec(struct spdk_bdev_io *bdev_io, struct iovec **iovp, int *iovcntp);
+
+/**
+ * Decide on the use of the global bdev pools
+ *  This function should be called before the bdev subsystem is initialized if
+ *  there is a need to stop the creation of the global bdev memory pools.
+ *
+ * \param value false if global pools are not used
+ */
+void spdk_bdev_set_use_global_pools(bool value);
 
 #endif /* SPDK_BDEV_H_ */

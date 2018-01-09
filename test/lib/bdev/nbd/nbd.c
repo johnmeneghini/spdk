@@ -184,11 +184,11 @@ nbd_submit_bdev_io(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 
 	switch (io->type) {
 	case SPDK_BDEV_IO_TYPE_READ:
-		rc = spdk_bdev_read(desc, ch, io->payload, from_be64(&io->req.from),
+		rc = spdk_bdev_read(desc, NULL, ch, io->payload, from_be64(&io->req.from),
 				    io->payload_size, nbd_io_done, io);
 		break;
 	case SPDK_BDEV_IO_TYPE_WRITE:
-		rc = spdk_bdev_write(desc, ch, io->payload, from_be64(&io->req.from),
+		rc = spdk_bdev_write(desc, NULL, ch, io->payload, from_be64(&io->req.from),
 				     io->payload_size, nbd_io_done, io);
 		break;
 	case SPDK_BDEV_IO_TYPE_UNMAP:
@@ -197,7 +197,8 @@ nbd_submit_bdev_io(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 		rc = spdk_bdev_unmap(desc, ch, &io->unmap, 1, nbd_io_done, io);
 		break;
 	case SPDK_BDEV_IO_TYPE_FLUSH:
-		rc = spdk_bdev_flush(desc, ch, 0, spdk_bdev_get_num_blocks(bdev) * spdk_bdev_get_block_size(bdev),
+		rc = spdk_bdev_flush(desc, NULL, ch, 0,
+				     spdk_bdev_get_num_blocks(bdev) * spdk_bdev_get_block_size(bdev),
 				     nbd_io_done, io);
 		break;
 	default:

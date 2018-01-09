@@ -577,7 +577,7 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 			req->iov[0].iov_base = req->data;
 			req->iov[0].iov_len  = req->length;
 
-			if (spdk_bdev_read(desc, ch, req->data, offset, req->length,
+			if (spdk_bdev_read(desc, req->io_rsrc_pool, ch, req->data, offset, req->length,
 					   nvmf_virtual_ctrlr_complete_cmd, req)) {
 				response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
@@ -588,7 +588,7 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 			if (error < 0) {
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING;
 			} else if (error == 0) {
-				if (spdk_bdev_readv(desc, ch, req->iov, req->iovcnt, offset, req->length,
+				if (spdk_bdev_readv(desc, req->io_rsrc_pool, ch, req->iov, req->iovcnt, offset, req->length,
 						    nvmf_virtual_ctrlr_complete_cmd, req)) {
 					response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
 					return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
@@ -601,13 +601,13 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 		if (req->data) {
 			spdk_bdev_write_init(bdev, req->length, req->iov, &req->iovcnt, &req->iovctx);
 			bcopy(req->data, req->iov[0].iov_base, req->length); // TODO: bcopy each elements
-			if (spdk_bdev_writev(desc, ch, req->iov, req->iovcnt, offset, req->length,
+			if (spdk_bdev_writev(desc, req->io_rsrc_pool, ch, req->iov, req->iovcnt, offset, req->length,
 					     nvmf_virtual_ctrlr_complete_cmd, req)) {
 				response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 			}
 		} else if (req->iovcnt) {
-			if (spdk_bdev_writev(desc, ch, req->iov, req->iovcnt, offset, req->length,
+			if (spdk_bdev_writev(desc, req->io_rsrc_pool, ch, req->iov, req->iovcnt, offset, req->length,
 					     nvmf_virtual_ctrlr_complete_cmd, req)) {
 				response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
@@ -636,7 +636,7 @@ nvmf_virtual_ctrlr_flush_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc
 	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
 
 	nbytes = spdk_bdev_get_num_blocks(bdev) * spdk_bdev_get_block_size(bdev);
-	if (spdk_bdev_flush(desc, ch, 0, nbytes, nvmf_virtual_ctrlr_complete_cmd, req)) {
+	if (spdk_bdev_flush(desc, req->io_rsrc_pool, ch, 0, nbytes, nvmf_virtual_ctrlr_complete_cmd, req)) {
 		response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}

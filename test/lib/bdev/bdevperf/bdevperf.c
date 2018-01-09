@@ -252,7 +252,7 @@ bdevperf_unmap_complete(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg
 	memset(task->buf, 0, g_io_size);
 
 	/* Read the data back in */
-	rc = spdk_bdev_read(target->bdev_desc, target->ch, NULL, task->offset, g_io_size,
+	rc = spdk_bdev_read(target->bdev_desc, NULL, target->ch, NULL, task->offset, g_io_size,
 			    bdevperf_complete, task);
 	if (rc) {
 		printf("Failed to submit read: %d\n", rc);
@@ -292,7 +292,7 @@ bdevperf_verify_write_complete(struct spdk_bdev_io *bdev_io, bool success,
 		}
 	} else {
 		/* Read the data back in */
-		rc = spdk_bdev_read(target->bdev_desc, target->ch, NULL,
+		rc = spdk_bdev_read(target->bdev_desc, NULL, target->ch, NULL,
 				    task->offset,
 				    g_io_size,
 				    bdevperf_complete, task);
@@ -351,7 +351,7 @@ bdevperf_submit_single(struct io_target *target)
 		memset(task->buf, rand_r(&seed) % 256, g_io_size);
 		task->iov.iov_base = task->buf;
 		task->iov.iov_len = g_io_size;
-		rc = spdk_bdev_writev(desc, ch, &task->iov, 1, task->offset, g_io_size,
+		rc = spdk_bdev_writev(desc, NULL, ch, &task->iov, 1, task->offset, g_io_size,
 				      bdevperf_verify_write_complete, task);
 		if (rc) {
 			printf("Failed to submit writev: %d\n", rc);
@@ -362,7 +362,7 @@ bdevperf_submit_single(struct io_target *target)
 	} else if ((g_rw_percentage == 100) ||
 		   (g_rw_percentage != 0 && ((rand_r(&seed) % 100) < g_rw_percentage))) {
 		rbuf = g_zcopy ? NULL : task->buf;
-		rc = spdk_bdev_read(desc, ch, rbuf, task->offset, g_io_size,
+		rc = spdk_bdev_read(desc, NULL, ch, rbuf, task->offset, g_io_size,
 				    bdevperf_complete, task);
 		if (rc) {
 			printf("Failed to submit read: %d\n", rc);
@@ -373,7 +373,7 @@ bdevperf_submit_single(struct io_target *target)
 	} else {
 		task->iov.iov_base = task->buf;
 		task->iov.iov_len = g_io_size;
-		rc = spdk_bdev_writev(desc, ch, &task->iov, 1, task->offset, g_io_size,
+		rc = spdk_bdev_writev(desc, NULL, ch, &task->iov, 1, task->offset, g_io_size,
 				      bdevperf_complete, task);
 		if (rc) {
 			printf("Failed to submit writev: %d\n", rc);

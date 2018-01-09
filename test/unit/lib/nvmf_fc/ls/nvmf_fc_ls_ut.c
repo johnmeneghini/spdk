@@ -1083,7 +1083,8 @@ spdk_nvmf_listen_addr_compare(struct spdk_nvmf_listen_addr *a, struct spdk_nvmf_
 }
 
 struct spdk_nvmf_listen_addr *
-spdk_nvmf_listen_addr_create(const char *trname, const char *traddr, const char *trsvcid)
+spdk_nvmf_listen_addr_create(const char *trname, enum spdk_nvmf_adrfam adrfam, const char *traddr,
+			     const char *trsvcid)
 {
 	struct spdk_nvmf_listen_addr *listen_addr;
 
@@ -1158,8 +1159,8 @@ spdk_nvmf_subsystem_listener_allowed(struct spdk_nvmf_subsystem *subsystem,
 void
 spdk_nvmf_listen_addr_cleanup(struct spdk_nvmf_listen_addr *addr)
 {
-	spdk_free(addr->trname);
-	spdk_free(addr->trsvcid);
-	spdk_free(addr->traddr);
-	spdk_free(addr);
+	free(addr->trname);
+	free(addr->trsvcid);
+	free(addr->traddr);
+	free(addr);
 }

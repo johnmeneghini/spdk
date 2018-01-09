@@ -943,7 +943,8 @@ nvmf_fc_ls_process_cass(uint32_t s_id,
 	snprintf(traddr, NVMF_TGT_FC_TR_ADDR_LENGTH, "nn-0x%lx:pn-0x%lx",
 		 be64_to_cpu(&tgtport->fc_nodename.u.wwn), be64_to_cpu(&tgtport->fc_portname.u.wwn));
 
-	listen_addr = spdk_nvmf_listen_addr_create(NVMF_BCM_FC_TRANSPORT_NAME, traddr, "none");
+	listen_addr = spdk_nvmf_listen_addr_create(NVMF_BCM_FC_TRANSPORT_NAME, SPDK_NVMF_ADRFAM_FC, traddr,
+			"none");
 
 	if (ls_rqst->rqst_len < LS_CREATE_ASSOC_MIN_LEN) {
 		SPDK_ERRLOG("assoc_cmd req len = %d, should be at least %d\n",

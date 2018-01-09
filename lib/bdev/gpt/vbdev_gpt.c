@@ -495,7 +495,8 @@ vbdev_gpt_read_gpt(struct spdk_bdev *bdev)
 		return -1;
 	}
 
-	rc = spdk_bdev_read(gpt_bdev->bdev_desc, gpt_bdev->ch, gpt_bdev->gpt.buf, 0, SPDK_GPT_BUFFER_SIZE,
+	rc = spdk_bdev_read(gpt_bdev->bdev_desc, NULL, gpt_bdev->ch, gpt_bdev->gpt.buf, 0,
+			    SPDK_GPT_BUFFER_SIZE,
 			    spdk_gpt_bdev_complete, gpt_bdev);
 	if (rc < 0) {
 		spdk_gpt_bdev_free(gpt_bdev);

@@ -277,6 +277,9 @@ struct spdk_bdev_io {
 	/** Entry to the list need_buf of struct spdk_bdev. */
 	TAILQ_ENTRY(spdk_bdev_io) buf_link;
 
+	/** Pool that this bdev_io belongs to (and to be returned) */
+	struct spdk_mempool *bdev_io_pool;
+
 	/** Generation value for each I/O. */
 	uint32_t gencnt;
 
@@ -425,7 +428,7 @@ void spdk_bdev_poller_start(struct spdk_bdev_poller **ppoller,
 void spdk_bdev_poller_stop(struct spdk_bdev_poller **ppoller);
 
 void spdk_bdev_io_get_buf(struct spdk_bdev_io *bdev_io, spdk_bdev_io_get_buf_cb cb);
-struct spdk_bdev_io *spdk_bdev_get_io(void);
+struct spdk_bdev_io *spdk_bdev_get_io(struct spdk_mempool *bdev_io_pool);
 void spdk_bdev_io_resubmit(struct spdk_bdev_io *bdev_io, struct spdk_bdev_desc *new_bdev_desc);
 void spdk_bdev_io_complete(struct spdk_bdev_io *bdev_io,
 			   enum spdk_bdev_io_status status);
