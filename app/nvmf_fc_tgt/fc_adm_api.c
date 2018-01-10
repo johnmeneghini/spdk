@@ -658,6 +658,8 @@ nvmf_fc_tgt_rport_data_init(struct spdk_nvmf_bcm_fc_remote_port_info *rport,
 	(void)spdk_nvmf_bcm_fc_rport_set_state(rport, SPDK_NVMF_BCM_FC_OBJECT_CREATED);
 	rport->s_id = args->s_id;
 	rport->rpi  = args->rpi;
+	rport->fc_nodename = args->fc_nodename;
+	rport->fc_portname = args->fc_portname;
 }
 
 static void
