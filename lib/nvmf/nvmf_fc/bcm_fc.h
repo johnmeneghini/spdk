@@ -281,6 +281,8 @@ struct spdk_nvmf_bcm_fc_remote_port_info {
 	uint32_t s_id;
 	uint32_t rpi;
 	uint32_t assoc_count;
+	struct spdk_nvmf_bcm_fc_wwn fc_nodename;
+	struct spdk_nvmf_bcm_fc_wwn fc_portname;
 	spdk_nvmf_bcm_fc_object_state_t rport_state;
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_remote_port_info) link;
 };
