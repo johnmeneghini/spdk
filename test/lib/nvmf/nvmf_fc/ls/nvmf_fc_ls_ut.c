@@ -48,12 +48,7 @@
 #include "spdk/trace.h"
 #include "spdk_internal/log.h"
 
-extern struct spdk_trace_flag SPDK_TRACE_NVMF_BCM_FC_LS;
-
-struct spdk_trace_flag SPDK_TRACE_NVMF = {
-	.name = "nvmf",
-	.enabled = false,   /* make this true to enable TRACE output */
-};
+SPDK_LOG_REGISTER_TRACE_FLAG("nvmf", SPDK_TRACE_NVMF)
 
 /*
  * SPDK Stuff
@@ -316,15 +311,15 @@ static const char *fc_ut_good_subsystem =
 static struct spdk_nvmf_host fc_ut_target = {
 	.nqn = "nqn.2017-11.fc_host",
 	.max_aq_depth = 32,
-	.max_queue_depth = 16,
-	.max_connections_allowed = 2,
+	.max_queue_depth = 256,
+	.max_connections_allowed = 4,
 };
 
 static struct spdk_nvmf_host fc_ut_initiator = {
 	.nqn = "nqn.2017-11.fc_host",
 	.max_aq_depth = 31,
-	.max_queue_depth = 15,
-	.max_connections_allowed = 2,
+	.max_queue_depth = 255,
+	.max_connections_allowed = 4,
 };
 
 static struct spdk_nvmf_host *fc_ut_host = &fc_ut_initiator;
@@ -344,6 +339,100 @@ spdk_nvmf_find_subsystem_host(struct spdk_nvmf_subsystem *subsystem, const char 
 	SPDK_ERRLOG("Hostnqn %s not found on Subsystem %s\n", hostnqn, subsystem->subnqn);
 
 	return NULL;
+}
+
+bool
+spdk_nvmf_listen_addr_compare(struct spdk_nvmf_listen_addr *a, struct spdk_nvmf_listen_addr *b)
+{
+	if ((strcmp(a->trname, b->trname) == 0) &&
+	    (strcmp(a->traddr, b->traddr) == 0) &&
+	    (strcmp(a->trsvcid, b->trsvcid) == 0)) {
+		return true;
+	} else {
+		return false;
+	}
+}
+
+struct spdk_nvmf_listen_addr *
+spdk_nvmf_listen_addr_create(const char *trname, const char *traddr, const char *trsvcid)
+{
+	struct spdk_nvmf_listen_addr *listen_addr;
+
+	listen_addr = calloc(1, sizeof(*listen_addr));
+	if (!listen_addr) {
+		return NULL;
+	}
+
+	listen_addr->traddr = strdup(traddr);
+	if (!listen_addr->traddr) {
+		free(listen_addr);
+		return NULL;
+	}
+
+	listen_addr->trsvcid = strdup(trsvcid);
+	if (!listen_addr->trsvcid) {
+		free(listen_addr->traddr);
+		free(listen_addr);
+		return NULL;
+	}
+
+	listen_addr->trname = strdup(trname);
+	if (!listen_addr->trname) {
+		free(listen_addr->traddr);
+		free(listen_addr->trsvcid);
+		free(listen_addr);
+		return NULL;
+	}
+
+	return listen_addr;
+}
+
+struct spdk_nvmf_listen_addr *
+spdk_nvmf_find_subsystem_listener(struct spdk_nvmf_subsystem *subsystem,
+				  struct spdk_nvmf_listen_addr *listen_addr)
+{
+	if (!listen_addr) {
+		SPDK_ERRLOG("listen_addr is NULL\n");
+		return NULL;
+	}
+
+	if (spdk_nvmf_subsystem_listener_allowed(subsystem, listen_addr)) {
+		return listen_addr;
+	}
+
+	return NULL;
+}
+
+bool
+spdk_nvmf_subsystem_listener_allowed(struct spdk_nvmf_subsystem *subsystem,
+				     struct spdk_nvmf_listen_addr *listen_addr)
+{
+	struct spdk_nvmf_subsystem_allowed_listener *allowed_listener;
+
+	/* We expect some ports to exist. Subsystems are not created without
+	 * any listening addr.
+	 */
+	if (TAILQ_EMPTY(&subsystem->allowed_listeners)) {
+		return true;
+	}
+
+	TAILQ_FOREACH(allowed_listener, &subsystem->allowed_listeners, link) {
+		if (spdk_nvmf_listen_addr_compare(allowed_listener->listen_addr, listen_addr)) {
+
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void
+spdk_nvmf_listen_addr_cleanup(struct spdk_nvmf_listen_addr *addr)
+{
+	spdk_free(addr->trname);
+	spdk_free(addr->trsvcid);
+	spdk_free(addr->traddr);
+	spdk_free(addr);
 }
 
 const struct spdk_nvmf_transport spdk_nvmf_transport_bcm_fc = {
@@ -383,10 +472,11 @@ enum _test_run_type {
 	TEST_RUN_TYPE_DISCONNECT,
 	TEST_RUN_TYPE_CONN_BAD_ASSOC,
 	TEST_RUN_TYPE_DIR_DISCONN_CALL,
+	TEST_RUN_TYPE_FAIL_LS_RSP,
 };
 
 static uint64_t g_curr_assoc_id = 0;
-static uint32_t g_create_conn_test_cnt = 0;
+static uint16_t g_create_conn_test_cnt = 0;
 static int g_last_rslt = 0;
 static bool g_spdk_nvmf_bcm_fc_xmt_srsr_req = false;
 
@@ -420,10 +510,11 @@ run_create_assoc_test(const char *subnqn,
 	ls_rqst.rsp_len = 0;
 	ls_rqst.rpi = 5000;
 	ls_rqst.private_data = NULL;
+	ls_rqst.s_id = 0;
+	ls_rqst.nport = tgtport;
 
-	spdk_nvmf_bcm_fc_handle_ls_rqst(0, tgtport, &ls_rqst);
+	spdk_nvmf_bcm_fc_handle_ls_rqst(&ls_rqst);
 }
-
 
 static void
 run_create_conn_test(struct spdk_nvmf_host *host,
@@ -453,7 +544,6 @@ run_create_conn_test(struct spdk_nvmf_host *host,
 	to_be16(&cc_rqst.connect_cmd.sqsize, host->max_queue_depth);
 	to_be16(&cc_rqst.connect_cmd.qid, qid);
 
-
 	/* fill in association id descriptor */
 	to_be32(&cc_rqst.assoc_id.desc_tag, FCNVME_LSDESC_ASSOC_ID),
 		to_be32(&cc_rqst.assoc_id.desc_len,
@@ -467,8 +557,10 @@ run_create_conn_test(struct spdk_nvmf_host *host,
 	ls_rqst.rsp_len = 0;
 	ls_rqst.rpi = 5000;
 	ls_rqst.private_data = NULL;
+	ls_rqst.s_id = 0;
+	ls_rqst.nport = tgtport;
 
-	spdk_nvmf_bcm_fc_handle_ls_rqst(0, tgtport, &ls_rqst);
+	spdk_nvmf_bcm_fc_handle_ls_rqst(&ls_rqst);
 }
 
 static void
@@ -506,8 +598,10 @@ run_disconn_test(struct spdk_nvmf_bcm_fc_nport *tgtport,
 	ls_rqst.rsp_len = 0;
 	ls_rqst.rpi = 5000;
 	ls_rqst.private_data = NULL;
+	ls_rqst.s_id = 0;
+	ls_rqst.nport = tgtport;
 
-	spdk_nvmf_bcm_fc_handle_ls_rqst(0, tgtport, &ls_rqst);
+	spdk_nvmf_bcm_fc_handle_ls_rqst(&ls_rqst);
 }
 
 static void
@@ -690,15 +784,15 @@ static struct spdk_nvmf_bcm_fc_remote_port_info rport;
 static uint64_t assoc_id[1024];
 struct spdk_nvmf_tgt g_nvmf_tgt;
 
-static void
+static int
 ls_tests_init(void)
 {
 	uint16_t i;
 
 	bzero(&g_nvmf_tgt, sizeof(g_nvmf_tgt));
-	g_nvmf_tgt.opts.max_aq_depth = 32;
-	g_nvmf_tgt.opts.max_queue_depth = 1024;
-	g_nvmf_tgt.opts.max_queues_per_session = 4;
+	g_nvmf_tgt.opts.max_aq_depth = fc_ut_target.max_aq_depth;
+	g_nvmf_tgt.opts.max_queue_depth = fc_ut_target.max_queue_depth;
+	g_nvmf_tgt.opts.max_queues_per_session = fc_ut_target.max_connections_allowed;
 
 	bzero(&fcport, sizeof(struct spdk_nvmf_bcm_fc_port));
 	fcport.hw_port_status = SPDK_FC_PORT_ONLINE;
@@ -708,8 +802,8 @@ ls_tests_init(void)
 		fcport.io_queues[i].fc_port = &fcport;
 		fcport.io_queues[i].num_conns = 0;
 		fcport.io_queues[i].cid_cnt = 0;
-		fcport.io_queues[i].free_q_slots = 1024;
-		fcport.io_queues[i].queues.rq_payload.num_buffers = 1024;
+		fcport.io_queues[i].queues.rq_payload.num_buffers = fc_ut_target.max_queue_depth * 4;
+		fcport.io_queues[i].free_q_slots = fcport.io_queues[i].queues.rq_payload.num_buffers;
 		TAILQ_INIT(&fcport.io_queues[i].connection_list);
 		TAILQ_INIT(&fcport.io_queues[i].in_use_reqs);
 	}
@@ -723,12 +817,15 @@ ls_tests_init(void)
 
 	bzero(&rport, sizeof(struct spdk_nvmf_bcm_fc_remote_port_info));
 	TAILQ_INSERT_TAIL(&tgtport.rem_port_list, &rport, link);
+
+	return 0;
 }
 
-static void
+static int
 ls_tests_fini(void)
 {
 	spdk_nvmf_bcm_fc_ls_fini(&fcport);
+	return 0;
 }
 
 static void
@@ -757,8 +854,13 @@ create_assoc_test(void)
 	if (g_last_rslt == 0) {
 		g_test_run_type = TEST_RUN_TYPE_CREATE_CONN;
 		/* create connections until we get too many connections error */
-		while (g_last_rslt == 0)
+		while (g_last_rslt == 0) {
+			if (g_create_conn_test_cnt > fc_ut_host->max_connections_allowed) {
+				CU_FAIL("Did not get CIOC failure for too many connections");
+				break;
+			}
 			run_create_conn_test(fc_ut_host, &tgtport, g_curr_assoc_id, qid++);
+		}
 
 		/* disconnect the association */
 		g_test_run_type = TEST_RUN_TYPE_DISCONNECT;
@@ -815,6 +917,17 @@ direct_delete_assoc_test(void)
 	}
 }
 
+static void
+xmt_ls_rsp_failure_test(void)
+{
+	g_test_run_type = TEST_RUN_TYPE_FAIL_LS_RSP;
+	run_create_assoc_test(fc_ut_good_subsystem, fc_ut_host, &tgtport);
+	if (g_last_rslt == 0) {
+		/* check target port for associations */
+		CU_ASSERT(tgtport.assoc_count == 0);
+	}
+}
+
 /*
  * SPDK functions that are called by LS processing
  */
@@ -836,13 +949,16 @@ spdk_nvmf_bcm_fc_xmt_ls_rsp(struct spdk_nvmf_bcm_fc_nport *tgtport,
 	case TEST_RUN_TYPE_CONN_BAD_ASSOC:
 		g_last_rslt = handle_conn_bad_assoc_rsp(ls_rqst);
 		break;
+	case TEST_RUN_TYPE_FAIL_LS_RSP:
+		g_last_rslt = handle_ca_rsp(ls_rqst);
+		return 1;
 
 	default:
 		CU_FAIL("LS Response for Invalid Test Type");
 		g_last_rslt = 1;
 	}
 
-	return g_last_rslt;
+	return 0;
 }
 
 int
@@ -866,7 +982,6 @@ spdk_nvmf_bcm_fc_xmt_srsr_req(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 
 	/*  gets called from spkd_nvmf_bcm_fc_delete association() test */
 	g_spdk_nvmf_bcm_fc_xmt_srsr_req = true;
-
 
 	return 0;
 }
@@ -907,81 +1022,86 @@ spdk_nvmf_bcm_fc_find_rport_from_sid(uint32_t s_id,
 static void
 usage(const char *program_name)
 {
-	printf("%s options\n", program_name);
-	printf("\t[-d <value> Enable trace level 0..2 (default: 0)]\n");
-	printf("\t[-a <value> Admin Queue depth (default: %u)]\n",
+	printf("%s options:\n", program_name);
+	spdk_tracelog_usage(stdout, "-t");
+	printf(" -a value - Admin Queue depth (default: %u)\n",
 	       fc_ut_target.max_aq_depth);
-	printf("\t[-q <value> IO Queue depth (default: %u)]\n",
+	printf(" -q value - IO Queue depth (default: %u)\n",
 	       fc_ut_target.max_queue_depth);
-	printf("\t[-c <value> IO Queue count (default: %u)]\n",
+	printf(" -c value - IO Queue count (default: %u)\n",
 	       fc_ut_target.max_connections_allowed);
-	printf("\t[-t 0 : Run all tests (default)]\n");
-	printf("\t[   1 : CASS/DISC create single assoc test]\n");
-	printf("\t[   2 : CASS/CIOC/DISC create_assoc_test]\n");
-	printf("\t[   3 : CIOC to invalid assoc_id connection test]\n");
-	printf("\t[   4 : Create max assoc conns test]\n");
-	printf("\t[   5 : Delete assoc test]\n");
-
+	printf(" -u test - Unit test to run\n");
+	printf("    0 : Run all tests (default)\n");
+	printf("    1 : CASS/DISC create single assoc testx\n");
+	printf("    2 : CASS/CIOC/DISC create_assoc_testx\n");
+	printf("    3 : CIOC to invalid assoc_id connection test\n");
+	printf("    4 : Create max assoc conns test\n");
+	printf("    5 : Delete assoc test\n");
+	printf("    6 : LS response failure test\n");
 }
 
 int main(int argc, char **argv)
 {
-	unsigned int	num_failures = 0;
-	CU_pSuite	suite = NULL;
-	int trace_level = 0;
+	unsigned int num_failures = 0;
+	CU_pSuite suite = NULL;
 	int test = 0;
-	uint16_t max_aq_depth = 32;
-	uint16_t max_queue_depth = 16;
-	uint16_t max_connections_allowed = 2;
+	uint16_t val;
 	int op;
 
-	while ((op = getopt(argc, argv, "a:q:c:d:t:")) != -1) {
+	while ((op = getopt(argc, argv, "a:q:c:t:u:")) != -1) {
 		switch (op) {
 		case 'a':
-			max_aq_depth = (uint16_t) atoi(optarg);
+			val = (uint16_t) atoi(optarg);
+			if (val < 32) {
+				fprintf(stderr, "Max. admin queue depth must be at least 32\n");
+				usage(argv[0]);
+				return -1;
+			}
+			fc_ut_target.max_aq_depth = val;
 			break;
 		case 'q':
-			max_queue_depth = (uint16_t) atoi(optarg);
+			val = (uint16_t) atoi(optarg);
+			if (val < 16) {
+				fprintf(stderr, "Max. queue depth must be at least 16\n");
+				usage(argv[0]);
+				return -1;
+			}
+			fc_ut_target.max_queue_depth = val;
 			break;
 		case 'c':
-			max_connections_allowed = atoi(optarg);
-			break;
-		case 'd':
-			trace_level = atoi(optarg);
+			val = atoi(optarg);
+			if (val < 2) {
+				fprintf(stderr, "Max. connections must be at least 2\n");
+				usage(argv[0]);
+				return -1;
+			}
+			fc_ut_target.max_connections_allowed = val;
 			break;
 		case 't':
+			if (spdk_log_set_trace_flag(optarg) < 0) {
+				fprintf(stderr, "Unknown trace flag '%s'\n", optarg);
+				usage(argv[0]);
+				return -1;
+			}
+			break;
+		case 'u':
 			test = atoi(optarg);
 			break;
 		default:
 			usage(argv[0]);
-			exit(1);
+			return -1;
 		}
 	}
 
-	fc_ut_target.max_aq_depth = max_aq_depth;
-	fc_ut_target.max_queue_depth = max_queue_depth;
-	fc_ut_target.max_connections_allowed = max_connections_allowed;
-
-	switch (trace_level) {
-	case 2:
-		SPDK_TRACE_NVMF_BCM_FC_LS.enabled = true;
-	/* fall through */
-	case 1:
-		SPDK_TRACE_NVMF.enabled = true;
-	/* fall through */
-	default:
-		break;
-	}
-
-	fc_ut_initiator.max_aq_depth = max_aq_depth - 1;
-	fc_ut_initiator.max_queue_depth = max_queue_depth - 1;
-	fc_ut_initiator.max_connections_allowed = max_connections_allowed;
+	fc_ut_initiator.max_aq_depth = fc_ut_target.max_aq_depth - 1;
+	fc_ut_initiator.max_queue_depth = fc_ut_target.max_queue_depth - 1;
+	fc_ut_initiator.max_connections_allowed = fc_ut_target.max_connections_allowed;
 
 	if (CU_initialize_registry() != CUE_SUCCESS) {
 		return CU_get_error();
 	}
 
-	suite = CU_add_suite("FC-NVMe LS", NULL, NULL);
+	suite = CU_add_suite("FC-NVMe LS", ls_tests_init, ls_tests_fini);
 	if (suite == NULL) {
 		CU_cleanup_registry();
 		return CU_get_error();
@@ -999,7 +1119,6 @@ int main(int argc, char **argv)
 			return CU_get_error();
 		}
 
-
 		if (CU_add_test(suite, "CIOC to bad assoc_id", invalid_connection_test) == NULL) {
 			CU_cleanup_registry();
 			return CU_get_error();
@@ -1014,6 +1133,12 @@ int main(int argc, char **argv)
 			CU_cleanup_registry();
 			return CU_get_error();
 		}
+
+		if (CU_add_test(suite, "Xmt LS RSP ERR Cleanup", xmt_ls_rsp_failure_test) == NULL) {
+			CU_cleanup_registry();
+			return CU_get_error();
+		}
+
 	} else {
 
 		switch (test) {
@@ -1042,121 +1167,33 @@ int main(int argc, char **argv)
 			}
 			break;
 		case 5:
+			/* need to run create max assoc/conns. test before running delete assoc API test */
+			if (CU_add_test(suite, "Max. assocs/conns", create_max_assoc_conns_test) == NULL) {
+				CU_cleanup_registry();
+				return CU_get_error();
+			}
 			if (CU_add_test(suite, "Delete assoc API", direct_delete_assoc_test) == NULL) {
+				CU_cleanup_registry();
+				return CU_get_error();
+			}
+			break;
+		case 6:
+			if (CU_add_test(suite, "Xmt LS RSP ERR Cleanup", xmt_ls_rsp_failure_test) == NULL) {
 				CU_cleanup_registry();
 				return CU_get_error();
 			}
 			break;
 		default:
 			CU_cleanup_registry();
-			return CU_get_error();
+			return -1;
 			break;
 		}
 	}
-
-
-	ls_tests_init();
 
 	CU_basic_set_mode(CU_BRM_VERBOSE);
 	CU_basic_run_tests();
 	num_failures = CU_get_number_of_failures();
 	CU_cleanup_registry();
 
-	ls_tests_fini();
-
 	return num_failures;
-}
-
-bool
-spdk_nvmf_listen_addr_compare(struct spdk_nvmf_listen_addr *a, struct spdk_nvmf_listen_addr *b)
-{
-	if ((strcmp(a->trname, b->trname) == 0) &&
-	    (strcmp(a->traddr, b->traddr) == 0) &&
-	    (strcmp(a->trsvcid, b->trsvcid) == 0)) {
-		return true;
-	} else {
-		return false;
-	}
-}
-
-struct spdk_nvmf_listen_addr *
-spdk_nvmf_listen_addr_create(const char *trname, const char *traddr, const char *trsvcid)
-{
-	struct spdk_nvmf_listen_addr *listen_addr;
-
-	listen_addr = calloc(1, sizeof(*listen_addr));
-	if (!listen_addr) {
-		return NULL;
-	}
-
-	listen_addr->traddr = strdup(traddr);
-	if (!listen_addr->traddr) {
-		free(listen_addr);
-		return NULL;
-	}
-
-	listen_addr->trsvcid = strdup(trsvcid);
-	if (!listen_addr->trsvcid) {
-		free(listen_addr->traddr);
-		free(listen_addr);
-		return NULL;
-	}
-
-	listen_addr->trname = strdup(trname);
-	if (!listen_addr->trname) {
-		free(listen_addr->traddr);
-		free(listen_addr->trsvcid);
-		free(listen_addr);
-		return NULL;
-	}
-
-	return listen_addr;
-}
-
-struct spdk_nvmf_listen_addr *
-spdk_nvmf_find_subsystem_listener(struct spdk_nvmf_subsystem *subsystem,
-				  struct spdk_nvmf_listen_addr *listen_addr)
-{
-	if (!listen_addr) {
-		SPDK_ERRLOG("listen_addr is NULL\n");
-		return NULL;
-	}
-
-	if (spdk_nvmf_subsystem_listener_allowed(subsystem, listen_addr)) {
-		return listen_addr;
-	}
-
-	return NULL;
-}
-
-bool
-spdk_nvmf_subsystem_listener_allowed(struct spdk_nvmf_subsystem *subsystem,
-				     struct spdk_nvmf_listen_addr *listen_addr)
-{
-	struct spdk_nvmf_subsystem_allowed_listener *allowed_listener;
-
-	/* We expect some ports to exist. Subsystems are not created without
-	 * any listening addr.
-	 */
-	if (TAILQ_EMPTY(&subsystem->allowed_listeners)) {
-		return true;
-	}
-
-	TAILQ_FOREACH(allowed_listener, &subsystem->allowed_listeners, link) {
-		if (spdk_nvmf_listen_addr_compare(allowed_listener->listen_addr, listen_addr)) {
-
-			return true;
-		}
-	}
-
-	return false;
-}
-
-void
-spdk_nvmf_listen_addr_cleanup(struct spdk_nvmf_listen_addr *addr)
-{
-	spdk_free(addr->trname);
-	spdk_free(addr->trsvcid);
-	spdk_free(addr->traddr);
-	spdk_free(addr);
 }

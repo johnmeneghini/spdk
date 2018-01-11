@@ -68,7 +68,7 @@ extern void spdk_nvmf_bcm_fc_req_set_state(struct spdk_nvmf_bcm_fc_request *fc_r
 		spdk_nvmf_bcm_fc_request_state_t state);
 extern void spdk_nvmf_bcm_fc_req_abort_complete(void *arg1, void *arg2);
 extern void spdk_nvmf_bcm_fc_release_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
-		struct spdk_nvmf_bcm_fc_xri *xri, bool xb);
+		struct spdk_nvmf_bcm_fc_xri *xri, bool xb, bool abts);
 
 /* locals */
 static inline struct spdk_nvmf_bcm_fc_conn *nvmf_fc_get_fc_conn(struct spdk_nvmf_conn *conn);
@@ -797,7 +797,8 @@ nvmf_fc_request_complete_process(void *arg1, void *arg2)
 
 	if (fc_req->is_aborted) {
 		/* Cleanup XRI if valid */
-		spdk_nvmf_bcm_fc_release_xri(fc_req->hwqp, fc_req->xri, fc_req->xri->is_active);
+		spdk_nvmf_bcm_fc_release_xri(fc_req->hwqp, fc_req->xri,
+					     fc_req->xri->is_active, false);
 		fc_req->xri = NULL;
 
 		/* Defer this to make sure we dont call io cleanup in same context. */

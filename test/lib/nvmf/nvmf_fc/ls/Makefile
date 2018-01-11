@@ -33,15 +33,20 @@
 
 SPDK_ROOT_DIR := $(abspath $(CURDIR)/../../../../../)
 SPDK_LIB_NVMF_FC_DIR = $(SPDK_ROOT_DIR)/lib/nvmf/nvmf_fc
-SPDK_LIB_NVMF_DIR = $(SPDK_ROOT_DIR)/lib/nvmf
 
-include $(SPDK_ROOT_DIR)/mk/spdk.common.mk
-
-CFLAGS += -I$(SPDK_ROOT_DIR)/LIB -I$(SPDK_LIB_NVMF_FC_DIR) -I$(SPDK_LIB_NVMF_DIR)
+CFLAGS += -I$(SPDK_LIB_NVMF_FC_DIR)
 
 TEST_FILE = nvmf_fc_ls_ut.c
-OTHER_FILES = $(SPDK_LIB_NVMF_FC_DIR)/nvmf_fc_ls.c \
-	$(SPDK_LIB_NVMF_FC_DIR)/nvmf_fc_poller_api.c \
-	$(SPDK_LIB_NVMF_DIR)/session.c 
+OTHER_FILES = nvmf_fc_ls.o \
+	nvmf_fc_poller_api.o \
+	session.c \
 
 include $(SPDK_ROOT_DIR)/mk/nvmf.unittest.mk
+
+#Rules for modules in nvmf_fc folder under nvmf folder
+#in order to compile the .o file into local directory.
+nvmf_fc_ls.o : $(SPDK_LIB_NVMF_FC_DIR)/nvmf_fc_ls.c 
+	$(COMPILE_C)
+
+nvmf_fc_poller_api.o : $(SPDK_LIB_NVMF_FC_DIR)/nvmf_fc_poller_api.c 
+	$(COMPILE_C)
