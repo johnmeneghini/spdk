@@ -246,6 +246,9 @@
 #define BCM_BLS_REJECT_EXP_NOINFO		0x00
 #define BCM_BLS_REJECT_EXP_INVALID_OXID		0x03
 
+/* Support for sending ABTS in case of sequence errors */
+#define BCM_SUPPORT_ABTS_FOR_SEQ_ERRORS		true
+
 /* FC CQE Types */
 typedef enum {
 	BCM_FC_QENTRY_ASYNC,

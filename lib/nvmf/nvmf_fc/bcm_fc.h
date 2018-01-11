@@ -188,6 +188,8 @@ struct spdk_nvmf_bcm_fc_hwqp {
 	uint32_t send_frame_xri;
 	uint8_t send_frame_seqid;
 
+	/* Pending LS request waiting for XRI. */
+	TAILQ_HEAD(, spdk_nvmf_bcm_fc_ls_rqst) ls_pending_queue;
 };
 
 /*
@@ -510,6 +512,9 @@ struct spdk_nvmf_bcm_fc_ls_rqst {
 	struct spdk_nvmf_bcm_fc_xri *xri;
 	uint16_t oxid;
 	void *private_data; /* for RQ handler only (LS does not touch) */
+	TAILQ_ENTRY(spdk_nvmf_bcm_fc_ls_rqst) ls_pending_link;
+	uint32_t s_id;
+	struct spdk_nvmf_bcm_fc_nport *nport;
 };
 
 /*
@@ -533,7 +538,7 @@ SPDK_STATIC_ASSERT(sizeof(struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd) ==
 struct __attribute__((__packed__)) spdk_nvmf_bcm_fc_rq_buf_ls_request {
 	uint8_t rqst[BCM_MAX_LS_REQ_CMD_SIZE];
 	uint8_t resp[BCM_MAX_RESP_BUFFER_SIZE];
-	struct spdk_nvmf_bcm_fc_ls_rqst ls_rqst;  /* ~48 bytes */
+	struct spdk_nvmf_bcm_fc_ls_rqst ls_rqst;
 	uint8_t rsvd[BCM_RQ_BUFFER_SIZE - (sizeof(struct spdk_nvmf_bcm_fc_ls_rqst) +
 					   BCM_MAX_RESP_BUFFER_SIZE + BCM_MAX_LS_REQ_CMD_SIZE)];
 };
@@ -574,9 +579,7 @@ int spdk_nvmf_bcm_fc_delete_association(struct spdk_nvmf_bcm_fc_nport *tgtport,
 					uint64_t assoc_id, bool send_abts,
 					spdk_nvmf_fc_del_assoc_cb del_assoc_cb,
 					void *cb_data);
-void spdk_nvmf_bcm_fc_handle_ls_rqst(uint32_t s_id,
-				     struct spdk_nvmf_bcm_fc_nport *tgtport,
-				     struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst);
+void spdk_nvmf_bcm_fc_handle_ls_rqst(struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst);
 
 int spdk_nvmf_bcm_fc_xmt_ls_rsp(struct spdk_nvmf_bcm_fc_nport *tgtport,
 				struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst);

@@ -54,6 +54,7 @@ char *fc_req_state_strs[] = {
 	"SPDK_NVMF_BCM_FC_REQ_READ_BDEV",
 	"SPDK_NVMF_BCM_FC_REQ_READ_XFER",
 	"SPDK_NVMF_BCM_FC_REQ_READ_RSP",
+	"SPDK_NVMF_BCM_FC_REQ_WRITE_BUFFS",
 	"SPDK_NVMF_BCM_FC_REQ_WRITE_XFER",
 	"SPDK_NVMF_BCM_FC_REQ_WRITE_BDEV",
 	"SPDK_NVMF_BCM_FC_REQ_WRITE_RSP",
@@ -89,7 +90,7 @@ void spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 				void *cb_args);
 void spdk_nvmf_bcm_fc_req_abort_complete(void *arg1, void *arg2);
 void spdk_nvmf_bcm_fc_release_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
-				  struct spdk_nvmf_bcm_fc_xri *xri, bool xb);
+				  struct spdk_nvmf_bcm_fc_xri *xri, bool xb, bool abts);
 static int nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req);
 int spdk_nvmf_bcm_fc_create_reqtag_pool(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
 
@@ -414,6 +415,8 @@ static inline bool
 nvmf_fc_req_is_valid(struct spdk_nvmf_bcm_fc_request *fc_req)
 {
 	if (fc_req->magic == 0xDEADBEEF) {
+		/* This should not happen. */
+		SPDK_ERRLOG("%s: Accessing an invalid request object.\n", __func__);
 		return false;
 	} else {
 		return true;
@@ -424,9 +427,7 @@ void
 spdk_nvmf_bcm_fc_req_set_state(struct spdk_nvmf_bcm_fc_request *fc_req,
 			       spdk_nvmf_bcm_fc_request_state_t state)
 {
-	if (!nvmf_fc_req_is_valid(fc_req)) {
-		SPDK_ERRLOG("Changing dead FC Request(%p) states.\n", fc_req);
-	}
+	assert(nvmf_fc_req_is_valid(fc_req) == true);
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
 		      "FC Request(%p):\n\tState Old:%s New:%s\n", fc_req,
@@ -494,6 +495,25 @@ nvmf_fc_process_pending_req(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 			} else {
 				return;
 			}
+		}
+	}
+}
+
+static inline void
+nvmf_fc_process_pending_ls_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
+{
+	struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst = NULL, *tmp;
+
+	TAILQ_FOREACH_SAFE(ls_rqst, &hwqp->ls_pending_queue, ls_pending_link, tmp) {
+		ls_rqst->xri = spdk_nvmf_bcm_fc_get_xri(hwqp);
+		if (ls_rqst->xri) {
+			/* Got an XRI. */
+			TAILQ_REMOVE(&hwqp->ls_pending_queue, ls_rqst, ls_pending_link);
+			/* Handover the request to LS module */
+			spdk_nvmf_bcm_fc_handle_ls_rqst(ls_rqst);
+		} else {
+			/* No more XRI. Stop processing. */
+			return;
 		}
 	}
 }
@@ -616,12 +636,13 @@ spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 		/* Notify hw */
 		spdk_nvmf_bcm_fc_issue_abort(fc_req->hwqp, fc_req->xri,
 					     send_abts, NULL, NULL);
+	} else if (nvmf_fc_req_in_get_buff(fc_req)) {
+		/* Will be completed by request_complete callback. */
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "Abort req when getting buffers.\n");
 	} else if (nvmf_fc_req_in_pending(fc_req)) {
 		/* Remove from pending */
 		TAILQ_REMOVE(&fc_req->fc_conn->pending_queue, fc_req, pending_link);
 		goto complete;
-	} else if (nvmf_fc_req_in_get_buff(fc_req)) {
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "Abort req when getting buffers.\n");
 	} else {
 		/* Should never happen */
 		SPDK_ERRLOG("%s: Request in invalid state\n", __func__);
@@ -1195,15 +1216,33 @@ nvmf_fc_nvmf_del_xri_pending(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t xri)
 	}
 }
 
+static bool
+nvmf_fc_abts_required(uint8_t *cqe_entry)
+{
+	cqe_t *cqe = (cqe_t *)cqe_entry;
+	uint16_t status = cqe->u.wcqe.status;
+	uint32_t ext_status = nvmf_fc_parse_cqe_ext_status(cqe_entry);
+	bool send_abts = false;
+
+	if (BCM_SUPPORT_ABTS_FOR_SEQ_ERRORS && status &&
+	    !(status == BCM_FC_WCQE_STATUS_LOCAL_REJECT &&
+	      ((ext_status == BCM_FC_LOCAL_REJECT_NO_XRI) ||
+	       (ext_status == BCM_FC_LOCAL_REJECT_INVALID_RPI) ||
+	       (ext_status == BCM_FC_LOCAL_REJECT_ABORT_REQUESTED)))) {
+		send_abts = true;
+	}
+	return send_abts;
+}
+
 void
 spdk_nvmf_bcm_fc_release_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
-			     struct spdk_nvmf_bcm_fc_xri *xri, bool xb)
+			     struct spdk_nvmf_bcm_fc_xri *xri, bool xb, bool abts)
 {
 	if (xb && xri->is_active && !nvmf_fc_is_port_dead(hwqp)) {
 		/* Post an abort to clean XRI state */
-		spdk_nvmf_bcm_fc_issue_abort(hwqp, xri, false, NULL, NULL);
+		spdk_nvmf_bcm_fc_issue_abort(hwqp, xri, abts, NULL, NULL);
 		nvmf_fc_nvmf_add_xri_pending(hwqp, xri);
-	} else if (xb) {
+	} else if (xb && !nvmf_fc_is_port_dead(hwqp)) {
 		nvmf_fc_nvmf_add_xri_pending(hwqp, xri);
 	} else {
 		xri->is_active = false;
@@ -1243,7 +1282,7 @@ nvmf_fc_abort_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 	fc_caller_ctx_t *carg = arg;
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "IO Aborted(XRI:0x%x, Status=%d)\n",
-		      ((struct spdk_nvmf_bcm_fc_xri *)carg->ctx)->xri, status);
+		      ((struct spdk_nvmf_bcm_fc_xri *)(carg->ctx))->xri, status);
 
 	if (carg->cb) {
 		carg->cb(hwqp, status, carg->cb_args);
@@ -1262,7 +1301,7 @@ nvmf_fc_bls_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "BLS WQE Compl(%d) \n", status);
 
-	spdk_nvmf_bcm_fc_release_xri(hwqp, xri, cqe_entry->u.generic.xb);
+	spdk_nvmf_bcm_fc_release_xri(hwqp, xri, cqe_entry->u.generic.xb, false);
 
 	if (carg->cb) {
 		carg->cb(hwqp, status, carg->cb_args);
@@ -1281,7 +1320,8 @@ nvmf_fc_srsr_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "SRSR WQE Compl(%d) \n", status);
 
-	spdk_nvmf_bcm_fc_release_xri(hwqp, xri, cqe_entry->u.generic.xb);
+	spdk_nvmf_bcm_fc_release_xri(hwqp, xri, cqe_entry->u.generic.xb,
+				     nvmf_fc_abts_required(cqe));
 
 	if (carg->cb) {
 		carg->cb(hwqp, status, carg->cb_args);
@@ -1297,7 +1337,8 @@ nvmf_fc_ls_rsp_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 	struct spdk_nvmf_bcm_fc_hwqp *hwqp = ctx;
 	cqe_t *cqe_entry = (cqe_t *)cqe;
 
-	spdk_nvmf_bcm_fc_release_xri(hwqp, ls_rqst->xri, cqe_entry->u.generic.xb);
+	spdk_nvmf_bcm_fc_release_xri(hwqp, ls_rqst->xri, cqe_entry->u.generic.xb,
+				     nvmf_fc_abts_required(cqe));
 
 	/* Release RQ buffer */
 	nvmf_fc_rqpair_buffer_release(hwqp, ls_rqst->rqstbuf.buf_index);
@@ -1313,13 +1354,11 @@ nvmf_fc_io_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 	struct spdk_nvmf_bcm_fc_request *fc_req = arg;
 	cqe_t *cqe_entry = (cqe_t *)cqe;
 	int rc;
+	bool req_is_valid;
 
-	/* Check if its valid completion. */
-	if (!nvmf_fc_req_is_valid(fc_req)) {
-		SPDK_ERRLOG("WQE Compl(status = %d) for unknown request(%p)\n",
-			    status, fc_req);
-		return;
-	}
+	/* Assert if its not a valid completion. */
+	req_is_valid = nvmf_fc_req_is_valid(fc_req);
+	assert(req_is_valid == true);
 
 	if (status || fc_req->is_aborted) {
 		goto io_done;
@@ -1358,7 +1397,7 @@ nvmf_fc_io_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 
 io_done:
 	spdk_nvmf_bcm_fc_release_xri(fc_req->hwqp, fc_req->xri,
-				     cqe_entry->u.generic.xb);
+				     cqe_entry->u.generic.xb, nvmf_fc_abts_required(cqe));
 	fc_req->xri = NULL;
 
 	if (fc_req->is_aborted) {
@@ -1826,12 +1865,17 @@ nvmf_fc_process_frame(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t buff_idx, fc_
 		ls_rqst->rpi = rpi;
 		ls_rqst->oxid = (uint16_t)frame->ox_id;
 		ls_rqst->oxid = from_be16(&ls_rqst->oxid);
+		ls_rqst->s_id = s_id;
+		ls_rqst->nport = nport;
 
-		/* get an XRI for this request */
 		ls_rqst->xri = spdk_nvmf_bcm_fc_get_xri(hwqp);
-
-		/* Handle the request to LS module */
-		spdk_nvmf_bcm_fc_handle_ls_rqst(s_id, nport, ls_rqst);
+		if (!ls_rqst->xri) {
+			/* No XRI available. Add to pending list. */
+			TAILQ_INSERT_TAIL(&hwqp->ls_pending_queue, ls_rqst, ls_pending_link);
+		} else {
+			/* Handover the request to LS module */
+			spdk_nvmf_bcm_fc_handle_ls_rqst(ls_rqst);
+		}
 
 	} else if ((frame->r_ctl == NVME_FC_R_CTL_CMD_REQ) &&
 		   (frame->type == NVME_FC_TYPE_FC_EXCHANGE)) {
@@ -2020,8 +2064,8 @@ spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 				 * There might be some buffers/xri freed.
 				 * First give chance for pending frames
 				 */
+				nvmf_fc_process_pending_ls_rqst(hwqp);
 				nvmf_fc_process_pending_req(hwqp);
-
 			} else if (cq_id == hwqp->queues.cq_rq.q.qid) {
 				nvmf_fc_process_cq_entry(hwqp, &hwqp->queues.cq_rq);
 			} else {
