@@ -1089,7 +1089,7 @@ spdk_bdev_get_buff(struct iovec *iov, int32_t *iovcnt, int32_t length)
 
 	return 0;
 error:
-	SPDK_ERRLOG("Bdev buffer allocation failed\n");
+	SPDK_TRACELOG(SPDK_TRACE_DEBUG, "Bdev buffer allocation failed\n");
 	return -1;
 }
 
@@ -1191,7 +1191,7 @@ spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io, void *abt_ctx)
 	if (spdk_likely(bdev->fn_table->abort_request)) {
 		bdev->fn_table->abort_request(bdev_io, abt_ctx);
 	} else {
-		SPDK_ERRLOG("Bdev abort_request not plugged in\n");
+		SPDK_TRACELOG(SPDK_TRACE_DEBUG, "Bdev abort_request not plugged in\n");
 	}
 }
 
