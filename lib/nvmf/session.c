@@ -972,7 +972,8 @@ spdk_nvmf_get_max_queue_depth(struct spdk_nvmf_session *session, uint16_t qid)
 {
 	struct spdk_nvmf_conn *conn = spdk_nvmf_get_connection(session, qid);
 	if (conn) {
-		return conn->sq_head_max;
+		/* sq_head_max has 0's based depth */
+		return conn->sq_head_max + 1;
 	}
 	return 0;
 }
@@ -1000,7 +1001,8 @@ spdk_nvmf_populate_io_queue_depths(struct spdk_nvmf_session *session,
 			continue;
 		}
 
-		max_io_queue_depths[curr_q_index] = conn->sq_head_max;
+		/* sq_head_max has 0's based depth */
+		max_io_queue_depths[curr_q_index] = conn->sq_head_max + 1;
 		curr_q_index++;
 	}
 }
