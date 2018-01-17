@@ -666,6 +666,23 @@ spdk_nvmf_bcm_fc_is_spdk_session_on_nport(uint8_t port_hdl, uint16_t nport_hdl,
 }
 
 spdk_err_t
+spdk_nvmf_bcm_fc_get_sess_init_traddr(char *traddr, struct spdk_nvmf_session *session)
+{
+	if (!traddr || !session) {
+		SPDK_ERRLOG("Invalid parameters %p %p\n", traddr, session);
+		return SPDK_ERR_INVALID_ARGS;
+	}
+
+	struct spdk_nvmf_bcm_fc_session *fc_session = spdk_nvmf_bcm_fc_get_fc_session(session);
+	if (fc_session && fc_session->fc_assoc && fc_session->fc_assoc->rport) {
+		snprintf(traddr, NVMF_TGT_FC_TR_ADDR_LENGTH, "nn-0x%lx:pn-0x%lx",
+			 from_be64(&fc_session->fc_assoc->rport->fc_nodename.u.wwn),
+			 from_be64(&fc_session->fc_assoc->rport->fc_portname.u.wwn));
+	}
+	return SPDK_SUCCESS;
+}
+
+spdk_err_t
 spdk_nvmf_bcm_fc_find_rport_from_sid(uint32_t s_id,
 				     struct spdk_nvmf_bcm_fc_nport *tgtport,
 				     struct spdk_nvmf_bcm_fc_remote_port_info **rport)
