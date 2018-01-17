@@ -98,7 +98,8 @@ nvmf_fc_poller_api_add_connection(void *arg1, void *arg2)
 	struct spdk_nvmf_bcm_fc_conn *fc_conn;
 	bool bfound = false;
 
-	SPDK_TRACELOG(SPDK_NVMF_BCM_FC_POLLER_API, "\n");
+	SPDK_TRACELOG(SPDK_NVMF_BCM_FC_POLLER_API, "Poller add connection, conn_id 0x%lx\n",
+		      conn_args->fc_conn->conn_id);
 
 	/* make sure connection is not already in poller's list */
 	TAILQ_FOREACH(fc_conn, &conn_args->fc_conn->hwqp->connection_list,
@@ -175,7 +176,8 @@ nvmf_fc_poller_api_del_connection(void *arg1, void *arg2)
 	struct spdk_nvmf_bcm_fc_conn *fc_conn;
 	bool bfound = false;
 
-	SPDK_TRACELOG(SPDK_NVMF_BCM_FC_POLLER_API, "\n");
+	SPDK_TRACELOG(SPDK_NVMF_BCM_FC_POLLER_API, "Poller delete connection, conn_id 0x%lx\n",
+		      conn_args->fc_conn->conn_id);
 
 	/* find the connection in poller's list */
 	TAILQ_FOREACH(fc_conn, &conn_args->hwqp->connection_list, link) {

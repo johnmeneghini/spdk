@@ -308,7 +308,9 @@ nvmf_fc_ls_new_association(uint32_t s_id,
 {
 	struct spdk_nvmf_bcm_fc_association *assoc;
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\n");
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "New Association request for "
+		      "port %d nport %d rpi 0x%x\n", tgtport->fc_port->port_hdl,
+		      tgtport->nport_hdl, rpi);
 
 	assert(rport);
 	if (!rport) {
@@ -363,7 +365,8 @@ nvmf_fc_ls_new_association(uint32_t s_id,
 static inline void
 nvmf_fc_ls_free_association(struct spdk_nvmf_bcm_fc_association *assoc)
 {
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\n");
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Freeing association, assoc_id 0x%lx\n",
+		      assoc->assoc_id);
 	assoc->assoc_state = SPDK_NVMF_BCM_FC_OBJECT_ZOMBIE;
 	TAILQ_INSERT_TAIL(&assoc->tgtport->fc_port->ls_rsrc_pool.assoc_free_list,
 			  assoc, port_free_assoc_list_link);
@@ -485,7 +488,9 @@ nvmf_fc_ls_assign_conn_to_q(struct spdk_nvmf_bcm_fc_association *assoc,
 
 	/* XXX What queue are we talking about here?  The HWQP? */
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\n");
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Assign Connection to IO queue "
+		      "for port %d nport %d assoc_id 0x%lx\n", fc_port->port_hdl,
+		      tgtport->nport_hdl, assoc->assoc_id);
 
 	if (!for_aq) {
 		/* find queue with max amount of space available */
@@ -540,7 +545,9 @@ nvmf_fc_del_conn_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
 	struct spdk_nvmf_bcm_fc_association *assoc = dp->assoc;
 	struct spdk_nvmf_bcm_fc_conn *fc_conn = dp->args.fc_conn;
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\n");
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Delete Connection callback "
+		      "for assoc_id 0x%lx conn_id 0x%lx\n", assoc->assoc_id,
+		      fc_conn->conn_id);
 
 	/* remove connection from association's connection list */
 	TAILQ_REMOVE(&assoc->fc_conns, fc_conn, assoc_link);
@@ -568,7 +575,9 @@ nvmf_fc_handle_xmt_ls_rsp_failure(struct spdk_nvmf_bcm_fc_association *assoc,
 	struct nvmf_fc_ls_del_conn_api_data *api_data;
 	union nvmf_fc_ls_op_ctx *opd = nvmf_fc_ls_new_op_ctx();
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\n");
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Transmit LS response failure "
+		      "for assoc_id 0x%lx conn_id 0x%lx\n", assoc->assoc_id,
+		      fc_conn->conn_id);
 	if (assoc_conn) {
 		/* mark assoc. to be deleted */
 		assoc->assoc_state = SPDK_NVMF_BCM_FC_OBJECT_TO_BE_DELETED;
@@ -591,8 +600,6 @@ nvmf_fc_handle_xmt_ls_rsp_failure(struct spdk_nvmf_bcm_fc_association *assoc,
 	api_data->args.hwqp = spdk_nvmf_bcm_fc_get_hwqp(assoc->tgtport,
 			      fc_conn->conn_id);
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-		      "conn_id = %lx\n", fc_conn->conn_id);
 	spdk_nvmf_bcm_fc_poller_api(api_data->args.hwqp,
 				    SPDK_NVMF_BCM_FC_POLLER_API_DEL_CONNECTION,
 				    &api_data->args);
@@ -654,7 +661,9 @@ nvmf_fc_ls_add_conn_to_poller(
 {
 	union nvmf_fc_ls_op_ctx *opd = nvmf_fc_ls_new_op_ctx();
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\n");
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Add Connection to poller for "
+		      "assoc_id 0x%lx conn_id 0x%lx\n", assoc->assoc_id,
+		      fc_conn->conn_id);
 
 	if (opd) {
 		struct nvmf_fc_ls_add_conn_api_data *api_data =
@@ -673,11 +682,13 @@ nvmf_fc_ls_add_conn_to_poller(
 			api_data->ls_rqst = ls_rqst;
 			api_data->assoc_conn = assoc_conn;
 			SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-				      "conn_id = 0x%lx\n", fc_conn->conn_id);
+				      "Add connection API called for conn_id = 0x%lx\n",
+				      fc_conn->conn_id);
 			spdk_nvmf_bcm_fc_poller_api(api_data->args.fc_conn->hwqp,
 						    SPDK_NVMF_BCM_FC_POLLER_API_ADD_CONNECTION,
 						    &api_data->args);
-			SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\n");
+			SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Add connection API returned "
+				      "for conn_id = 0x%lx\n", fc_conn->conn_id);
 			return;
 		}
 	}
@@ -773,7 +784,8 @@ nvmf_fc_del_all_conns_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
 	 * done anyway if there is an error because we need to complete
 	 * all connection deletes and callback to caller */
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\n");
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Delete all connections for "
+		      "assoc_id 0x%lx\n", assoc->assoc_id);
 	if (assoc->subsystem) {
 		assoc->subsystem->disconnect_cb(assoc->subsystem->cb_ctx,
 						&fc_conn->conn);
@@ -834,7 +846,8 @@ nvmf_fc_delete_association(struct spdk_nvmf_bcm_fc_nport *tgtport,
 	struct spdk_nvmf_bcm_fc_association *assoc =
 		nvmf_fc_ls_find_assoc(tgtport, assoc_id);
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\n");
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Delete association, "
+		      "assoc_id 0x%lx\n", assoc_id);
 
 	if (!assoc) {
 		SPDK_ERRLOG("Delete association failed: %s\n",
@@ -902,7 +915,8 @@ nvmf_fc_ls_disconnect_assoc_cb(void *cb_data, uint32_t err)
 	struct spdk_nvmf_bcm_fc_nport *tgtport = dp->tgtport;
 	struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst = dp->ls_rqst;
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\n");
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Disconnect association callback begin "
+		      "nport %d\n", tgtport->nport_hdl);
 	if (err != 0) {
 		/* send failure response */
 		struct nvmf_fc_ls_cr_assoc_rqst *rqst =
@@ -920,7 +934,8 @@ nvmf_fc_ls_disconnect_assoc_cb(void *cb_data, uint32_t err)
 	(void)nvmf_fc_xmt_ls_rsp(tgtport, ls_rqst);
 
 	nvmf_fc_ls_free_op_ctx(opd);
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\n");
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Disconnect association callback complete "
+		      "nport %d err %d\n", tgtport->nport_hdl, err);
 }
 
 static void
@@ -1246,7 +1261,9 @@ nvmf_fc_ls_process_cioc(struct spdk_nvmf_bcm_fc_nport *tgtport,
 		(void)nvmf_fc_xmt_ls_rsp(tgtport, ls_rqst);
 	} else {
 		/* format accept response */
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\n");
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Formatting LS accept response for "
+			      "assoc_id 0x%lx conn_id 0x%lx\n", assoc->assoc_id,
+			      fc_conn->conn_id);
 		bzero(acc, sizeof(*acc));
 		ls_rqst->rsp_len = sizeof(*acc);
 		nvmf_fc_ls_format_rsp_hdr(acc, FCNVME_LS_ACC,
@@ -1495,14 +1512,16 @@ spdk_nvmf_bcm_fc_delete_association(struct spdk_nvmf_bcm_fc_nport *tgtport,
 void spdk_nvmf_bcm_fc_subsys_connect_cb(void *cb_ctx,
 					struct spdk_nvmf_request *req)
 {
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\n");
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Subsystem connect callback for "
+		      "request %p\n", req);
 	spdk_nvmf_handle_connect(req);
 }
 
 void spdk_nvmf_bcm_fc_subsys_disconnect_cb(void *cb_ctx,
 		struct spdk_nvmf_conn *conn)
 {
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\n");
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Subsystem disconnect callback for "
+		      "connection %p\n", conn);
 	/* There are cases where a disconnect may be done before
 	 * a session exists for a connection.
 	 * Eg. A connection was created, but the NVMe connect
