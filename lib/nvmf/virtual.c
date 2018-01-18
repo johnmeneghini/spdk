@@ -102,7 +102,7 @@ nvmf_virtual_ctrlr_get_data(struct spdk_nvmf_session *session)
 	spdk_strcpy_pad(session->vcdata.sn, subsys->dev.virt.sn, sizeof(session->vcdata.sn), ' ');
 	session->vcdata.rab = g_nvmf_tgt.opts.rab;
 	memcpy(session->vcdata.ieee, g_nvmf_tgt.opts.ieee, 3 * sizeof(uint8_t));
-	memcpy(&session->vcdata.cmic, &g_nvmf_tgt.opts.cmic, sizeof(uint32_t));
+	memcpy(&session->vcdata.cmic, &g_nvmf_tgt.opts.cmic, sizeof(uint8_t));
 	memcpy(&session->vcdata.oaes, &g_nvmf_tgt.opts.oaes, sizeof(uint32_t));
 
 	/* Set appropriate values for 0's based fields */
