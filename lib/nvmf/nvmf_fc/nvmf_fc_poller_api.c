@@ -356,4 +356,4 @@ spdk_nvmf_bcm_fc_poller_api(struct spdk_nvmf_bcm_fc_hwqp *hwqp, spdk_nvmf_bcm_fc
 	return SPDK_NVMF_BCM_FC_POLLER_API_ERROR;
 }
 
-SPDK_LOG_REGISTER_TRACE_FLAG("nmvf_bcm_fc_poller_api", SPDK_NVMF_BCM_FC_POLLER_API)
+SPDK_LOG_REGISTER_TRACE_FLAG("nvmf_bcm_fc_poller_api", SPDK_NVMF_BCM_FC_POLLER_API)
