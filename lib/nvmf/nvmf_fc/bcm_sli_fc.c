@@ -411,6 +411,7 @@ nvmf_fc_free_req_buf(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct spdk_nvmf_bcm_fc
 	spdk_mempool_put(hwqp->fc_request_pool, (void *)fc_req);
 }
 
+#ifdef DEBUG
 static inline bool
 nvmf_fc_req_is_valid(struct spdk_nvmf_bcm_fc_request *fc_req)
 {
@@ -422,6 +423,7 @@ nvmf_fc_req_is_valid(struct spdk_nvmf_bcm_fc_request *fc_req)
 		return true;
 	}
 }
+#endif
 
 void
 spdk_nvmf_bcm_fc_req_set_state(struct spdk_nvmf_bcm_fc_request *fc_req,
@@ -1354,11 +1356,9 @@ nvmf_fc_io_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 	struct spdk_nvmf_bcm_fc_request *fc_req = arg;
 	cqe_t *cqe_entry = (cqe_t *)cqe;
 	int rc;
-	bool req_is_valid;
 
 	/* Assert if its not a valid completion. */
-	req_is_valid = nvmf_fc_req_is_valid(fc_req);
-	assert(req_is_valid == true);
+	assert(nvmf_fc_req_is_valid(fc_req) == true);
 
 	if (status || fc_req->is_aborted) {
 		goto io_done;
