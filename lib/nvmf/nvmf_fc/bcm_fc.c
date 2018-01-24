@@ -261,6 +261,7 @@ spdk_nvmf_bcm_fc_handle_abts_frame(struct spdk_nvmf_bcm_fc_nport *nport, uint16_
 	struct spdk_nvmf_bcm_fc_conn *conn = NULL;
 	struct spdk_nvmf_bcm_fc_hwqp *hwqps[NVMF_FC_MAX_IO_QUEUES] = { NULL };
 	int hwqp_cnt = 0;
+	bool skip_hwqp_cnt = false;
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
 		      "Handle ABTS frame for nport: %d, rpi: 0x%x, oxid: 0x%x, rxid: 0x%x\n",
@@ -275,12 +276,17 @@ spdk_nvmf_bcm_fc_handle_abts_frame(struct spdk_nvmf_bcm_fc_nport *nport, uint16_
 			for (int k = 0; k < hwqp_cnt; k ++) {
 				if (hwqps[k] == conn->hwqp) {
 					/* Skip. This is already present */
-					continue;
+					skip_hwqp_cnt = true;
+					break;
 				}
 			}
-			assert(hwqp_cnt < NVMF_FC_MAX_IO_QUEUES);
-			hwqps[hwqp_cnt] = conn->hwqp;
-			hwqp_cnt ++;
+			if (!skip_hwqp_cnt) {
+				assert(hwqp_cnt < NVMF_FC_MAX_IO_QUEUES);
+				hwqps[hwqp_cnt] = conn->hwqp;
+				hwqp_cnt ++;
+			} else {
+				skip_hwqp_cnt = false;
+			}
 		}
 	}
 
