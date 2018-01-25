@@ -618,12 +618,16 @@ spdk_nvmf_bcm_fc_port_list_get(uint8_t port_hdl)
 	return NULL;
 }
 
+/*
+ * This utility function returns the number of spdk sessions that a given
+ * subsystem has on a specified nport
+ */
 uint32_t
-spdk_nvmf_bcm_fc_get_num_assocs_in_subsystem(uint8_t port_hdl, uint16_t nport_hdl,
+spdk_nvmf_bcm_fc_get_num_nport_sessions_in_subsystem(uint8_t port_hdl, uint16_t nport_hdl,
 		struct spdk_nvmf_subsystem *subsys)
 {
 	struct spdk_nvmf_bcm_fc_association *assoc = NULL;
-	uint32_t num_assocs = 0;
+	uint32_t num_sessions = 0;
 	struct spdk_nvmf_bcm_fc_nport *fc_nport = NULL;
 
 	if (!subsys) {
@@ -638,11 +642,15 @@ spdk_nvmf_bcm_fc_get_num_assocs_in_subsystem(uint8_t port_hdl, uint16_t nport_hd
 
 	TAILQ_FOREACH(assoc, &fc_nport->fc_associations, link) {
 		if (assoc->subsystem == subsys) {
-			++num_assocs;
+			struct spdk_nvmf_bcm_fc_conn *fc_conn = TAILQ_FIRST(&assoc->fc_conns);
+			if (fc_conn->conn.sess != NULL) {
+				assert(fc_conn->conn.qid == 0);
+				++num_sessions;
+			}
 		}
 	}
 
-	return num_assocs;
+	return num_sessions;
 }
 
 bool

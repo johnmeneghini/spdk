@@ -665,7 +665,7 @@ int spdk_nvmf_bcm_fc_xmt_srsr_req(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 				  struct spdk_nvmf_bcm_fc_send_srsr *srsr,
 				  spdk_nvmf_bcm_fc_caller_cb cb, void *cb_args);
 
-uint32_t spdk_nvmf_bcm_fc_get_num_assocs_in_subsystem(uint8_t port_hdl, uint16_t nport_hdl,
+uint32_t spdk_nvmf_bcm_fc_get_num_nport_sessions_in_subsystem(uint8_t port_hdl, uint16_t nport_hdl,
 		struct spdk_nvmf_subsystem *subsys);
 
 bool spdk_nvmf_bcm_fc_is_spdk_session_on_nport(uint8_t port_hdl, uint16_t nport_hdl,
