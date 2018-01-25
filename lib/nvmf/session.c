@@ -946,7 +946,7 @@ spdk_nvmf_get_connection(struct spdk_nvmf_session *session, uint16_t qid)
 }
 
 uint16_t
-spdk_nvmf_get_max_queue_depth(struct spdk_nvmf_session *session, uint16_t qid)
+spdk_nvmf_session_get_max_queue_depth(struct spdk_nvmf_session *session, uint16_t qid)
 {
 	struct spdk_nvmf_conn *conn = spdk_nvmf_get_connection(session, qid);
 	if (conn) {
@@ -956,27 +956,58 @@ spdk_nvmf_get_max_queue_depth(struct spdk_nvmf_session *session, uint16_t qid)
 	return 0;
 }
 
+uint16_t
+spdk_nvmf_session_get_num_io_connections(struct spdk_nvmf_session *session)
+{
+	uint16_t num_io_conns = 0;
+	struct spdk_nvmf_conn *conn = NULL, *tmp;
+
+	if (!session) {
+		SPDK_ERRLOG("Invalid session passed\n");
+		assert(session != NULL);
+		return 0;
+	}
+
+	TAILQ_FOREACH_SAFE(conn, &session->connections, link, tmp) {
+		if (conn->type == CONN_TYPE_IOQ) {
+			num_io_conns++;
+		}
+	}
+	return num_io_conns;
+}
+
 void
-spdk_nvmf_populate_io_queue_depths(struct spdk_nvmf_session *session,
-				   uint16_t *max_io_queue_depths, uint16_t num_io_queues)
+spdk_nvmf_session_populate_io_queue_depths(struct spdk_nvmf_session *session,
+		uint16_t *max_io_queue_depths, uint16_t num_io_queues)
 {
 	struct spdk_nvmf_conn *conn = NULL, *tmp;
 	uint16_t curr_q_index = 0;
 
-	if (!max_io_queue_depths) {
-		SPDK_ERRLOG("NULL container passed to populate queue depths\n");
+	if (!session) {
+		SPDK_ERRLOG("Invalid session passed\n");
+		assert(session != NULL);
 		return;
 	}
 
-	if (num_io_queues != (session->num_connections - 1)) {
-		SPDK_ERRLOG("Size of container passed does not match number of IO queues while populating queue depths (%d:%d)\n",
-			    num_io_queues, session->num_connections);
+	if (!max_io_queue_depths) {
+		SPDK_ERRLOG("NULL container passed to populate queue depths\n");
+		assert(max_io_queue_depths != NULL);
+		return;
+	}
+
+	if (!num_io_queues || num_io_queues > session->num_connections) {
+		SPDK_ERRLOG("Invalid number of IO queues data requested (%d:%d)", num_io_queues,
+			    session->num_connections);
 		return;
 	}
 
 	TAILQ_FOREACH_SAFE(conn, &session->connections, link, tmp) {
 		if (conn->qid == CONN_TYPE_AQ) {
 			continue;
+		}
+
+		if (curr_q_index >= num_io_queues) {
+			break;
 		}
 
 		/* sq_head_max has 0's based depth */
