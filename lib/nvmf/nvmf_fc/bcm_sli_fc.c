@@ -411,6 +411,22 @@ nvmf_fc_free_req_buf(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct spdk_nvmf_bcm_fc
 	spdk_mempool_put(hwqp->fc_request_pool, (void *)fc_req);
 }
 
+static void
+nvmf_fc_release_io_buff(struct spdk_nvmf_bcm_fc_request *fc_req)
+{
+	if (fc_req->req.data) {
+		spdk_dma_free(fc_req->req.data);
+	} else if (fc_req->req.iovcnt || fc_req->req.bdev_io) {
+		spdk_nvmf_request_cleanup(&fc_req->req);
+	} else {
+		return;
+	}
+
+	fc_req->req.data = NULL;
+	fc_req->req.iovcnt  = 0;
+	fc_req->req.bdev_io = NULL;
+}
+
 #ifdef DEBUG
 static inline bool
 nvmf_fc_req_is_valid(struct spdk_nvmf_bcm_fc_request *fc_req)
@@ -576,6 +592,13 @@ spdk_nvmf_bcm_fc_req_abort_complete(void *arg1, void *arg2)
 	struct spdk_nvmf_bcm_fc_request *fc_req =
 		(struct spdk_nvmf_bcm_fc_request *)arg1;
 	fc_caller_ctx_t *ctx = NULL, *tmp = NULL;
+
+	/*
+	 * Release backend IO buffers before calling cb's because
+	 * cb's can release the session which is required for
+	 * backend IO buffers cleanup.
+	 */
+	nvmf_fc_release_io_buff(fc_req);
 
 	/* Request abort completed. Notify all the callbacks */
 	TAILQ_FOREACH_SAFE(ctx, &fc_req->abort_cbs, link, tmp) {
@@ -1264,11 +1287,8 @@ spdk_nvmf_bcm_fc_free_req(struct spdk_nvmf_bcm_fc_request *fc_req)
 		fc_req->xri = NULL;
 	}
 
-	if (fc_req->req.data) {
-		spdk_dma_free(fc_req->req.data);
-	} else if (fc_req->req.iovcnt || fc_req->req.bdev_io) {
-		spdk_nvmf_request_cleanup(&fc_req->req);
-	}
+	/* Release IO buffers */
+	nvmf_fc_release_io_buff(fc_req);
 
 	/* Release RQ buffer */
 	nvmf_fc_rqpair_buffer_release(fc_req->hwqp, fc_req->buf_index);
