@@ -605,7 +605,7 @@ spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 
 	/* Add the cb to list */
 	if (cb) {
-		ctx = malloc(sizeof(fc_caller_ctx_t));
+		ctx = calloc(1, sizeof(fc_caller_ctx_t));
 		if (!ctx) {
 			SPDK_ERRLOG("%s: ctx alloc failed. \n", __func__);
 			return;
@@ -2316,8 +2316,7 @@ spdk_nvmf_bcm_fc_issue_abort(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 	fc_caller_ctx_t *ctx = NULL;
 	int rc = -1;
 
-	/* XXX this is a problem. We need to remove the dependency on malloc in the Abort path. XXX */
-	ctx = malloc(sizeof(fc_caller_ctx_t));
+	ctx = calloc(1, sizeof(fc_caller_ctx_t));
 	if (!ctx) {
 		goto done;
 	}
@@ -2364,7 +2363,7 @@ spdk_nvmf_bcm_fc_xmt_bls_rsp(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 		goto done;
 	}
 
-	ctx = malloc(sizeof(fc_caller_ctx_t));
+	ctx = calloc(1, sizeof(fc_caller_ctx_t));
 	if (!ctx) {
 		goto done;
 	}
@@ -2437,7 +2436,7 @@ spdk_nvmf_bcm_fc_xmt_srsr_req(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 		goto done;
 	}
 
-	ctx = malloc(sizeof(fc_caller_ctx_t));
+	ctx = calloc(1, sizeof(fc_caller_ctx_t));
 	if (!ctx) {
 		goto done;
 	}
