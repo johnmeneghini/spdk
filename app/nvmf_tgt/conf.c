@@ -282,6 +282,12 @@ spdk_nvmf_parse_nvmf_tgt(void)
 	}
 	tgt_opts.aerl = intval;
 
+	intval = spdk_conf_section_get_intval(sp, "AsyncEventConfig");
+	if (intval < 0) {
+		intval = 0;
+	}
+	tgt_opts.async_event_config = intval;
+
 	intval = spdk_conf_section_get_intval(sp, "ErrLogEntries");
 	if (intval < 0) {
 		intval = SPDK_NVMF_CONFIG_ERR_LOG_PAGE_ENTRIES_DEFAULT;

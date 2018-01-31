@@ -211,9 +211,10 @@ struct spdk_nvmf_tgt_opts {
 	uint8_t					ieee[SPDK_NVME_SPEC_IEEE_OUI_SIZE];
 	uint8_t					cmic;
 	uint8_t					nmic;
-	uint32_t				oaes;
 	uint8_t					acl;
+	uint32_t				oaes;
 	uint8_t					aerl;
+	uint32_t                                async_event_config;
 	uint8_t					elpe;
 	uint8_t					npss;
 	uint16_t				kas;

@@ -390,7 +390,7 @@ spdk_nvmf_session_connect(struct spdk_nvmf_conn *conn,
 		}
 		session->host = host;
 		session->kato = cmd->kato;
-		session->async_event_config.raw = 0;
+		session->async_event_config.raw = g_nvmf_tgt.opts.async_event_config;
 		session->num_connections = 0;
 		session->subsys = subsystem;
 		session->max_connections_allowed = host->max_connections_allowed;
@@ -898,11 +898,22 @@ int
 spdk_nvmf_session_set_features_async_event_configuration(struct spdk_nvmf_request *req)
 {
 	struct spdk_nvmf_session *session = req->conn->sess;
+	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
 	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Set Features - Async Event Configuration, cdw11 0x%08x\n",
 		      cmd->cdw11);
-	session->async_event_config.raw = cmd->cdw11;
+	/*
+	 * If we support all the async events that are being requested to be set,
+	 * then set them, otherwise fail the request
+	 */
+	if ((cmd->cdw11 & g_nvmf_tgt.opts.async_event_config) == cmd->cdw11) {
+		session->async_event_config.raw = cmd->cdw11;
+	} else {
+		SPDK_ERRLOG("Failed setting async event config %d supported %d\n",
+			    cmd->cdw11, g_nvmf_tgt.opts.async_event_config);
+		rsp->status.sc = SPDK_NVME_SC_FEATURE_NOT_CHANGEABLE;
+	}
 	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 }
 

@@ -111,6 +111,12 @@
   # supported by the controller
 #AerLimit 0
 
+  # AsyncEventConfig: Indicates the response to the get features command for feature
+  # identifier 0x0B (Asynchronous Event Configuration). We indicate the events that
+  # trigger asynchronous event notifications via this configuration variable.
+  # By default the SPDK virtual controller only supports Namespace Attribute Notices
+#AsyncEventConfig 0x100 
+
   # Error Log Page Entries: Indicates the maximum number of Error Log Page entries
   # stored by the controller
 #ErrLogEntries 127

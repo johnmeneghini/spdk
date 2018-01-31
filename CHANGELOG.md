@@ -24,6 +24,7 @@ The following new Nvmf global directives have been added to nvmf.conf.in
   AtomicWritePowerFail - Sets Identify Controller Datastructure Atomic Write Unit Power Fail
   SGLSupport           - Sets Identify Controller Datastructure SGL Support
   OptNVMCommandSupport - Indicates Optional NVM Commands and features
+  AsyncEventConfig     - Indicates the response to the Get Features command for Feature Identifier 0Bh
 ```
 
 ### Per-Controller IO Queue Configuration
