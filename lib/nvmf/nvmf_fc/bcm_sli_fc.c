@@ -427,25 +427,11 @@ nvmf_fc_release_io_buff(struct spdk_nvmf_bcm_fc_request *fc_req)
 	fc_req->req.bdev_io = NULL;
 }
 
-#ifdef DEBUG
-static inline bool
-nvmf_fc_req_is_valid(struct spdk_nvmf_bcm_fc_request *fc_req)
-{
-	if (fc_req->magic == 0xDEADBEEF) {
-		/* This should not happen. */
-		SPDK_ERRLOG("%s: Accessing an invalid request object.\n", __func__);
-		return false;
-	} else {
-		return true;
-	}
-}
-#endif
-
 void
 spdk_nvmf_bcm_fc_req_set_state(struct spdk_nvmf_bcm_fc_request *fc_req,
 			       spdk_nvmf_bcm_fc_request_state_t state)
 {
-	assert(nvmf_fc_req_is_valid(fc_req) == true);
+	assert(fc_req->magic != 0xDEADBEEF);
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
 		      "FC Request(%p):\n\tState Old:%s New:%s\n", fc_req,
@@ -1378,7 +1364,7 @@ nvmf_fc_io_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 	int rc;
 
 	/* Assert if its not a valid completion. */
-	assert(nvmf_fc_req_is_valid(fc_req) == true);
+	assert(fc_req->magic != 0xDEADBEEF);
 
 	if (status || fc_req->is_aborted) {
 		goto io_done;
