@@ -830,6 +830,21 @@ nvmf_fc_del_all_conns_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
 	nvmf_fc_ls_free_op_ctx(opd);
 }
 
+static void
+nvmf_fc_kill_io_del_all_conns_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
+{
+	union nvmf_fc_ls_op_ctx *opd =
+			(union nvmf_fc_ls_op_ctx *)cb_data;
+
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Callback after killing outstanding ABTS.");
+	/*
+	 * NOTE: We should not access any connection or association related data
+	 * structures here.
+	 */
+	nvmf_fc_ls_free_op_ctx(opd);
+}
+
+
 /* Disconnect/delete (association) request functions */
 
 static
@@ -845,6 +860,8 @@ nvmf_fc_delete_association(struct spdk_nvmf_bcm_fc_nport *tgtport,
 	struct spdk_nvmf_bcm_fc_conn *fc_conn;
 	struct spdk_nvmf_bcm_fc_association *assoc =
 		nvmf_fc_ls_find_assoc(tgtport, assoc_id);
+	struct spdk_nvmf_bcm_fc_port *fc_port = tgtport->fc_port;
+	spdk_nvmf_bcm_fc_object_state_t assoc_state;
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Delete association, "
 		      "assoc_id 0x%lx\n", assoc_id);
@@ -871,7 +888,9 @@ nvmf_fc_delete_association(struct spdk_nvmf_bcm_fc_nport *tgtport,
 	api_data->args.cb_info.cb_data = opd;
 	nvmf_fc_ls_append_del_cb_ctx(assoc, opd);
 
-	if (assoc->assoc_state == SPDK_NVMF_BCM_FC_OBJECT_TO_BE_DELETED) {
+	assoc_state = assoc->assoc_state;
+	if ((assoc_state == SPDK_NVMF_BCM_FC_OBJECT_TO_BE_DELETED) &&
+	    (fc_port->hw_port_status != SPDK_FC_PORT_QUIESCED)) {
 		/* association already being deleted */
 		return 0;
 	}
@@ -891,12 +910,23 @@ nvmf_fc_delete_association(struct spdk_nvmf_bcm_fc_nport *tgtport,
 		api_data = &opd->del_assoc;
 		api_data->args.fc_conn = fc_conn;
 		api_data->assoc = assoc;
-		api_data->args.cb_info.cb_func = nvmf_fc_del_all_conns_cb;
-		api_data->args.cb_info.cb_data = opd;
 		api_data->args.send_abts = send_abts;
 		api_data->args.hwqp = spdk_nvmf_bcm_fc_get_hwqp(assoc->tgtport,
 				      fc_conn->conn_id);
-
+		api_data->args.cb_info.cb_data = opd;
+		if ((fc_port->hw_port_status == SPDK_FC_PORT_QUIESCED) &&
+		    (assoc_state == SPDK_NVMF_BCM_FC_OBJECT_TO_BE_DELETED)) {
+			/*
+			 * If there are any connections deletes or IO abts that are
+			 * stuck because of firmware reset, a second invocation of
+			 * SPDK_NVMF_BCM_FC_POLLER_API_DEL_CONNECTION will result in
+			 * outstanding connections & requests being killed and
+			 * their corresponding callbacks being executed.
+			 */
+			api_data->args.cb_info.cb_func = nvmf_fc_kill_io_del_all_conns_cb;
+		} else {
+			api_data->args.cb_info.cb_func = nvmf_fc_del_all_conns_cb;
+		}
 		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
 			      "conn_id = %lx\n", fc_conn->conn_id);
 		spdk_nvmf_bcm_fc_poller_api(api_data->args.hwqp,
