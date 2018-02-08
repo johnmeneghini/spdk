@@ -308,9 +308,8 @@ nvmf_fc_ls_new_association(uint32_t s_id,
 {
 	struct spdk_nvmf_bcm_fc_association *assoc;
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "New Association request for "
-		      "port %d nport %d rpi 0x%x\n", tgtport->fc_port->port_hdl,
-		      tgtport->nport_hdl, rpi);
+	SPDK_NOTICELOG("New Association request for port %d nport %d rpi 0x%x\n",
+		       tgtport->fc_port->port_hdl, tgtport->nport_hdl, rpi);
 
 	assert(rport);
 	if (!rport) {
@@ -350,10 +349,10 @@ nvmf_fc_ls_new_association(uint32_t s_id,
 		TAILQ_INSERT_TAIL(&tgtport->fc_associations, assoc, link);
 		tgtport->assoc_count++;
 		rport->assoc_count++;
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "New Association %p created:\n", assoc);
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\thostnqn:%s\n", assoc->host_nqn);
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\tsubnqn:%s\n", assoc->sub_nqn);
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\twwpn:0x%lx\n", tgtport->fc_portname.u.wwn);
+		SPDK_NOTICELOG("New Association %p created:\n", assoc);
+		SPDK_NOTICELOG("\thostnqn:%s\n", assoc->host_nqn);
+		SPDK_NOTICELOG("\tsubnqn:%s\n", assoc->sub_nqn);
+		SPDK_NOTICELOG("\twwpn:0x%lx\n", tgtport->fc_portname.u.wwn);
 	} else {
 		SPDK_ERRLOG("out of associations on port %d\n",
 			    tgtport->fc_port->port_hdl);
@@ -409,14 +408,14 @@ nvmf_fc_ls_new_connection(struct spdk_nvmf_bcm_fc_association *assoc,
 		fc_conn->max_queue_depth = sq_size;
 
 		TAILQ_INIT(&fc_conn->pending_queue);
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "New Connection %p for Association %p created:\n", fc_conn,
-			      assoc);
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\tQueue id:%u\n", fc_conn->conn.qid);
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\tQueue size requested:%u\n", sq_size);
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\tMax admin queue size supported:%u\n",
-			      host->max_aq_depth);
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "\tMax IO queue size supported:%u\n",
-			      host->max_queue_depth);
+		SPDK_NOTICELOG("New Connection %p for Association %p created:\n", fc_conn,
+			       assoc);
+		SPDK_NOTICELOG("\tQueue id:%u\n", fc_conn->conn.qid);
+		SPDK_NOTICELOG("\tQueue size requested:%u\n", sq_size);
+		SPDK_NOTICELOG("\tMax admin queue size supported:%u\n",
+			       host->max_aq_depth);
+		SPDK_NOTICELOG("\tMax IO queue size supported:%u\n",
+			       host->max_queue_depth);
 	} else {
 		SPDK_ERRLOG("out of connections\n");
 	}
