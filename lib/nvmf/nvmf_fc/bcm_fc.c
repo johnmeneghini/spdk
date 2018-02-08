@@ -243,9 +243,8 @@ nvmf_fc_abts_handled_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
 					     ctx->oxid, ctx->rxid, ctx->rpi, false,
 					     0, NULL, NULL);
 	}
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
-		      "BLS_%s sent for ABTS frame nport: %d, rpi: 0x%x, oxid: 0x%x, rxid: 0x%x\n",
-		      (ctx->handled) ? "ACC" : "REJ", ctx->nport->nport_hdl, ctx->rpi, ctx->oxid, ctx->rxid);
+	SPDK_NOTICELOG("BLS_%s sent for ABTS frame nport: %d, rpi: 0x%x, oxid: 0x%x, rxid: 0x%x\n",
+		       (ctx->handled) ? "ACC" : "REJ", ctx->nport->nport_hdl, ctx->rpi, ctx->oxid, ctx->rxid);
 
 	free(ctx->free_args);
 	free(ctx);
@@ -263,9 +262,8 @@ spdk_nvmf_bcm_fc_handle_abts_frame(struct spdk_nvmf_bcm_fc_nport *nport, uint16_
 	int hwqp_cnt = 0;
 	bool skip_hwqp_cnt = false;
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
-		      "Handle ABTS frame for nport: %d, rpi: 0x%x, oxid: 0x%x, rxid: 0x%x\n",
-		      nport->nport_hdl, rpi, oxid, rxid);
+	SPDK_NOTICELOG("Handle ABTS frame for nport: %d, rpi: 0x%x, oxid: 0x%x, rxid: 0x%x\n",
+		       nport->nport_hdl, rpi, oxid, rxid);
 
 	TAILQ_FOREACH(assoc, &nport->fc_associations, link) {
 		TAILQ_FOREACH(conn, &assoc->fc_conns, assoc_link) {
@@ -336,9 +334,8 @@ bls_rej:
 	/* Send Reject */
 	spdk_nvmf_bcm_fc_xmt_bls_rsp(&nport->fc_port->ls_queue, oxid, rxid, rpi,
 				     true, BCM_BLS_REJECT_EXP_NOINFO, NULL, NULL);
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
-		      "BLS_RJT for ABTS frame for nport: %d, rpi: 0x%x, oxid: 0x%x, rxid: 0x%x\n",
-		      nport->nport_hdl, rpi, oxid, rxid);
+	SPDK_NOTICELOG("BLS_RJT for ABTS frame for nport: %d, rpi: 0x%x, oxid: 0x%x, rxid: 0x%x\n",
+		       nport->nport_hdl, rpi, oxid, rxid);
 	return;
 }
 

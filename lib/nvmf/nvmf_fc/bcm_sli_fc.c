@@ -596,9 +596,8 @@ spdk_nvmf_bcm_fc_req_abort_complete(void *arg1, void *arg2)
 		free(ctx);
 	}
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
-		      "FC Request(%p) in state :%s aborted", fc_req,
-		      fc_req_state_strs[fc_req->state]);
+	SPDK_NOTICELOG("FC Request(%p) in state :%s aborted", fc_req,
+		       fc_req_state_strs[fc_req->state]);
 
 	spdk_nvmf_bcm_fc_free_req(fc_req);
 }
@@ -1289,8 +1288,8 @@ nvmf_fc_abort_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 	struct spdk_nvmf_bcm_fc_hwqp *hwqp = ctx;
 	fc_caller_ctx_t *carg = arg;
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "IO Aborted(XRI:0x%x, Status=%d)\n",
-		      ((struct spdk_nvmf_bcm_fc_xri *)(carg->ctx))->xri, status);
+	SPDK_NOTICELOG("IO Aborted(XRI:0x%x, Status=%d)\n",
+		       ((struct spdk_nvmf_bcm_fc_xri *)(carg->ctx))->xri, status);
 
 	if (carg->cb) {
 		carg->cb(hwqp, status, carg->cb_args);
@@ -2347,7 +2346,7 @@ done:
 
 	if (!rc) {
 		xri->is_active = false;
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "Abort WQE posted for XRI = %d\n", xri->xri);
+		SPDK_NOTICELOG("Abort WQE posted for XRI = %d\n", xri->xri);
 	}
 	return rc;
 }
