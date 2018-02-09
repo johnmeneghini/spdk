@@ -473,6 +473,7 @@ enum _test_run_type {
 	TEST_RUN_TYPE_CONN_BAD_ASSOC,
 	TEST_RUN_TYPE_DIR_DISCONN_CALL,
 	TEST_RUN_TYPE_FAIL_LS_RSP,
+	TEST_RUN_TYPE_DISCONNECT_BAD_ASSOC,
 };
 
 static uint64_t g_curr_assoc_id = 0;
@@ -781,6 +782,41 @@ handle_conn_bad_assoc_rsp(struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst)
 	return 1;
 }
 
+static int
+handle_disconn_bad_assoc_rsp(struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst)
+{
+	struct nvmf_fc_ls_acc_hdr *acc_hdr =
+		(struct nvmf_fc_ls_acc_hdr *) ls_rqst->rspbuf.virt;
+
+	if (acc_hdr->rqst.w0.ls_cmd == FCNVME_LS_DISCONNECT) {
+		if (acc_hdr->w0.ls_cmd == FCNVME_LS_RJT) {
+			struct nvmf_fc_ls_rjt *rjt =
+				(struct nvmf_fc_ls_rjt *)ls_rqst->rspbuf.virt;
+
+			CU_ASSERT(from_be32(&rjt->desc_list_len) ==
+				  sizeof(struct nvmf_fc_ls_rjt) - 8);
+			CU_ASSERT(from_be32(&rjt->rqst.desc_tag) ==
+				  FCNVME_LSDESC_RQST);
+			CU_ASSERT(from_be32(&rjt->rjt.desc_len) ==
+				  sizeof(struct nvmf_fc_lsdesc_rjt) - 8);
+			CU_ASSERT(from_be32(&rjt->rjt.desc_tag) ==
+				  FCNVME_LSDESC_RJT);
+			CU_ASSERT(rjt->rjt.reason_code ==
+				  FCNVME_RJT_RC_INV_ASSOC);
+			CU_ASSERT(rjt->rjt.reason_explanation ==
+				  FCNVME_RJT_EXP_NONE);
+			return 0;
+		} else {
+			CU_FAIL("Unexpected accept response for disconnect on bad assoc_id");
+		}
+	} else {
+		CU_FAIL("Response not for dsconnect on bad assoc_id");
+	}
+
+	return 1;
+}
+
+
 static struct spdk_nvmf_bcm_fc_port fcport;
 static struct spdk_nvmf_bcm_fc_nport tgtport;
 static struct spdk_nvmf_bcm_fc_remote_port_info rport;
@@ -932,6 +968,13 @@ xmt_ls_rsp_failure_test(void)
 	}
 }
 
+static void
+disconnect_bad_assoc_test(void)
+{
+	g_test_run_type = TEST_RUN_TYPE_DISCONNECT_BAD_ASSOC;
+	run_disconn_test(&tgtport, 0xffff);
+}
+
 /*
  * SPDK functions that are called by LS processing
  */
@@ -956,6 +999,9 @@ spdk_nvmf_bcm_fc_xmt_ls_rsp(struct spdk_nvmf_bcm_fc_nport *tgtport,
 	case TEST_RUN_TYPE_FAIL_LS_RSP:
 		g_last_rslt = handle_ca_rsp(ls_rqst);
 		return 1;
+	case TEST_RUN_TYPE_DISCONNECT_BAD_ASSOC:
+		g_last_rslt = handle_disconn_bad_assoc_rsp(ls_rqst);
+		break;
 
 	default:
 		CU_FAIL("LS Response for Invalid Test Type");
@@ -1024,6 +1070,7 @@ usage(const char *program_name)
 	printf("    4 : Create max assoc conns test\n");
 	printf("    5 : Delete assoc test\n");
 	printf("    6 : LS response failure test\n");
+	printf("    7 : Disconnect bad assoc_id test\n");
 }
 
 int main(int argc, char **argv)
@@ -1110,6 +1157,11 @@ int main(int argc, char **argv)
 			return CU_get_error();
 		}
 
+		if (CU_add_test(suite, "DISC bad assoc_id", disconnect_bad_assoc_test) == NULL) {
+			CU_cleanup_registry();
+			return CU_get_error();
+		}
+
 		if (CU_add_test(suite, "Max. assocs/conns", create_max_assoc_conns_test) == NULL) {
 			CU_cleanup_registry();
 			return CU_get_error();
@@ -1169,6 +1221,13 @@ int main(int argc, char **argv)
 				return CU_get_error();
 			}
 			break;
+		case 7:
+			if (CU_add_test(suite, "DISC bad assoc_id", disconnect_bad_assoc_test) == NULL) {
+				CU_cleanup_registry();
+				return CU_get_error();
+			}
+			break;
+
 		default:
 			CU_cleanup_registry();
 			return -1;
