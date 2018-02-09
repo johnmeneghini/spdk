@@ -764,11 +764,6 @@ spdk_bdev_free_io(struct spdk_bdev_io *bdev_io)
 		return -1;
 	}
 
-	if (bdev_io->status == SPDK_BDEV_IO_STATUS_PENDING) {
-		SPDK_ERRLOG("bdev_io is in pending state\n");
-		return -1;
-	}
-
 	TAILQ_FOREACH_SAFE(child_io, &bdev_io->child_io, link, tmp) {
 		/*
 		 * Make sure no references to the parent I/O remain, since it is being
