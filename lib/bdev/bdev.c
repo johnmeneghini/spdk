@@ -1181,12 +1181,6 @@ spdk_bdev_free_io(struct spdk_bdev_io *bdev_io)
 		return -1;
 	}
 
-	if (bdev_io->status == SPDK_BDEV_IO_STATUS_PENDING) {
-		SPDK_ERRLOG("bdev_io is in pending state\n");
-		assert(false);
-		return -1;
-	}
-
 	spdk_bdev_put_io(bdev_io);
 
 	return 0;
