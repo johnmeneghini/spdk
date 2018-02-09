@@ -1039,11 +1039,9 @@ nvmf_fc_ls_process_cass(uint32_t s_id,
 	struct spdk_nvmf_subsystem *subsystem = NULL;
 	struct spdk_nvmf_host *host;
 
-	struct spdk_nvmf_bcm_fc_remote_port_info *rport = NULL;
 	int errmsg_ind = 0;
 	uint8_t rc = FCNVME_RJT_RC_NONE;
 	uint8_t ec = FCNVME_RJT_EXP_NONE;
-	spdk_err_t err;
 	char traddr[NVMF_TGT_FC_TR_ADDR_LENGTH + 1];
 	struct spdk_nvmf_listen_addr *listen_addr, *listener;
 
@@ -1118,33 +1116,25 @@ nvmf_fc_ls_process_cass(uint32_t s_id,
 		rc = FCNVME_RJT_RC_UNAB;
 		ec = FCNVME_RJT_EXP_NONE;
 	} else {
-		/* new association w/ admin queue */
-		err = spdk_nvmf_bcm_fc_find_rport_from_sid(s_id, tgtport, &rport);
-		if (err != SPDK_SUCCESS) {
-			SPDK_ERRLOG("Remote port not found.\n");
-			errmsg_ind = VERR_NO_RPORT;
+		/* get new association */
+		assoc = nvmf_fc_ls_new_association(s_id, tgtport, ls_rqst->rport,
+						   &rqst->assoc_cmd,
+						   subsystem, host,
+						   ls_rqst->rpi);
+		if (!assoc) {
+			errmsg_ind = VERR_ASSOC_ALLOC_FAIL;
 			rc = FCNVME_RJT_RC_INSUFF_RES;
 			ec = FCNVME_RJT_EXP_INSUF_RES;
-		} else {
-			assoc = nvmf_fc_ls_new_association(s_id, tgtport, rport,
-							   &rqst->assoc_cmd,
-							   subsystem, host,
-							   ls_rqst->rpi);
-			if (!assoc) {
-				errmsg_ind = VERR_ASSOC_ALLOC_FAIL;
+		} else { // alloc admin q (i.e. connection)
+			fc_conn = nvmf_fc_ls_new_connection(assoc, host,
+							    CONN_TYPE_AQ, 0,
+							    from_be16(&rqst->assoc_cmd.ersp_ratio),
+							    ls_rqst->rpi,
+							    from_be16(&rqst->assoc_cmd.sqsize));
+			if (!fc_conn) {
+				errmsg_ind = VERR_CONN_ALLOC_FAIL;
 				rc = FCNVME_RJT_RC_INSUFF_RES;
 				ec = FCNVME_RJT_EXP_INSUF_RES;
-			} else { // alloc admin q (i.e. connection)
-				fc_conn = nvmf_fc_ls_new_connection(assoc, host,
-								    CONN_TYPE_AQ, 0,
-								    from_be16(&rqst->assoc_cmd.ersp_ratio),
-								    ls_rqst->rpi,
-								    from_be16(&rqst->assoc_cmd.sqsize));
-				if (!fc_conn) {
-					errmsg_ind = VERR_CONN_ALLOC_FAIL;
-					rc = FCNVME_RJT_RC_INSUFF_RES;
-					ec = FCNVME_RJT_EXP_INSUF_RES;
-				}
 			}
 		}
 	}

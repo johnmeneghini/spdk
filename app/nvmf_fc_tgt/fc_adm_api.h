@@ -85,6 +85,7 @@ struct spdk_nvmf_bcm_fc_hw_port_init_args {
 	struct spdk_nvmf_bcm_fc_hw_queues io_queues[NVMF_FC_MAX_IO_QUEUES];
 	void                             *cb_ctx;
 	void                             *port_ctx;
+	uint16_t                          fcp_rq_id;
 };
 
 typedef struct spdk_nvmf_bcm_fc_hw_port_init_args spdk_nvmf_bcm_fc_hw_port_init_args_t;

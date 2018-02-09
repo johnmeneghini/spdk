@@ -190,6 +190,9 @@ struct spdk_nvmf_bcm_fc_hwqp {
 
 	/* Pending LS request waiting for XRI. */
 	TAILQ_HEAD(, spdk_nvmf_bcm_fc_ls_rqst) ls_pending_queue;
+
+	/* Sync req list */
+	TAILQ_HEAD(, spdk_nvmf_bcm_fc_poller_api_queue_sync_args) sync_cbs;
 };
 
 /*
@@ -250,6 +253,7 @@ struct spdk_nvmf_bcm_fc_port {
 	spdk_fc_port_state_t hw_port_status;
 	uint32_t xri_base;
 	uint32_t xri_count;
+	uint16_t fcp_rq_id;
 	struct spdk_ring *xri_ring;
 	struct spdk_nvmf_bcm_fc_hwqp ls_queue;
 	uint32_t max_io_queues;
@@ -436,6 +440,7 @@ typedef enum {
 	SPDK_NVMF_BCM_FC_POLLER_API_ADAPTER_EVENT,
 	SPDK_NVMF_BCM_FC_POLLER_API_AEN,
 	SPDK_NVMF_BCM_FC_POLLER_API_NS_DETACH_ON_CONN,
+	SPDK_NVMF_BCM_FC_POLLER_API_QUEUE_SYNC,
 } spdk_nvmf_bcm_fc_poller_api_t;
 
 /*
@@ -487,6 +492,15 @@ struct spdk_nvmf_bcm_fc_poller_api_abts_recvd_args {
 	struct spdk_nvmf_bcm_fc_poller_api_cb_info cb_info;
 };
 
+struct spdk_nvmf_bcm_fc_poller_api_queue_sync_args {
+	uint64_t u_id;
+	struct spdk_nvmf_bcm_fc_hwqp *hwqp;
+	struct spdk_nvmf_bcm_fc_poller_api_cb_info cb_info;
+
+	/* Used internally by poller */
+	TAILQ_ENTRY(spdk_nvmf_bcm_fc_poller_api_queue_sync_args) link;
+};
+
 typedef void (*spdk_nvmf_bcm_fc_detach_ns_cb)(void *arg1, void *arg2);
 
 /* This is the args used by the poller API to issue aborts for NS unmap on a particular conection */
@@ -514,7 +528,9 @@ struct spdk_nvmf_bcm_fc_ls_rqst {
 	void *private_data; /* for RQ handler only (LS does not touch) */
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_ls_rqst) ls_pending_link;
 	uint32_t s_id;
+	uint32_t d_id;
 	struct spdk_nvmf_bcm_fc_nport *nport;
+	struct spdk_nvmf_bcm_fc_remote_port_info *rport;
 };
 
 /*
@@ -672,11 +688,6 @@ bool spdk_nvmf_bcm_fc_is_spdk_session_on_nport(uint8_t port_hdl, uint16_t nport_
 		struct spdk_nvmf_session *session);
 
 spdk_err_t spdk_nvmf_bcm_fc_get_sess_init_traddr(char *traddr, struct spdk_nvmf_session *session);
-
-spdk_err_t
-spdk_nvmf_bcm_fc_find_rport_from_sid(uint32_t s_id,
-				     struct spdk_nvmf_bcm_fc_nport *tgtport,
-				     struct spdk_nvmf_bcm_fc_remote_port_info **rport);
 
 uint32_t spdk_nvmf_bcm_fc_get_hwqp_id(struct spdk_nvmf_request *req);
 

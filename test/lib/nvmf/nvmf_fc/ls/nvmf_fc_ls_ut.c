@@ -479,6 +479,7 @@ static uint64_t g_curr_assoc_id = 0;
 static uint16_t g_create_conn_test_cnt = 0;
 static int g_last_rslt = 0;
 static bool g_spdk_nvmf_bcm_fc_xmt_srsr_req = false;
+static struct spdk_nvmf_bcm_fc_remote_port_info rem_port;
 
 
 static void
@@ -512,6 +513,7 @@ run_create_assoc_test(const char *subnqn,
 	ls_rqst.private_data = NULL;
 	ls_rqst.s_id = 0;
 	ls_rqst.nport = tgtport;
+	ls_rqst.rport = &rem_port;
 
 	spdk_nvmf_bcm_fc_handle_ls_rqst(&ls_rqst);
 }
@@ -559,6 +561,7 @@ run_create_conn_test(struct spdk_nvmf_host *host,
 	ls_rqst.private_data = NULL;
 	ls_rqst.s_id = 0;
 	ls_rqst.nport = tgtport;
+	ls_rqst.rport = &rem_port;
 
 	spdk_nvmf_bcm_fc_handle_ls_rqst(&ls_rqst);
 }
@@ -600,6 +603,7 @@ run_disconn_test(struct spdk_nvmf_bcm_fc_nport *tgtport,
 	ls_rqst.private_data = NULL;
 	ls_rqst.s_id = 0;
 	ls_rqst.nport = tgtport;
+	ls_rqst.rport = &rem_port;
 
 	spdk_nvmf_bcm_fc_handle_ls_rqst(&ls_rqst);
 }
@@ -999,24 +1003,6 @@ spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io,
 		   void *ctx)
 {
 	return;
-}
-
-spdk_err_t
-spdk_nvmf_bcm_fc_find_rport_from_sid(uint32_t s_id,
-				     struct spdk_nvmf_bcm_fc_nport *tgtport,
-				     struct spdk_nvmf_bcm_fc_remote_port_info **rport)
-{
-	int rc = SPDK_ERR_INTERNAL;
-	struct spdk_nvmf_bcm_fc_remote_port_info *rem_port = NULL;
-
-	TAILQ_FOREACH(rem_port, &tgtport->rem_port_list, link) {
-		if (rem_port->s_id == s_id) {
-			*rport = rem_port;
-			rc = SPDK_SUCCESS;
-			break;
-		}
-	}
-	return rc;
 }
 
 static void

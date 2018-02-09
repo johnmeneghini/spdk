@@ -53,7 +53,8 @@ extern void spdk_post_event(void *context, struct spdk_event *event);
 extern void
 spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req, bool send_abts,
 			   spdk_nvmf_bcm_fc_caller_cb cb, void *cb_args);
-
+void
+nvmf_fc_poller_queue_sync_done(void *arg1, void *arg2);
 
 static void
 nvmf_fc_poller_api_cb_event(void *arg1, void *arg2)
@@ -250,6 +251,41 @@ nvmf_fc_poller_api_abts_received(void *arg1, void *arg2)
 	nvmf_fc_poller_api_perform_cb(&args->cb_info, ret);
 }
 
+void
+nvmf_fc_poller_queue_sync_done(void *arg1, void *arg2)
+{
+	struct spdk_nvmf_bcm_fc_hwqp *hwqp = arg1;
+	uint64_t tag = (uint64_t)arg2;
+	struct spdk_nvmf_bcm_fc_poller_api_queue_sync_args *args = NULL, *tmp = NULL;
+
+	TAILQ_FOREACH_SAFE(args, &hwqp->sync_cbs, link, tmp) {
+		if (args->u_id == tag) {
+			/* Queue successfully synced. Remove from cb list */
+			TAILQ_REMOVE(&hwqp->sync_cbs, args, link);
+
+			SPDK_TRACELOG(SPDK_NVMF_BCM_FC_POLLER_API,
+				      "HWQP sync done for u_id = 0x%lx\n", args->u_id);
+
+			/* Return the status to poller */
+			nvmf_fc_poller_api_perform_cb(&args->cb_info,
+						      SPDK_NVMF_BCM_FC_POLLER_API_SUCCESS);
+			return;
+		}
+	}
+}
+
+static void
+nvmf_fc_poller_api_queue_sync(void *arg1, void *arg2)
+{
+	struct spdk_nvmf_bcm_fc_poller_api_queue_sync_args *args = arg1;
+
+	SPDK_TRACELOG(SPDK_NVMF_BCM_FC_POLLER_API,
+		      "HWQP sync requested for u_id = 0x%lx\n", args->u_id);
+
+	/* Add this args to hwqp sync_cb list */
+	TAILQ_INSERT_TAIL(&args->hwqp->sync_cbs, args, link);
+}
+
 /* Poller API for draining IOs on the bdev for a NSID on a particular connection */
 static void
 spdk_nvmf_bcm_fc_poller_api_detach_ns_on_conn(void *arg1, void *arg2)
@@ -330,6 +366,11 @@ spdk_nvmf_bcm_fc_poller_api(struct spdk_nvmf_bcm_fc_hwqp *hwqp, spdk_nvmf_bcm_fc
 	case SPDK_NVMF_BCM_FC_POLLER_API_ABTS_RECEIVED:
 		event = spdk_event_allocate(lcore,
 					    nvmf_fc_poller_api_abts_received,
+					    api_args, NULL);
+		break;
+	case SPDK_NVMF_BCM_FC_POLLER_API_QUEUE_SYNC:
+		event = spdk_event_allocate(lcore,
+					    nvmf_fc_poller_api_queue_sync,
 					    api_args, NULL);
 		break;
 	case SPDK_NVMF_BCM_FC_POLLER_API_ADAPTER_EVENT:

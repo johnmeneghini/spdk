@@ -59,6 +59,7 @@
 #define BCM_CQE_CODE_OPTIMIZED_WRITE_CMD        0x0B
 #define BCM_CQE_CODE_OPTIMIZED_WRITE_DATA       0x0C
 #define BCM_CQE_CODE_NVME_ERSP_COMPLETION       0x0D
+#define BCM_CQE_CODE_RQ_MARKER                  0x1D
 
 /* FC Completion Status Codes */
 #define BCM_FC_WCQE_STATUS_SUCCESS              0x00
@@ -179,6 +180,7 @@
 #define BCM_WQE_ELS_RSP64		0x95
 #define BCM_WQE_XMIT_SEQUENCE64		0x82
 #define BCM_WQE_REQUEUE_XRI		0x93
+#define BCM_WQE_MARKER			0xe6
 
 /**
  * WQE command types.
@@ -196,6 +198,7 @@
 #define BCM_CMD_XMIT_SEQUENCE64_WQE	0x08
 #define BCM_CMD_REQUEUE_XRI_WQE		0x0A
 #define BCM_CMD_SEND_FRAME_WQE		0x0a
+#define BCM_CMD_MARKER_WQE		0x0a
 
 #define BCM_WQE_SIZE			0x05
 #define BCM_WQE_EXT_SIZE		0x06
@@ -248,6 +251,12 @@
 
 /* Support for sending ABTS in case of sequence errors */
 #define BCM_SUPPORT_ABTS_FOR_SEQ_ERRORS		true
+
+/* Support for MARKER */
+#define BCM_SUPPORT_ABTS_MARKERS                true
+
+#define BCM_MARKER_CATAGORY_ALL_RQ		0x1
+#define BCM_MARKER_CATAGORY_ALL_RQ_EXCEPT_ONE	0x2
 
 /* FC CQE Types */
 typedef enum {
@@ -379,8 +388,13 @@ typedef struct fc_abts_ctx {
 	uint16_t oxid;
 	uint16_t rxid;
 	struct spdk_nvmf_bcm_fc_nport *nport;
-	void *free_args;
+	void *abts_poller_args;
+	void *sync_poller_args;
 	int num_hwqps;
+	bool queue_synced;
+	uint64_t u_id;
+	struct spdk_nvmf_bcm_fc_hwqp *ls_hwqp;
+	uint16_t fcp_rq_id;
 } fc_abts_ctx_t;
 
 /* Caller context */
@@ -556,8 +570,8 @@ typedef struct cqe {
 		struct  {
 			uint32_t rsvd0           : 8;
 			uint32_t status          : 8;
-			uint32_t rq_element_index: 12;
-			uint32_t rsvd1           : 4;
+			uint32_t rq_element_index: 15;
+			uint32_t rsvd1           : 1;
 			uint32_t fcfi            : 6;
 			uint32_t rsvd2           : 26;
 			uint32_t rq_id           : 16;
@@ -569,6 +583,19 @@ typedef struct cqe {
 			uint32_t rsvd3           : 1;
 			uint32_t valid           : 1;
 		} async_rcqe_v1;
+
+		struct {
+			uint32_t rsvd0           : 8;
+			uint32_t status          : 8;
+			uint32_t rq_element_index: 15;
+			uint32_t iv              : 1;
+			uint32_t tag_lower;
+			uint32_t tag_higher;
+			uint32_t rq_id           : 16;
+			uint32_t code            : 8;
+			uint32_t rsvd1           : 7;
+			uint32_t valid           : 1;
+		} async_marker;
 
 		struct {
 			uint32_t rsvd0           : 8;
@@ -669,7 +696,6 @@ typedef struct cqe {
 
 /* CQE types */
 typedef struct bcm_fc_async_rcqe {
-
 	uint32_t rsvd0 : 8,
 		 status: 8,
 		 rq_element_index: 12,
@@ -705,8 +731,8 @@ typedef struct bcm_fc_async_rcqe_v1 {
 
 	uint32_t rsvd0: 8,
 		 status: 8,
-		 rq_element_index: 12,
-		 rsvd1: 4;
+		 rq_element_index: 15,
+		 rsvd1: 1;
 	uint32_t fcfi: 6,
 		 rsvd2: 26;
 	uint32_t rq_id: 16,
@@ -719,6 +745,21 @@ typedef struct bcm_fc_async_rcqe_v1 {
 		 vld: 1;
 
 } bcm_fc_async_rcqe_v1_t;
+
+
+typedef struct bcm_fc_async_rcqe_marker {
+	uint32_t rsvd0: 8,
+		 status: 8,
+		 rq_element_index: 15,
+		 rsvd1: 1;
+	uint32_t tag_lower;
+	uint32_t tag_higher;
+	uint32_t rq_id: 16,
+		 code: 8,
+		 : 6,
+		 : 1,
+		 vld: 1;
+} bcm_fc_async_rcqe_marker_t;
 
 typedef struct bcm_fc_optimized_write_cmd_cqe {
 	uint32_t rsvd0: 8,
@@ -1226,5 +1267,31 @@ typedef struct bcm_gen_request64_wqe_s {
 	uint32_t	rsvd14;
 	uint32_t	max_response_payload_length;
 } bcm_gen_request64_wqe_t;
+
+typedef struct bcm_marker_wqe_s {
+	uint32_t	rsvd0[3];
+	uint32_t	marker_catagery: 2,
+			: 30;
+	uint32_t	tag_lower;
+	uint32_t	tag_higher;
+	uint32_t	rsvd1;
+	uint32_t        : 8,
+			command: 8,
+			: 16;
+	uint32_t	rsvd2;
+	uint32_t	: 16,
+			rq_id: 16;
+	uint32_t	ebde_cnt: 4,
+			: 3,
+			len_loc: 2,
+			qosd: 1,
+			rsvd3: 22;
+	uint32_t	cmd_type: 4,
+			: 3,
+			wqec: 1,
+			: 8,
+			cq_id: 16;
+	uint32_t	rsvd4[4];
+} bcm_marker_wqe_t;
 
 #endif
