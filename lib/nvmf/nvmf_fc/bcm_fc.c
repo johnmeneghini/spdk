@@ -69,6 +69,8 @@ extern void spdk_nvmf_bcm_fc_req_set_state(struct spdk_nvmf_bcm_fc_request *fc_r
 extern void spdk_nvmf_bcm_fc_req_abort_complete(void *arg1, void *arg2);
 extern void spdk_nvmf_bcm_fc_release_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 		struct spdk_nvmf_bcm_fc_xri *xri, bool xb, bool abts);
+extern int spdk_nvmf_bcm_fc_issue_marker(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint64_t u_id,
+		uint16_t skip_rq);
 
 /* locals */
 static inline struct spdk_nvmf_bcm_fc_conn *nvmf_fc_get_fc_conn(struct spdk_nvmf_conn *conn);
@@ -114,6 +116,7 @@ spdk_nvmf_bcm_fc_init_poller(struct spdk_nvmf_bcm_fc_port *fc_port,
 	spdk_nvmf_bcm_fc_init_poller_queues(hwqp);
 	(void)spdk_nvmf_bcm_fc_create_req_mempool(hwqp);
 	(void)spdk_nvmf_bcm_fc_create_reqtag_pool(hwqp);
+	TAILQ_INIT(&hwqp->sync_cbs);
 }
 
 void
@@ -217,6 +220,107 @@ spdk_nvmf_bcm_fc_delete_poller(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	spdk_poller_unregister(&hwqp->poller, NULL);
 }
 
+/*
+ * Note: This needs to be used only on master poller.
+ */
+static uint64_t
+nvmf_fc_get_abts_unique_id(void)
+{
+	static uint32_t u_id = 0;
+
+	return (uint64_t)(++ u_id);
+}
+
+static void
+nvmf_fc_queue_synced_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
+{
+	fc_abts_ctx_t *ctx = cb_data;
+	struct spdk_nvmf_bcm_fc_poller_api_abts_recvd_args *args, *poller_arg;
+
+	ctx->hwqps_responded ++;
+
+	if (ctx->hwqps_responded < ctx->num_hwqps) {
+		/* Wait for all pollers to complete. */
+		return;
+	}
+
+	/* Free the queue sync poller args. */
+	free(ctx->sync_poller_args);
+
+	/* Mark as queue synced */
+	ctx->queue_synced = true;
+
+	/* Reset the ctx values */
+	ctx->hwqps_responded = 0;
+	ctx->handled = false;
+
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
+		      "QueueSync(0x%lx) completed for nport: %d, rpi: 0x%x, oxid: 0x%x, rxid: 0x%x\n",
+		      ctx->u_id, ctx->nport->nport_hdl, ctx->rpi, ctx->oxid, ctx->rxid);
+
+	/* Resend ABTS to pollers */
+	args = ctx->abts_poller_args;
+	for (int i = 0; i < ctx->num_hwqps; i ++) {
+		poller_arg = args + i;
+		spdk_nvmf_bcm_fc_poller_api(poller_arg->hwqp,
+					    SPDK_NVMF_BCM_FC_POLLER_API_ABTS_RECEIVED,
+					    poller_arg);
+	}
+}
+
+static int
+nvmf_fc_handle_abts_notfound(fc_abts_ctx_t *ctx)
+{
+	struct spdk_nvmf_bcm_fc_poller_api_queue_sync_args *args, *poller_arg;
+	struct spdk_nvmf_bcm_fc_poller_api_abts_recvd_args *abts_args, *abts_poller_arg;
+
+	if (!BCM_SUPPORT_ABTS_MARKERS) {
+		return -1;
+	}
+
+	if (!ctx) {
+		goto fail;
+	}
+
+	/* Reset the ctx values */
+	ctx->hwqps_responded = 0;
+
+	args = calloc(ctx->num_hwqps,
+		      sizeof(struct spdk_nvmf_bcm_fc_poller_api_queue_sync_args));
+	if (!args) {
+		goto fail;
+	}
+	ctx->sync_poller_args = args;
+
+	abts_args = ctx->abts_poller_args;
+	for (int i = 0; i < ctx->num_hwqps; i ++) {
+		abts_poller_arg 		= abts_args + i;
+		poller_arg			= args + i;
+		poller_arg->u_id		= ctx->u_id;
+		poller_arg->hwqp 		= abts_poller_arg->hwqp;
+		poller_arg->cb_info.cb_func 	= nvmf_fc_queue_synced_cb;
+		poller_arg->cb_info.cb_data	= ctx;
+
+		/* Send a Queue sync message to interested pollers */
+		spdk_nvmf_bcm_fc_poller_api(poller_arg->hwqp,
+					    SPDK_NVMF_BCM_FC_POLLER_API_QUEUE_SYNC,
+					    poller_arg);
+	}
+
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
+		      "QueueSync(0x%lx) Sent for nport: %d, rpi: 0x%x, oxid: 0x%x, rxid: 0x%x\n",
+		      ctx->u_id, ctx->nport->nport_hdl, ctx->rpi, ctx->oxid, ctx->rxid);
+
+	/* Post Marker wqe. */
+	spdk_nvmf_bcm_fc_issue_marker(ctx->ls_hwqp, ctx->u_id, ctx->fcp_rq_id);
+
+	return 0;
+fail:
+	SPDK_ERRLOG("QueueSync(0x%lx) failed for nport: %d, rpi: 0x%x, oxid: 0x%x, rxid: 0x%x\n",
+		    ctx->u_id, ctx->nport->nport_hdl, ctx->rpi, ctx->oxid, ctx->rxid);
+	return -1;
+}
+
 static void
 nvmf_fc_abts_handled_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
 {
@@ -233,10 +337,19 @@ nvmf_fc_abts_handled_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
 	}
 
 	if (!ctx->handled) {
-		/* Send Reject */
-		spdk_nvmf_bcm_fc_xmt_bls_rsp(&ctx->nport->fc_port->ls_queue,
-					     ctx->oxid, ctx->rxid, ctx->rpi, true,
-					     BCM_BLS_REJECT_EXP_INVALID_OXID, NULL, NULL);
+		/* Try syncing the queues and try one moretime */
+		if (!ctx->queue_synced && (nvmf_fc_handle_abts_notfound(ctx) == 0)) {
+
+			SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
+				      "QueueSync(0x%lx) for nport: %d, rpi: 0x%x, oxid: 0x%x, rxid: 0x%x\n",
+				      ctx->u_id, ctx->nport->nport_hdl, ctx->rpi, ctx->oxid, ctx->rxid);
+			return;
+		} else {
+			/* Send Reject */
+			spdk_nvmf_bcm_fc_xmt_bls_rsp(&ctx->nport->fc_port->ls_queue,
+						     ctx->oxid, ctx->rxid, ctx->rpi, true,
+						     BCM_BLS_REJECT_EXP_INVALID_OXID, NULL, NULL);
+		}
 	} else {
 		/* Send Accept */
 		spdk_nvmf_bcm_fc_xmt_bls_rsp(&ctx->nport->fc_port->ls_queue,
@@ -246,7 +359,7 @@ nvmf_fc_abts_handled_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
 	SPDK_NOTICELOG("BLS_%s sent for ABTS frame nport: %d, rpi: 0x%x, oxid: 0x%x, rxid: 0x%x\n",
 		       (ctx->handled) ? "ACC" : "REJ", ctx->nport->nport_hdl, ctx->rpi, ctx->oxid, ctx->rxid);
 
-	free(ctx->free_args);
+	free(ctx->abts_poller_args);
 	free(ctx);
 }
 
@@ -306,8 +419,13 @@ spdk_nvmf_bcm_fc_handle_abts_frame(struct spdk_nvmf_bcm_fc_nport *nport, uint16_
 	ctx->oxid	= oxid;
 	ctx->rxid	= rxid;
 	ctx->nport	= nport;
-	ctx->free_args	= args;
 	ctx->num_hwqps	= hwqp_cnt;
+	ctx->ls_hwqp 	= &nport->fc_port->ls_queue;
+	ctx->fcp_rq_id  = nport->fc_port->fcp_rq_id;
+	ctx->abts_poller_args = args;
+
+	/* Get a unique context for this ABTS */
+	ctx->u_id = nvmf_fc_get_abts_unique_id();
 
 	for (int i = 0; i < hwqp_cnt; i ++) {
 		poller_arg = args + i;
@@ -695,24 +813,6 @@ spdk_nvmf_bcm_fc_get_sess_init_traddr(char *traddr, struct spdk_nvmf_session *se
 			 from_be64(&fc_session->fc_assoc->rport->fc_portname.u.wwn));
 	}
 	return SPDK_SUCCESS;
-}
-
-spdk_err_t
-spdk_nvmf_bcm_fc_find_rport_from_sid(uint32_t s_id,
-				     struct spdk_nvmf_bcm_fc_nport *tgtport,
-				     struct spdk_nvmf_bcm_fc_remote_port_info **rport)
-{
-	int rc = SPDK_ERR_INTERNAL;
-	struct spdk_nvmf_bcm_fc_remote_port_info *rem_port = NULL;
-
-	TAILQ_FOREACH(rem_port, &tgtport->rem_port_list, link) {
-		if (rem_port->s_id == s_id) {
-			*rport = rem_port;
-			rc = SPDK_SUCCESS;
-			break;
-		}
-	}
-	return rc;
 }
 
 inline uint32_t

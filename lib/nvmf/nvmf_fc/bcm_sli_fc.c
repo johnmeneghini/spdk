@@ -67,6 +67,7 @@ char *fc_req_state_strs[] = {
 };
 
 extern void spdk_post_event(void *context, struct spdk_event *event);
+extern void nvmf_fc_poller_queue_sync_done(void *arg1, void *arg2);
 uint32_t spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
 void spdk_nvmf_bcm_fc_free_req(struct spdk_nvmf_bcm_fc_request *fc_req);
 int spdk_nvmf_bcm_fc_init_rqpair_buffers(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
@@ -93,6 +94,8 @@ void spdk_nvmf_bcm_fc_release_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 				  struct spdk_nvmf_bcm_fc_xri *xri, bool xb, bool abts);
 static int nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req);
 int spdk_nvmf_bcm_fc_create_reqtag_pool(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
+int spdk_nvmf_bcm_fc_issue_marker(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint64_t u_id,
+				  uint16_t skip_rq);
 
 static inline uint16_t
 nvmf_fc_advance_conn_sqhead(struct spdk_nvmf_conn *conn)
@@ -219,7 +222,6 @@ spdk_nvmf_bcm_fc_create_req_mempool(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 		return -1;
 	}
 	TAILQ_INIT(&hwqp->in_use_reqs);
-
 	return 0;
 }
 
@@ -503,25 +505,6 @@ nvmf_fc_process_pending_req(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	}
 }
 
-static inline void
-nvmf_fc_process_pending_ls_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
-{
-	struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst = NULL, *tmp;
-
-	TAILQ_FOREACH_SAFE(ls_rqst, &hwqp->ls_pending_queue, ls_pending_link, tmp) {
-		ls_rqst->xri = spdk_nvmf_bcm_fc_get_xri(hwqp);
-		if (ls_rqst->xri) {
-			/* Got an XRI. */
-			TAILQ_REMOVE(&hwqp->ls_pending_queue, ls_rqst, ls_pending_link);
-			/* Handover the request to LS module */
-			spdk_nvmf_bcm_fc_handle_ls_rqst(ls_rqst);
-		} else {
-			/* No more XRI. Stop processing. */
-			return;
-		}
-	}
-}
-
 static inline bool
 nvmf_fc_req_in_pending(struct spdk_nvmf_bcm_fc_request *fc_req)
 {
@@ -668,30 +651,31 @@ complete:
 }
 
 
-static int
-nvmf_fc_find_nport_from_sid(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t s_id, uint32_t d_id,
-			    struct spdk_nvmf_bcm_fc_nport **tgtport, uint16_t *rpi)
+static inline int
+nvmf_fc_find_nport_and_rport(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
+			     uint32_t d_id, struct spdk_nvmf_bcm_fc_nport **nport,
+			     uint32_t s_id, struct spdk_nvmf_bcm_fc_remote_port_info **rport)
 {
-	int rc = -1;
-	struct spdk_nvmf_bcm_fc_nport *n_port = NULL;
-	struct spdk_nvmf_bcm_fc_remote_port_info *rem_port = NULL;
+	struct spdk_nvmf_bcm_fc_nport *n_port;
+	struct spdk_nvmf_bcm_fc_remote_port_info *r_port;
 
 	assert(hwqp);
-	assert(tgtport);
-	assert(rpi);
+	assert(nport);
+	assert(rport);
 
 	TAILQ_FOREACH(n_port, &hwqp->fc_port->nport_list, link) {
 		if (n_port->d_id == d_id) {
-			TAILQ_FOREACH(rem_port, &n_port->rem_port_list, link) {
-				if (rem_port->s_id == s_id) {
-					*tgtport = n_port;
-					*rpi = rem_port->rpi;
+			TAILQ_FOREACH(r_port, &n_port->rem_port_list, link) {
+				if (r_port->s_id == s_id) {
+					*nport = n_port;
+					*rport = r_port;
 					return 0;
 				}
 			}
+			break;
 		}
 	}
-	return rc;
+	return -1;
 }
 
 static void
@@ -1016,6 +1000,12 @@ nvmf_fc_parse_cq_entry(struct fc_eventq *cq, uint8_t *cqe, bcm_qentry_type_e *et
 		rc = cqe_entry->u.async_rcqe_v1.status;
 		break;
 	}
+	case BCM_CQE_CODE_RQ_MARKER: {
+		*etype = BCM_FC_QENTRY_RQ;
+		*r_id = cqe_entry->u.async_marker.rq_id;
+		rc = cqe_entry->u.async_marker.status;
+		break;
+	}
 	case BCM_CQE_CODE_XRI_ABORTED: {
 		*etype = BCM_FC_QENTRY_XABT;
 		*r_id = cqe_entry->u.xri_aborted_cqe.xri;
@@ -1043,6 +1033,7 @@ nvmf_fc_rqe_rqid_and_index(uint8_t *cqe, uint16_t *rq_id, uint32_t *index)
 {
 	bcm_fc_async_rcqe_t	*rcqe = (void *)cqe;
 	bcm_fc_async_rcqe_v1_t	*rcqe_v1 = (void *)cqe;
+	bcm_fc_async_rcqe_marker_t *marker = (void *)cqe;
 	int	rc = -1;
 	uint8_t	code = 0;
 
@@ -1081,6 +1072,21 @@ nvmf_fc_rqe_rqid_and_index(uint8_t *cqe, uint16_t *rq_id, uint32_t *index)
 				      rcqe_v1->payload_data_placement_length, rcqe_v1->sof_byte,
 				      rcqe_v1->eof_byte, rcqe_v1->header_data_placement_length);
 		}
+
+	} else if (code == BCM_CQE_CODE_RQ_MARKER) {
+		*rq_id = marker->rq_id;
+		*index = marker->rq_element_index;
+		if (BCM_FC_ASYNC_RQ_SUCCESS == marker->status) {
+			rc = 0;
+			SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
+				      "%s: marker cqe status=%02x rq_id=%d, index=%x\n", __func__,
+				      marker->status, marker->rq_id, marker->rq_element_index);
+		} else {
+			rc = marker->status;
+			SPDK_ERRLOG("%s: marker cqe status=%02x rq_id=%d, index=%x\n", __func__,
+				    marker->status, marker->rq_id, marker->rq_element_index);
+		}
+
 	} else {
 		*index = UINT32_MAX;
 
@@ -1353,6 +1359,13 @@ nvmf_fc_ls_rsp_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 	if (status) {
 		SPDK_ERRLOG("LS WQE Compl(%d) error\n", status);
 	}
+}
+
+
+static void
+nvmf_fc_def_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
+{
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "DEF WQE Compl(%d) \n", status);
 }
 
 static void
@@ -1796,60 +1809,67 @@ abort:
 	return -1;
 }
 
+
+static void
+nvmf_fc_process_marker_cqe(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint8_t *cqe)
+{
+	bcm_fc_async_rcqe_marker_t *marker = (void *)cqe;
+	struct spdk_event *event = NULL;
+	uint64_t tag = 0;
+
+	tag = (uint64_t)marker->tag_higher << 32 | marker->tag_lower;
+
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "Process Marker compl for tag = %lx\n", tag);
+
+	event = spdk_event_allocate(hwqp->lcore_id, nvmf_fc_poller_queue_sync_done,
+				    (void *)hwqp, (void *)tag);
+	spdk_post_event(hwqp->context, event);
+}
+
 static int
 nvmf_fc_process_frame(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t buff_idx, fc_frame_hdr_t *frame,
 		      bcm_buffer_desc_t *buffer, uint32_t plen)
 {
 	int rc = SPDK_SUCCESS;
 	uint32_t s_id, d_id;
-	uint16_t rpi;
 	struct spdk_nvmf_bcm_fc_nport *nport = NULL;
-	struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst;
 	struct spdk_nvmf_bcm_fc_remote_port_info *rport = NULL;
+
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "Process NVME frame\n");
 
 	s_id = (uint32_t)frame->s_id;
 	d_id = (uint32_t)frame->d_id;
 	s_id = from_be32(&s_id) >> 8;
 	d_id = from_be32(&d_id) >> 8;
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "Process NVME frame\n");
-
-	rc = nvmf_fc_find_nport_from_sid(hwqp, s_id, d_id, &nport, &rpi);
+	rc = nvmf_fc_find_nport_and_rport(hwqp, d_id, &nport, s_id, &rport);
 	if (rc) {
-		SPDK_ERRLOG("%s Nport not found. Dropping\n", __func__);
-		hwqp->counters.nport_invalid++;
+		if (nport == NULL) {
+			SPDK_ERRLOG("%s: Nport not found. Dropping\n", __func__);
+			/* increment invalid nport counter */
+			hwqp->counters.nport_invalid++;
+		} else if (rport == NULL) {
+			SPDK_ERRLOG("%s: Rport not found. Dropping\n", __func__);
+			/* increment invalid rport counter */
+			hwqp->counters.rport_invalid++;
+		}
 		return rc;
 	}
 
-	/*
-	 * Add checks here to make sure we can accept the new command.
-	 */
-	if (nport->nport_state != SPDK_NVMF_BCM_FC_OBJECT_CREATED) {
-		SPDK_ERRLOG("%s Nport state not created. Dropping\n", __func__);
+	if (nport->nport_state != SPDK_NVMF_BCM_FC_OBJECT_CREATED ||
+	    rport->rport_state != SPDK_NVMF_BCM_FC_OBJECT_CREATED) {
+		SPDK_ERRLOG("%s: %s state not created. Dropping\n", __func__,
+			    nport->nport_state != SPDK_NVMF_BCM_FC_OBJECT_CREATED ?
+			    "Nport" : "Rport");
 		return -1;
 	}
-
-	rc = spdk_nvmf_bcm_fc_find_rport_from_sid(s_id, nport, &rport);
-	if (rc) {
-		/* TEMP CODE. Need Brcm to evaluate/rework this - the LS code for example
-		 * handles this in a better way instead of dropping.
-		 */
-		SPDK_ERRLOG("%s Rport not found. Dropping\n", __func__);
-		hwqp->counters.rport_invalid++;
-		return rc;
-	}
-
-	if (rport->rport_state != SPDK_NVMF_BCM_FC_OBJECT_CREATED) {
-		SPDK_ERRLOG("%s Rport state not created. Dropping\n", __func__);
-		return -1;
-	}
-
 
 	if ((frame->r_ctl == NVME_FC_R_CTL_LS_REQUEST) &&
 	    (frame->type == NVME_FC_TYPE_NVMF_DATA)) {
+		struct spdk_nvmf_bcm_fc_rq_buf_ls_request *req_buf = buffer->virt;
+		struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst;
 
 		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "Process LS NVME frame\n");
-		struct spdk_nvmf_bcm_fc_rq_buf_ls_request *req_buf = buffer->virt;
 
 		/* Use the RQ buffer for holding LS request. */
 		ls_rqst = (struct spdk_nvmf_bcm_fc_ls_rqst *)&req_buf->ls_rqst;
@@ -1867,11 +1887,13 @@ nvmf_fc_process_frame(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t buff_idx, fc_
 		ls_rqst->rsp_len = BCM_MAX_RESP_BUFFER_SIZE;
 
 		ls_rqst->private_data = (void *)hwqp;
-		ls_rqst->rpi = rpi;
+		ls_rqst->rpi = rport->rpi;
 		ls_rqst->oxid = (uint16_t)frame->ox_id;
 		ls_rqst->oxid = from_be16(&ls_rqst->oxid);
 		ls_rqst->s_id = s_id;
+		ls_rqst->d_id = d_id;
 		ls_rqst->nport = nport;
+		ls_rqst->rport = rport;
 
 		ls_rqst->xri = spdk_nvmf_bcm_fc_get_xri(hwqp);
 		if (!ls_rqst->xri) {
@@ -1900,13 +1922,14 @@ nvmf_fc_process_frame(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t buff_idx, fc_
 static int
 nvmf_fc_process_rqpair(struct spdk_nvmf_bcm_fc_hwqp *hwqp, fc_eventq_t *cq, uint8_t *cqe)
 {
-	int rc = -1, rq_index = 0;
+	int rc = 0, rq_index = 0;
 	uint16_t rq_id = 0;
 	int32_t rq_status;
 	uint32_t buff_idx = 0;
 	fc_frame_hdr_t *frame = NULL;
 	bcm_buffer_desc_t *payload_buffer = NULL;
 	bcm_fc_async_rcqe_t *rcqe = (bcm_fc_async_rcqe_t *)cqe;
+	uint8_t code = cqe[BCM_CQE_CODE_OFFSET];
 
 	assert(hwqp);
 	assert(cq);
@@ -1939,7 +1962,7 @@ nvmf_fc_process_rqpair(struct spdk_nvmf_bcm_fc_hwqp *hwqp, fc_eventq_t *cq, uint
 		}
 
 		/* Buffer not consumed. No need to return */
-		return rc;
+		return -1;
 	}
 
 	/* Make sure rq_index is in range */
@@ -1948,7 +1971,7 @@ nvmf_fc_process_rqpair(struct spdk_nvmf_bcm_fc_hwqp *hwqp, fc_eventq_t *cq, uint
 			      "%s: Error: rq index out of range for RQ%d\n",
 			      __func__, rq_id);
 		hwqp->counters.rq_index_err++;
-		return rc;
+		return -1;
 	}
 
 	/* Process NVME frame */
@@ -1956,10 +1979,15 @@ nvmf_fc_process_rqpair(struct spdk_nvmf_bcm_fc_hwqp *hwqp, fc_eventq_t *cq, uint
 	frame = nvmf_fc_rqpair_get_frame_header(hwqp, rq_index);
 	payload_buffer = nvmf_fc_rqpair_get_frame_buffer(hwqp, rq_index);
 
-	rc = nvmf_fc_process_frame(hwqp, buff_idx, frame, payload_buffer,
-				   rcqe->payload_data_placement_length);
-	if (!rc) {
-		return 0;
+	if (code == BCM_CQE_CODE_RQ_MARKER) {
+		/* Process marker completion */
+		nvmf_fc_process_marker_cqe(hwqp, cqe);
+	} else {
+		rc = nvmf_fc_process_frame(hwqp, buff_idx, frame, payload_buffer,
+					   rcqe->payload_data_placement_length);
+		if (!rc) {
+			return 0;
+		}
 	}
 
 buffer_release:
@@ -2032,6 +2060,55 @@ nvmf_fc_process_cq_entry(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_eventq *c
 	nvmf_fc_bcm_notify_queue(&cq->q, cq->auto_arm_flag, n_processed);
 
 	return rc;
+}
+
+static inline void
+nvmf_fc_process_pending_ls_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
+{
+	struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst = NULL, *tmp;
+	struct spdk_nvmf_bcm_fc_nport *nport = NULL;
+	struct spdk_nvmf_bcm_fc_remote_port_info *rport = NULL;
+
+	TAILQ_FOREACH_SAFE(ls_rqst, &hwqp->ls_pending_queue, ls_pending_link, tmp) {
+		/* lookup nport and rport again - make sure they are still valid */
+		int rc = nvmf_fc_find_nport_and_rport(hwqp, ls_rqst->d_id, &nport, ls_rqst->s_id, &rport);
+		if (rc) {
+			if (nport == NULL) {
+				SPDK_ERRLOG("%s: Nport not found. Dropping\n", __func__);
+				/* increment invalid nport counter */
+				hwqp->counters.nport_invalid++;
+			} else if (rport == NULL) {
+				SPDK_ERRLOG("%s: Rport not found. Dropping\n", __func__);
+				/* increment invalid rport counter */
+				hwqp->counters.rport_invalid++;
+			}
+			TAILQ_REMOVE(&hwqp->ls_pending_queue, ls_rqst, ls_pending_link);
+			/* Return buffer to chip */
+			nvmf_fc_rqpair_buffer_release(hwqp, ls_rqst->rqstbuf.buf_index);
+			continue;
+		}
+		if (nport->nport_state != SPDK_NVMF_BCM_FC_OBJECT_CREATED ||
+		    rport->rport_state != SPDK_NVMF_BCM_FC_OBJECT_CREATED) {
+			SPDK_ERRLOG("%s: %s state not created. Dropping\n", __func__,
+				    nport->nport_state != SPDK_NVMF_BCM_FC_OBJECT_CREATED ?
+				    "Nport" : "Rport");
+			TAILQ_REMOVE(&hwqp->ls_pending_queue, ls_rqst, ls_pending_link);
+			/* Return buffer to chip */
+			nvmf_fc_rqpair_buffer_release(hwqp, ls_rqst->rqstbuf.buf_index);
+			continue;
+		}
+
+		ls_rqst->xri = spdk_nvmf_bcm_fc_get_xri(hwqp);
+		if (ls_rqst->xri) {
+			/* Got an XRI. */
+			TAILQ_REMOVE(&hwqp->ls_pending_queue, ls_rqst, ls_pending_link);
+			/* Handover the request to LS module */
+			spdk_nvmf_bcm_fc_handle_ls_rqst(ls_rqst);
+		} else {
+			/* No more XRI. Stop processing. */
+			return;
+		}
+	}
 }
 
 uint32_t
@@ -2174,7 +2251,6 @@ spdk_nvmf_bcm_fc_send_data(struct spdk_nvmf_bcm_fc_request *fc_req)
 		tsend->dbde = true;
 		tsend->bde.bde_type = BCM_BDE_TYPE_BDE_64;
 		tsend->bde.buffer_length = fc_req->req.length;
-
 		tsend->bde.u.data.buffer_address_low = PTR_TO_ADDR32_LO(bde_phys);
 		tsend->bde.u.data.buffer_address_high = PTR_TO_ADDR32_HI(bde_phys);
 
@@ -2501,6 +2577,29 @@ done:
 	}
 
 	return rc;
+}
+
+int
+spdk_nvmf_bcm_fc_issue_marker(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint64_t u_id, uint16_t skip_rq)
+{
+	uint8_t wqe[128] = { 0 };
+	bcm_marker_wqe_t *marker = (bcm_marker_wqe_t *)wqe;
+
+	if (skip_rq != UINT16_MAX) {
+		marker->marker_catagery = BCM_MARKER_CATAGORY_ALL_RQ_EXCEPT_ONE;
+		marker->rq_id = skip_rq;
+	} else {
+		marker->marker_catagery = BCM_MARKER_CATAGORY_ALL_RQ;
+	}
+
+	marker->tag_lower	= PTR_TO_ADDR32_LO(u_id);
+	marker->tag_higher	= PTR_TO_ADDR32_HI(u_id);
+	marker->command		= BCM_WQE_MARKER;
+	marker->cmd_type	= BCM_CMD_MARKER_WQE;
+	marker->qosd		= 1;
+	marker->cq_id		= UINT16_MAX;
+
+	return nvmf_fc_post_wqe(hwqp, (uint8_t *)marker, true, nvmf_fc_def_cmpl_cb, NULL);
 }
 
 #ifdef UNSOL_ABTS_SUPPORT
