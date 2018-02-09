@@ -236,6 +236,7 @@ ocs_nvme_hw_port_create(ocs_t *ocs)
 		ocs->hal.sli.config.extent[SLI_RSRC_FCOE_XRI].size;
 	args->xri_count = ocs->hal.sli.config.extent[SLI_RSRC_FCOE_XRI].size;
 	args->cb_ctx = args;
+	args->fcp_rq_id = hal->hal_rq[0]->hdr->id; 
 
 	/* Fill NVME LS event queues. */
 	ocs_fill_nvme_sli_queue(ocs, hal->hal_eq[1]->queue,
