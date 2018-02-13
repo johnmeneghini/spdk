@@ -148,6 +148,8 @@ struct spdk_nvmf_bcm_fc_errors {
 	uint32_t write_failed;
 	uint32_t read_failed;
 	uint32_t rport_invalid;
+	uint32_t num_aborted;
+	uint32_t num_abts_sent;
 };
 
 /*

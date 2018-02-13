@@ -607,6 +607,11 @@ spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 		TAILQ_INSERT_TAIL(&fc_req->abort_cbs, ctx, link);
 	}
 
+	if (!fc_req->is_aborted) {
+		/* Increment aborted command counter */
+		fc_req->hwqp->counters.num_aborted++;
+	}
+
 	/* If port is dead, skip abort wqe */
 	kill_req = nvmf_fc_is_port_dead(fc_req->hwqp);
 	if (kill_req && nvmf_fc_req_in_xfer(fc_req)) {
@@ -2413,6 +2418,11 @@ spdk_nvmf_bcm_fc_issue_abort(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 	abort->cq_id = UINT16_MAX;
 	abort->cmd_type = BCM_CMD_ABORT_WQE;
 	abort->t_tag = xri->xri;
+
+	if (send_abts) {
+		/* Increment abts sent count */
+		hwqp->counters.num_abts_sent++;
+	}
 
 	rc = nvmf_fc_post_wqe(hwqp, (uint8_t *)abort, true, nvmf_fc_abort_cmpl_cb, ctx);
 done:
