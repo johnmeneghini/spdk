@@ -1837,15 +1837,22 @@ nvmf_fc_process_frame(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t buff_idx, fc_
 {
 	int rc = SPDK_SUCCESS;
 	uint32_t s_id, d_id;
+	uint16_t oxid, rxid;
 	struct spdk_nvmf_bcm_fc_nport *nport = NULL;
 	struct spdk_nvmf_bcm_fc_remote_port_info *rport = NULL;
-
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "Process NVME frame\n");
 
 	s_id = (uint32_t)frame->s_id;
 	d_id = (uint32_t)frame->d_id;
 	s_id = from_be32(&s_id) >> 8;
 	d_id = from_be32(&d_id) >> 8;
+	oxid = (uint16_t)frame->ox_id;
+	oxid = (uint16_t)from_be16(&oxid);
+	rxid = (uint16_t)frame->rx_id;
+	rxid = (uint16_t)from_be16(&rxid);
+
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
+		      "Process NVME frame s_id:0x%x d_id:0x%x oxid:0x%x rxid:0x%x.\n",
+		      s_id, d_id, oxid, rxid);
 
 	rc = nvmf_fc_find_nport_and_rport(hwqp, d_id, &nport, s_id, &rport);
 	if (rc) {
