@@ -37,7 +37,7 @@
 #include "ocs_device.h"
 #include "ocs_spdk_nvmet.h"
 #include "ocs_tgt_api.h"
-#include "fc_adm_api.h"
+#include "nvmf_fc/fc_adm_api.h"
 
 static struct spdk_nvmf_bcm_fc_master_ops *g_nvmf_fc_ops = NULL;
 
