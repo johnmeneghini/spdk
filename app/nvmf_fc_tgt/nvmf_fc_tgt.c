@@ -44,7 +44,7 @@
 #include "nvmf/nvmf_internal.h"
 #include "nvmf_fc_tgt.h"
 #include "fc/ocs_tgt_api.h"
-#include "fc_adm_api.h"
+#include "nvmf_fc/fc_adm_api.h"
 
 static TAILQ_HEAD(, nvmf_tgt_subsystem) g_subsystems = TAILQ_HEAD_INITIALIZER(g_subsystems);
 static bool g_subsystems_shutdown;

@@ -31,7 +31,7 @@
  *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "fc_adm_api.h"
+#include "nvmf_fc/fc_adm_api.h"
 #include "nvmf_fc_tgt.h"
 #include <nvmf/transport.h>
 #include <nvmf/nvmf_internal.h>
