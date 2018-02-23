@@ -801,21 +801,19 @@ spdk_nvmf_request_prep_data(struct spdk_nvmf_request *req)
 			rdma_req->data_from_pool = false;
 		} else {
 			/* If Backend is supplying IO Buffers, go acquire them! */
-			if (req->conn->type != CONN_TYPE_IOQ) {
-				req->data = SLIST_FIRST(&rdma_sess->data_buf_pool);
-				rdma_req->data.sgl[0].lkey = rdma_sess->buf_mr->lkey;
-				rdma_req->data_from_pool = true;
-				if (!req->data) {
-					/* No available buffers. Queue this request up. */
-					SPDK_TRACELOG(SPDK_TRACE_RDMA, "No available large data buffers. Queueing request %p\n", req);
-					/* This will get assigned when we actually obtain a buffer */
-					rdma_req->data.sgl[0].addr = (uintptr_t)NULL;
-					return SPDK_NVMF_REQUEST_PREP_PENDING_BUFFER;
-				}
-
-				SPDK_TRACELOG(SPDK_TRACE_RDMA, "Request %p took buffer from central pool\n", req);
-				SLIST_REMOVE_HEAD(&rdma_sess->data_buf_pool, link);
+			req->data = SLIST_FIRST(&rdma_sess->data_buf_pool);
+			rdma_req->data.sgl[0].lkey = rdma_sess->buf_mr->lkey;
+			rdma_req->data_from_pool = true;
+			if (!req->data) {
+				/* No available buffers. Queue this request up. */
+				SPDK_TRACELOG(SPDK_TRACE_RDMA, "No available large data buffers. Queueing request %p\n", req);
+				/* This will get assigned when we actually obtain a buffer */
+				rdma_req->data.sgl[0].addr = (uintptr_t)NULL;
+				return SPDK_NVMF_REQUEST_PREP_PENDING_BUFFER;
 			}
+
+			SPDK_TRACELOG(SPDK_TRACE_RDMA, "Request %p took buffer from central pool\n", req);
+			SLIST_REMOVE_HEAD(&rdma_sess->data_buf_pool, link);
 		}
 
 		rdma_req->data.sgl[0].addr = (uintptr_t)req->data;
