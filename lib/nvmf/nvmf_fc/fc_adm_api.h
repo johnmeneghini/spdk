@@ -46,7 +46,7 @@
 #define SPDK_NVMF_PORT_ID_MAX_LEN 32
 #define SPDK_NVMF_FC_LOG_STR_SIZE 255
 
-#define FC_LS_HWQP_ID 0xff
+#define FC_LS_HWQP_ID (SPDK_MAX_NUM_OF_FC_PORTS * NVMF_FC_MAX_IO_QUEUES) + 1
 
 /*
  * Queue poller intervals (microseconds)
