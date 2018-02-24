@@ -148,6 +148,30 @@ nvmf_fc_tgt_hwqp_queues_reqtag_copy(struct spdk_nvmf_bcm_fc_hw_queues *queues_pr
 }
 
 /*
+ * Clean up hwqp sync call back.
+ */
+static void
+nvmf_fc_tgt_hwqp_clean_sync_cb(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
+{
+	fc_abts_ctx_t *ctx;
+	struct spdk_nvmf_bcm_fc_poller_api_queue_sync_args *args = NULL, *tmp = NULL;
+
+	TAILQ_FOREACH_SAFE(args, &hwqp->sync_cbs, link, tmp) {
+		TAILQ_REMOVE(&hwqp->sync_cbs, args, link);
+		ctx = args->cb_info.cb_data;
+		if (ctx) {
+			if (ctx->sync_poller_args) {
+				spdk_free(ctx->sync_poller_args);
+			}
+			if (ctx->abts_poller_args) {
+				spdk_free(ctx->abts_poller_args);
+			}
+			spdk_free(ctx);
+		}
+	}
+}
+
+/*
  * Re-initialize the FC-Port after an offline event.
  * Only the queue information needs to be populated. XRI, lcore and other hwqp information remains
  * unchanged after the first initialization.
@@ -179,6 +203,9 @@ nvmf_fc_tgt_hw_port_reinit_validate(struct spdk_nvmf_bcm_fc_port *fc_port,
 
 	/* Initialize the IO queues */
 	for (i = 0; i < NVMF_FC_MAX_IO_QUEUES; i++) {
+		/* Clean up any pending sync callbacks */
+		nvmf_fc_tgt_hwqp_clean_sync_cb(&fc_port->io_queues[i]);
+
 		nvmf_fc_tgt_hwqp_queues_reqtag_copy(&fc_port->io_queues[i].queues, &args->io_queues[i]);
 		fc_port->io_queues[i].queues = args->io_queues[i];
 		spdk_nvmf_bcm_fc_init_poller_queues(&fc_port->io_queues[i]);
