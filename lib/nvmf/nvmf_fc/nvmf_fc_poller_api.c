@@ -158,11 +158,20 @@ nvmf_fc_poller_conn_abort_done(void *hwqp, int32_t status, void *cb_args)
 	}
 
 	if (!conn_args->fc_request_cnt) {
-		/* All the requests for this connection are aborted. */
-		TAILQ_REMOVE(&conn_args->hwqp->connection_list,	conn_args->fc_conn, link);
+		if (!TAILQ_EMPTY(&conn_args->hwqp->connection_list)) {
+			/* All the requests for this connection are aborted. */
+			TAILQ_REMOVE(&conn_args->hwqp->connection_list,	conn_args->fc_conn, link);
 
-		SPDK_TRACELOG(SPDK_NVMF_BCM_FC_POLLER_API, "Connection deleted.\n");
-
+			SPDK_TRACELOG(SPDK_NVMF_BCM_FC_POLLER_API, "Connection deleted, conn_id 0x%lx\n",
+				      conn_args->fc_conn->conn_id);
+		} else {
+			/*
+			 * Duplicate connection delete can happen if one is
+			 * coming in via an association disconnect and the other
+			 * is initiated by a port reset.
+			 */
+			SPDK_TRACELOG(SPDK_NVMF_BCM_FC_POLLER_API, "Duplicate conn delete.");
+		}
 		/* perform callback */
 		nvmf_fc_poller_api_perform_cb(&conn_args->cb_info, ret);
 	}
