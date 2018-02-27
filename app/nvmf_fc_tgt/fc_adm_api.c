@@ -368,6 +368,28 @@ err:
 	return err;
 }
 
+static void
+nvmf_fc_tgt_port_hwqp_offline_del_poller(struct spdk_nvmf_bcm_fc_port *fc_port)
+{
+
+	struct spdk_nvmf_bcm_fc_hwqp *hwqp    = NULL;
+	int i = 0;
+
+	hwqp = &fc_port->ls_queue;
+	(void)spdk_nvmf_bcm_fc_hwqp_port_set_offline(hwqp);
+	spdk_nvmf_bcm_fc_delete_poller(hwqp);
+
+	/*
+	 *  Remove poller for all the io queues.
+	 */
+	for (i = 0; i < (int)fc_port->max_io_queues; i++) {
+		hwqp = &fc_port->io_queues[i];
+		(void)spdk_nvmf_bcm_fc_hwqp_port_set_offline(hwqp);
+		spdk_nvmf_bcm_fc_delete_poller(hwqp);
+	}
+}
+
+
 /*
  * Callback function for HW port link break operation.
  *
@@ -450,6 +472,11 @@ nvmf_fc_tgt_hw_port_link_break_cb(uint8_t port_handle,
 			    num_nports);
 		err =  SPDK_ERR_INTERNAL;
 	}
+
+	/*
+	 * Mark the hwqps as offline and unregister the pollers.
+	 */
+	(void)nvmf_fc_tgt_port_hwqp_offline_del_poller(fc_port);
 
 	/*
 	 * Since there are no more nports, execute the callback(s).
@@ -2144,10 +2171,8 @@ nvmf_fc_hw_port_link_break(void *arg1, void *arg2)
 {
 	ASSERT_SPDK_FC_MASTER_THREAD();
 	struct spdk_nvmf_bcm_fc_port   *fc_port = NULL;
-	struct spdk_nvmf_bcm_fc_hwqp   *hwqp    = NULL;
 	spdk_nvmf_bcm_hw_port_link_break_args_t *args    = (spdk_nvmf_bcm_hw_port_link_break_args_t *)arg1;
 	spdk_nvmf_bcm_fc_callback       cb_func = (spdk_nvmf_bcm_fc_callback)arg2;
-	int                             i       = 0;
 	spdk_err_t                      err     = SPDK_SUCCESS;
 	struct spdk_nvmf_bcm_fc_nport *nport   = NULL;
 	uint32_t                        nport_deletes_sent = 0;
@@ -2158,7 +2183,7 @@ nvmf_fc_hw_port_link_break(void *arg1, void *arg2)
 	char                            log_str[SPDK_NVMF_FC_LOG_STR_SIZE];
 
 	/*
-	 * 1. Get the fc port using the port handle.
+	 * Get the fc port using the port handle.
 	 */
 	fc_port = spdk_nvmf_bcm_fc_port_list_get(args->port_handle);
 	if (!fc_port) {
@@ -2169,7 +2194,7 @@ nvmf_fc_hw_port_link_break(void *arg1, void *arg2)
 	}
 
 	/*
-	 * 2. Set the port state to offline, if it is not already.
+	 * Set the port state to offline, if it is not already.
 	 */
 	err = spdk_nvmf_bcm_fc_port_set_offline(fc_port);
 	if (err != SPDK_SUCCESS) {
@@ -2180,77 +2205,60 @@ nvmf_fc_hw_port_link_break(void *arg1, void *arg2)
 	}
 
 	/*
-	 * 3. Remove poller for the LS queue.
+	 * Delete all the nports, if any.
 	 */
-	hwqp = &fc_port->ls_queue;
-	(void)spdk_nvmf_bcm_fc_hwqp_port_set_offline(hwqp);
-	spdk_nvmf_bcm_fc_delete_poller(hwqp);
-
-	/*
-	 * 4. Remove poller for all the io queues.
-	 */
-	for (i = 0; i < (int)fc_port->max_io_queues; i++) {
-		hwqp = &fc_port->io_queues[i];
-		(void)spdk_nvmf_bcm_fc_hwqp_port_set_offline(hwqp);
-		spdk_nvmf_bcm_fc_delete_poller(hwqp);
-	}
-
-	/*
-	 * 5. Delete all the nports, if any.
-	 */
-	if (TAILQ_EMPTY(&fc_port->nport_list)) {
-		goto out;
-	}
+	if (!TAILQ_EMPTY(&fc_port->nport_list)) {
 
 
-	TAILQ_FOREACH(nport, &fc_port->nport_list, link) {
-		/* Skipped the nports that are not in CREATED state */
-		if (nport->nport_state != SPDK_NVMF_BCM_FC_OBJECT_CREATED) {
-			nport_deletes_skipped++;
-			continue;
-		}
 
-		/* Allocate memory for callback data. */
-		cb_data = spdk_calloc(1, sizeof(spdk_nvmf_bcm_fc_port_link_break_cb_data_t));
-		if (NULL == cb_data) {
-			SPDK_ERRLOG("port link break: Failed to allocate memory for cb_data %d.\n",
-				    args->port_handle);
-			err = SPDK_ERR_NOMEM;
-			goto out;
-		}
-		cb_data->args = args;
-		cb_data->cb_func = cb_func;
-		nport_del_args = &cb_data->nport_del_args;
-		nport_del_args->port_handle = args->port_handle;
-		nport_del_args->nport_handle = nport->nport_hdl;
-		nport_del_args->cb_ctx = cb_data;
+		TAILQ_FOREACH(nport, &fc_port->nport_list, link) {
+			/* Skipped the nports that are not in CREATED state */
+			if (nport->nport_state != SPDK_NVMF_BCM_FC_OBJECT_CREATED) {
+				nport_deletes_skipped++;
+				continue;
+			}
 
-		spdk_evt = spdk_event_allocate(spdk_env_get_master_lcore(),
-					       nvmf_fc_nport_delete,
-					       (void *)nport_del_args, nvmf_fc_tgt_hw_port_link_break_cb);
-		if (spdk_evt == NULL) {
-			err = SPDK_ERR_NOMEM;
-			SPDK_ERRLOG("port link break: event allocate failed for nport \
+			/* Allocate memory for callback data. */
+			cb_data = spdk_calloc(1, sizeof(spdk_nvmf_bcm_fc_port_link_break_cb_data_t));
+			if (NULL == cb_data) {
+				SPDK_ERRLOG("port link break: Failed to allocate memory for cb_data %d.\n",
+					    args->port_handle);
+				err = SPDK_ERR_NOMEM;
+				goto out;
+			}
+			cb_data->args = args;
+			cb_data->cb_func = cb_func;
+			nport_del_args = &cb_data->nport_del_args;
+			nport_del_args->port_handle = args->port_handle;
+			nport_del_args->nport_handle = nport->nport_hdl;
+			nport_del_args->cb_ctx = cb_data;
+
+			spdk_evt = spdk_event_allocate(spdk_env_get_master_lcore(),
+						       nvmf_fc_nport_delete,
+						       (void *)nport_del_args, nvmf_fc_tgt_hw_port_link_break_cb);
+			if (spdk_evt == NULL) {
+				err = SPDK_ERR_NOMEM;
+				SPDK_ERRLOG("port link break: event allocate failed for nport \
 with port_handle:%d.\n", nport_del_args->port_handle);
-			spdk_free(cb_data);
-			DEV_VERIFY(!"port link break: event allocate failed.");
-			(void)spdk_nvmf_bcm_fc_nport_set_state(
-				nport, SPDK_NVMF_BCM_FC_OBJECT_ZOMBIE);
-		} else {
-			spdk_event_call(spdk_evt);
-			nport_deletes_sent++;
+				spdk_free(cb_data);
+				DEV_VERIFY(!"port link break: event allocate failed.");
+				(void)spdk_nvmf_bcm_fc_nport_set_state(
+					nport, SPDK_NVMF_BCM_FC_OBJECT_ZOMBIE);
+			} else {
+				spdk_event_call(spdk_evt);
+				nport_deletes_sent++;
+			}
 		}
 	}
-out:
-	if ((cb_func != NULL) && (nport_deletes_sent == 0)) {
+
+	if (nport_deletes_sent == 0 && err == SPDK_SUCCESS) {
 		/*
-		 * No nport_deletes are sent, which would have eventually
-		 * called the port_link_break callback. Therefore, call the
-		 * port_link_break callback here.
+		 * Mark the hwqps as offline and unregister the pollers.
 		 */
-		(void)cb_func(args->port_handle, SPDK_FC_LINK_BREAK, args->cb_ctx, err);
+		(void)nvmf_fc_tgt_port_hwqp_offline_del_poller(fc_port);
 	}
 
+out:
 	snprintf(log_str, SPDK_NVMF_FC_LOG_STR_SIZE,
 		 "port link break done: port:%d nport_deletes_sent:%d nport_deletes_skipped:%d rc:%d.\n",
 		 args->port_handle, nport_deletes_sent, nport_deletes_skipped, err);
@@ -2260,6 +2268,16 @@ out:
 	} else {
 		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "%s", log_str);
 	}
+
+	if ((cb_func != NULL) && (nport_deletes_sent == 0)) {
+		/*
+		 * No nport_deletes are sent, which would have eventually
+		 * called the port_link_break callback. Therefore, call the
+		 * port_link_break callback here.
+		 */
+		(void)cb_func(args->port_handle, SPDK_FC_LINK_BREAK, args->cb_ctx, err);
+	}
+
 }
 
 void
