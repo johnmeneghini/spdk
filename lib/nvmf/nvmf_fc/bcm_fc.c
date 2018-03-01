@@ -827,7 +827,7 @@ spdk_nvmf_bcm_fc_get_hwqp_id(struct spdk_nvmf_request *req)
 /* Transport API callbacks begin here */
 
 static int
-nvmf_fc_init(uint16_t max_queue_depth, uint32_t max_io_size,
+nvmf_fc_init(uint16_t max_io_queue_depth, uint32_t max_io_size,
 	     uint32_t in_capsule_data_size)
 {
 	return 0;
