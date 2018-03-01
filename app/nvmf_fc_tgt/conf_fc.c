@@ -62,9 +62,9 @@ struct spdk_nvmf_probe_ctx {
 #define SPDK_NVMF_CONFIG_QUEUES_PER_SESSION_MAX 64
 
 #define SPDK_NVMF_CONFIG_NVME_VERSION_DEFAULT 0x010300
-#define SPDK_NVMF_CONFIG_QUEUE_DEPTH_DEFAULT 128
-#define SPDK_NVMF_CONFIG_QUEUE_DEPTH_MIN 32
-#define SPDK_NVMF_CONFIG_QUEUE_DEPTH_MAX 1024
+#define SPDK_NVMF_CONFIG_IO_QUEUE_DEPTH_DEFAULT 128
+#define SPDK_NVMF_CONFIG_IO_QUEUE_DEPTH_MIN 32
+#define SPDK_NVMF_CONFIG_IO_QUEUE_DEPTH_MAX 1024
 
 #define SPDK_NVMF_CONFIG_MAX_IO_SIZE_DEFAULT 65536
 #define SPDK_NVMF_CONFIG_MAX_IO_SIZE_MIN 4096
@@ -161,12 +161,12 @@ nvmf_fc_parse_nvmf_tgt(void)
 	}
 	opts.nvmever = intval;
 
-	intval = spdk_conf_section_get_intval(sp, "MaxQueueDepth");
+	intval = spdk_conf_section_get_intval(sp, "MaxIOQueueDepth");
 	if (intval < 0) {
-		intval = SPDK_NVMF_CONFIG_QUEUE_DEPTH_DEFAULT;
+		intval = SPDK_NVMF_CONFIG_IO_QUEUE_DEPTH_DEFAULT;
 	}
-	tgt_opts.max_queue_depth = spdk_max(intval, SPDK_NVMF_CONFIG_QUEUE_DEPTH_MIN);
-	tgt_opts.max_queue_depth = spdk_min(intval, SPDK_NVMF_CONFIG_QUEUE_DEPTH_MAX);
+	tgt_opts.max_io_queue_depth = spdk_max(intval, SPDK_NVMF_CONFIG_IO_QUEUE_DEPTH_MIN);
+	tgt_opts.max_io_queue_depth = spdk_min(intval, SPDK_NVMF_CONFIG_IO_QUEUE_DEPTH_MAX);
 
 	intval = spdk_conf_section_get_intval(sp, "MaxAqDepth");
 	if (intval < 0) {
@@ -461,19 +461,19 @@ nvmf_fc_parse_subsystem(struct spdk_conf_section *sp)
 		}
 
 		if ((queue_str = spdk_conf_section_get_nmval(sp, "Host", i, 1))) {
-			hosts[i].max_queue_depth = (uint16_t) atoi(queue_str);
+			hosts[i].max_io_queue_depth = (uint16_t) atoi(queue_str);
 		} else {
-			SPDK_NOTICELOG("max_queue_depth not defined for Host %s\n", hosts[i].hostnqn);
-			hosts[i].max_queue_depth = tgt_opts.max_queue_depth;
-			hosts[i].max_queue_num = tgt_opts.max_queues_per_session;
+			SPDK_NOTICELOG("max_io_queue_depth not defined for Host %s\n", hosts[i].hostnqn);
+			hosts[i].max_io_queue_depth = tgt_opts.max_io_queue_depth;
+			hosts[i].max_io_queue_num = tgt_opts.max_queues_per_session - 1;
 			continue;
 		}
 
 		if ((queue_str = spdk_conf_section_get_nmval(sp, "Host", i, 2))) {
-			hosts[i].max_queue_num = (uint16_t) atoi(queue_str);
+			hosts[i].max_io_queue_num = (uint16_t) atoi(queue_str) - 1;
 		} else {
-			SPDK_NOTICELOG("max_queue_num not defined for Host %s\n", hosts[i].hostnqn);
-			hosts[i].max_queue_num = tgt_opts.max_queues_per_session;
+			SPDK_NOTICELOG("max_io_queue_num not defined for Host %s\n", hosts[i].hostnqn);
+			hosts[i].max_io_queue_num = tgt_opts.max_queues_per_session - 1;
 		}
 	}
 	num_hosts = i;
@@ -611,8 +611,8 @@ spdk_nvmf_bcm_fc_construct_subsystem(const char *name,
 
 	/* Parse Host sections */
 	for (i = 0; i < num_hosts; i++) {
-		spdk_nvmf_subsystem_add_host(subsystem, hosts[i].hostnqn, hosts[i].max_queue_depth,
-					     hosts[i].max_queue_num);
+		spdk_nvmf_subsystem_add_host(subsystem, hosts[i].hostnqn, hosts[i].max_io_queue_depth,
+					     hosts[i].max_io_queue_num);
 	}
 	spdk_nvmf_subsystem_set_allow_any_host(subsystem, allow_any_host);
 

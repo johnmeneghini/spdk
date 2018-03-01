@@ -53,7 +53,7 @@
 
   # Set the maximum number of outstanding I/O per queue.
   # Note should divide evenly into 1024
-  MaxQueueDepth 256
+  MaxIOQueueDepth 256
 
   # MaxQueuesPerSession is the maximum number of connections per association.
   # Includes create association connection (i.e. max. SQs=MaxQueuesPerSession-1)
@@ -61,9 +61,6 @@
 
   # Dont use master and lcore 1(reserved for FCT driver) 
   NvmfReactorMask 0xFC
-
-  # Set the maximum number of outstanding I/O per queue.
-  #MaxQueueDepth 128
 
   # Set the arbitration burst: maximum number of commands, indicated as a power of 2, picked
   # up from a submission queue at one time.
@@ -193,11 +190,11 @@
 #     is used for the Subsytem.
 #   . When AllowAnyHost is false a valid Host NQN must be added to
 #     the Subsystem. Valid NQNs must contain no upper case letters.
-#   Optionally, max_queue_depth and max_queue_num parameter can be
+#   Optionally, max_io_queue_depth and max_queue_num parameter can be
 #   defined on the Host directive line. The format of the Host 
 #   directive line is:  
 #
-#           Host <nqn> [max_queue_depth] [max_queue_num]
+#           Host <nqn> [max_io_queue_depth] [max_queue_num]
 #
 #   Note: Valid host NQNs can be generated with the Linux 
 #   'nvme get-hostnqn' utility. To make the The Linux host

@@ -415,7 +415,7 @@ nvmf_fc_ls_new_connection(struct spdk_nvmf_bcm_fc_association *assoc,
 		SPDK_NOTICELOG("\tMax admin queue size supported:%u\n",
 			       host->max_aq_depth);
 		SPDK_NOTICELOG("\tMax IO queue size supported:%u\n",
-			       host->max_queue_depth);
+			       host->max_io_queue_depth);
 	} else {
 		SPDK_ERRLOG("out of connections\n");
 	}
@@ -1405,7 +1405,7 @@ spdk_nvmf_bcm_fc_ls_init(struct spdk_nvmf_bcm_fc_port *fc_port)
 	 * XXX and maximum IO queue number with the per-port HWQP resources.
 	 */
 	ioqs_per_rq = fc_port->io_queues[1].queues.rq_payload.num_buffers /
-		      g_nvmf_tgt.opts.max_queue_depth;
+		      g_nvmf_tgt.opts.max_io_queue_depth;
 	max_ioqs = ioqs_per_rq * (fc_port->max_io_queues - 1);
 	assocs_count = max_ioqs / (g_nvmf_tgt.opts.max_queues_per_session - 1);
 

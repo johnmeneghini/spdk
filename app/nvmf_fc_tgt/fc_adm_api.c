@@ -2495,8 +2495,8 @@ spdk_nvmf_bcm_fc_tgt_print_assoc(void *arg1, void *arg2)
 		       from_be64(&association->rport->fc_nodename.u.wwn),
 		       from_be64(&association->rport->fc_portname.u.wwn));
 	SPDK_NOTICELOG("Init NQN: %s\n", association->host->nqn);
-	SPDK_NOTICELOG("Init Max AQ Depth: %d, Max Q Depth: %d, Max Conn Allowed: %d\n",
-		       association->host->max_aq_depth, association->host->max_queue_depth,
+	SPDK_NOTICELOG("Init Max AQ Depth: %d, Max IOQ Depth: %d, Max Conn Allowed: %d\n",
+		       association->host->max_aq_depth, association->host->max_io_queue_depth,
 		       association->host->max_connections_allowed);
 	SPDK_NOTICELOG("Init Host ID: %s\n", association->host_id);
 	SPDK_NOTICELOG("Init Host NQN: %s\n", association->host_nqn);

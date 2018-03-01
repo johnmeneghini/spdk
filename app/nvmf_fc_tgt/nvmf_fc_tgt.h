@@ -48,8 +48,8 @@
 
 struct spdk_host_conf {
 	const char *hostnqn;
-	uint16_t max_queue_depth;
-	uint16_t max_queue_num;
+	uint16_t max_io_queue_depth;
+	uint16_t max_io_queue_num;
 };
 
 struct rpc_listen_address {

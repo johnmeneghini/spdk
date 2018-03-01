@@ -300,7 +300,7 @@ static const char *fc_ut_bad_subsystem =
 static struct spdk_nvmf_host fc_ut_bad_host = {
 	.nqn = "nqn.bad_fc_host",
 	.max_aq_depth = 128,
-	.max_queue_depth = 1024,
+	.max_io_queue_depth = 1024,
 	.max_connections_allowed = 32,
 };
 #endif
@@ -311,14 +311,14 @@ static const char *fc_ut_good_subsystem =
 static struct spdk_nvmf_host fc_ut_target = {
 	.nqn = "nqn.2017-11.fc_host",
 	.max_aq_depth = 32,
-	.max_queue_depth = 256,
+	.max_io_queue_depth = 256,
 	.max_connections_allowed = 4,
 };
 
 static struct spdk_nvmf_host fc_ut_initiator = {
 	.nqn = "nqn.2017-11.fc_host",
 	.max_aq_depth = 31,
-	.max_queue_depth = 255,
+	.max_io_queue_depth = 255,
 	.max_connections_allowed = 4,
 };
 
@@ -543,8 +543,8 @@ run_create_conn_test(struct spdk_nvmf_host *host,
 		sizeof(struct nvmf_fc_lsdesc_cr_conn_cmd) -
 		(2 * sizeof(uint32_t)));
 
-	to_be16(&cc_rqst.connect_cmd.ersp_ratio, (host->max_queue_depth / 2));
-	to_be16(&cc_rqst.connect_cmd.sqsize, host->max_queue_depth);
+	to_be16(&cc_rqst.connect_cmd.ersp_ratio, (host->max_io_queue_depth / 2));
+	to_be16(&cc_rqst.connect_cmd.sqsize, host->max_io_queue_depth);
 	to_be16(&cc_rqst.connect_cmd.qid, qid);
 
 	/* fill in association id descriptor */
@@ -831,7 +831,7 @@ ls_tests_init(void)
 
 	bzero(&g_nvmf_tgt, sizeof(g_nvmf_tgt));
 	g_nvmf_tgt.opts.max_aq_depth = fc_ut_target.max_aq_depth;
-	g_nvmf_tgt.opts.max_queue_depth = fc_ut_target.max_queue_depth;
+	g_nvmf_tgt.opts.max_io_queue_depth = fc_ut_target.max_io_queue_depth;
 	g_nvmf_tgt.opts.max_queues_per_session = fc_ut_target.max_connections_allowed;
 
 	bzero(&fcport, sizeof(struct spdk_nvmf_bcm_fc_port));
@@ -842,7 +842,7 @@ ls_tests_init(void)
 		fcport.io_queues[i].fc_port = &fcport;
 		fcport.io_queues[i].num_conns = 0;
 		fcport.io_queues[i].cid_cnt = 0;
-		fcport.io_queues[i].queues.rq_payload.num_buffers = fc_ut_target.max_queue_depth * 4;
+		fcport.io_queues[i].queues.rq_payload.num_buffers = fc_ut_target.max_io_queue_depth * 4;
 		fcport.io_queues[i].free_q_slots = fcport.io_queues[i].queues.rq_payload.num_buffers;
 		TAILQ_INIT(&fcport.io_queues[i].connection_list);
 		TAILQ_INIT(&fcport.io_queues[i].in_use_reqs);
@@ -1059,7 +1059,7 @@ usage(const char *program_name)
 	printf(" -a value - Admin Queue depth (default: %u)\n",
 	       fc_ut_target.max_aq_depth);
 	printf(" -q value - IO Queue depth (default: %u)\n",
-	       fc_ut_target.max_queue_depth);
+	       fc_ut_target.max_io_queue_depth);
 	printf(" -c value - IO Queue count (default: %u)\n",
 	       fc_ut_target.max_connections_allowed);
 	printf(" -u test - Unit test to run\n");
@@ -1099,7 +1099,7 @@ int main(int argc, char **argv)
 				usage(argv[0]);
 				return -1;
 			}
-			fc_ut_target.max_queue_depth = val;
+			fc_ut_target.max_io_queue_depth = val;
 			break;
 		case 'c':
 			val = atoi(optarg);
@@ -1127,7 +1127,7 @@ int main(int argc, char **argv)
 	}
 
 	fc_ut_initiator.max_aq_depth = fc_ut_target.max_aq_depth - 1;
-	fc_ut_initiator.max_queue_depth = fc_ut_target.max_queue_depth - 1;
+	fc_ut_initiator.max_io_queue_depth = fc_ut_target.max_io_queue_depth - 1;
 	fc_ut_initiator.max_connections_allowed = fc_ut_target.max_connections_allowed;
 
 	if (CU_initialize_registry() != CUE_SUCCESS) {
