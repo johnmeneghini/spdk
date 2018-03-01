@@ -92,7 +92,7 @@ struct spdk_nvmf_host {
 	 * the values found in struct spdk_nvme_ctrlr_opts
 	 */
 	uint16_t			max_aq_depth;
-	uint16_t			max_queue_depth;
+	uint16_t			max_io_queue_depth;
 	uint16_t			max_connections_allowed;
 	TAILQ_ENTRY(spdk_nvmf_host)	link;
 };
@@ -201,7 +201,7 @@ struct spdk_nvmf_subsystem {
 
 struct spdk_nvmf_tgt_opts {
 	uint32_t				nvmever;
-	uint16_t				max_queue_depth;
+	uint16_t				max_io_queue_depth;
 	uint16_t                                max_aq_depth;
 	uint16_t				max_queues_per_session;
 	uint32_t				in_capsule_data_size;
@@ -310,8 +310,9 @@ bool
 spdk_nvmf_subsystem_listener_allowed(struct spdk_nvmf_subsystem *subsystem,
 				     struct spdk_nvmf_listen_addr *listen_addr);
 
-int spdk_nvmf_subsystem_add_host(struct spdk_nvmf_subsystem *subsystem,
-				 const char *host_nqn, uint16_t max_queue_depth, uint16_t max_connections_allowed);
+int
+spdk_nvmf_subsystem_add_host(struct spdk_nvmf_subsystem *subsystem,
+			     const char *host_nqn, uint16_t max_io_queue_depth, uint16_t max_io_connections_allowed);
 
 int nvmf_subsystem_add_ctrlr(struct spdk_nvmf_subsystem *subsystem,
 			     struct spdk_nvme_ctrlr *ctrlr, const struct spdk_pci_addr *pci_addr);

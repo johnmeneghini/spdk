@@ -70,7 +70,7 @@ spdk_nvmf_tgt_opts_init(struct spdk_nvmf_tgt_opts *opts)
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max Queues Per Session: %d\n",
 		      g_nvmf_tgt.opts.max_queues_per_session);
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max Queue Depth: %d\n", g_nvmf_tgt.opts.max_queue_depth);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max IO Queue Depth: %d\n", g_nvmf_tgt.opts.max_io_queue_depth);
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max In Capsule Data: %d bytes\n",
 		      g_nvmf_tgt.opts.in_capsule_data_size);
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Max I/O Size: %d bytes\n", g_nvmf_tgt.opts.max_io_size);

@@ -114,7 +114,7 @@ nvmf_init_nvme_session_properties(struct spdk_nvmf_session *session)
 
 	session->vcdata.cntlid = session->cntlid;
 	session->vcdata.kas = g_nvmf_tgt.opts.kas;
-	session->vcdata.maxcmd = session->host->max_queue_depth;
+	session->vcdata.maxcmd = session->host->max_io_queue_depth;
 	session->vcdata.mdts = spdk_u32log2(g_nvmf_tgt.opts.max_io_size / SPDK_NVMF_BLOCK_SIZE);
 	memcpy(&session->vcdata.sgls, &g_nvmf_tgt.opts.sgls, sizeof(uint32_t));
 
@@ -265,13 +265,13 @@ spdk_nvmf_validate_sqsize(struct spdk_nvmf_host *host,
 	/*
 	 * SQSIZE is a 0-based value, so it must be at least 1
 	 * (minimum queue depth is 2) and strictly less than
-	 * max_queue_depth.
+	 * max_io_queue_depth.
 	 */
 
 	/*
 	 * TODO: Currently the sqsize check is spec FC-NVMe 1.17 compliant.
 	 * To make it 1.19 compliant we need to change the check below
-	 * to '>=' max_queue_depth, not '>= max_queue_depth + 1.
+	 * to '>=' max_io_queue_depth, not '>= max_io_queue_depth + 1.
 	 *
 	 * Testing with the Linux initiator shows that we see this
 	 * off-by-one error only on the conection queues.  The admin
@@ -288,10 +288,10 @@ spdk_nvmf_validate_sqsize(struct spdk_nvmf_host *host,
 		}
 	} else {
 		SPDK_TRACELOG(SPDK_TRACE_NVMF, "%s: IO SQSIZE %u (max %u) qid %u\n", func, sqsize,
-			      (host->max_queue_depth - 1), qid);
-		if (sqsize == 0 || sqsize >= (host->max_queue_depth + 1)) {
+			      (host->max_io_queue_depth - 1), qid);
+		if (sqsize == 0 || sqsize >= (host->max_io_queue_depth + 1)) {
 			SPDK_ERRLOG("%s: Invalid IO SQSIZE %u (min 1, max %u) qid %u\n", func,
-				    sqsize, (host->max_queue_depth - 1), qid);
+				    sqsize, (host->max_io_queue_depth - 1), qid);
 			return false;
 		}
 	}
@@ -349,7 +349,7 @@ spdk_nvmf_session_connect(struct spdk_nvmf_conn *conn,
 
 	/*
 	 * SQSIZE is a 0-based value, so it must be at least 1 (minimum queue depth is 2) and
-	 *  strictly less than max_queue_depth.
+	 *  strictly less than max_io_queue_depth.
 	 */
 	if (!(spdk_nvmf_validate_sqsize(host, cmd->qid, cmd->sqsize, __func__))) {
 		INVALID_CONNECT_CMD(sqsize);

@@ -60,7 +60,7 @@ spdk_nvmf_transport_init(void)
 	int count = 0;
 
 	for (i = 0; i != NUM_TRANSPORTS; i++) {
-		if (g_transports[i]->transport_init(g_nvmf_tgt.opts.max_queue_depth,
+		if (g_transports[i]->transport_init(g_nvmf_tgt.opts.max_io_queue_depth,
 						    g_nvmf_tgt.opts.max_io_size,
 						    g_nvmf_tgt.opts.in_capsule_data_size) < 0) {
 			SPDK_NOTICELOG("%s transport init failed\n", g_transports[i]->name);

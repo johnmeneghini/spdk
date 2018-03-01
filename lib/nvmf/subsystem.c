@@ -239,7 +239,7 @@ spdk_nvmf_create_subsystem(const char *nqn,
 	subsystem->disconnect_cb = disconnect_cb;
 	snprintf(subsystem->subnqn, sizeof(subsystem->subnqn), "%s", nqn);
 
-	subsystem->host0.max_queue_depth = g_nvmf_tgt.opts.max_queue_depth;
+	subsystem->host0.max_io_queue_depth = g_nvmf_tgt.opts.max_io_queue_depth;
 	subsystem->host0.max_connections_allowed = g_nvmf_tgt.opts.max_queues_per_session;
 	subsystem->host0.max_aq_depth = g_nvmf_tgt.opts.max_aq_depth;
 	if (!(subsystem->host0.nqn = strdup(host0_nqn))) {
@@ -392,7 +392,7 @@ spdk_nvmf_subsystem_host_allowed(struct spdk_nvmf_subsystem *subsystem, const ch
 
 int
 spdk_nvmf_subsystem_add_host(struct spdk_nvmf_subsystem *subsystem, const char *host_nqn,
-			     uint16_t max_queue_depth, uint16_t max_connections_allowed)
+			     uint16_t max_io_queue_depth, uint16_t max_io_connections_allowed)
 {
 	struct spdk_nvmf_host *host;
 
@@ -417,15 +417,15 @@ spdk_nvmf_subsystem_add_host(struct spdk_nvmf_subsystem *subsystem, const char *
 		return -1;
 	}
 
-	host->max_queue_depth = max_queue_depth;
-	host->max_connections_allowed = max_connections_allowed;
+	host->max_io_queue_depth = max_io_queue_depth;
+	host->max_connections_allowed = max_io_connections_allowed + 1;
 	host->max_aq_depth = g_nvmf_tgt.opts.max_aq_depth;
 
 	TAILQ_INSERT_HEAD(&subsystem->hosts, host, link);
 	g_nvmf_tgt.discovery_genctr++;
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Host NQN %s (%u/%u/%u) added to Subsystem %s\n",
-		      host->nqn, host->max_aq_depth, host->max_queue_depth, host->max_connections_allowed,
+		      host->nqn, host->max_aq_depth, host->max_io_queue_depth, host->max_connections_allowed,
 		      spdk_nvmf_subsystem_get_nqn(subsystem));
 
 	return 0;

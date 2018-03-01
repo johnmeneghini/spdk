@@ -65,8 +65,8 @@ struct nvmf_tgt_subsystem {
 
 struct spdk_host_conf {
 	const char *hostnqn;
-	uint16_t max_queue_depth;
-	uint16_t max_queue_num;
+	uint16_t max_io_queue_depth;
+	uint16_t max_io_queue_num;
 };
 
 extern struct spdk_nvmf_tgt_conf g_spdk_nvmf_tgt_conf;

@@ -151,14 +151,14 @@ static const char *session_ut_big_host_nqn = "fc big host";
 static struct spdk_nvmf_host session_ut_small_host = {
 	.nqn = "nqn.2017-11.small_host",
 	.max_aq_depth = 32,
-	.max_queue_depth = 16,
+	.max_io_queue_depth = 16,
 	.max_connections_allowed = 2,
 };
 
 static struct spdk_nvmf_host session_ut_big_host = {
 	.nqn = "nqn.2017-11.big_host",
 	.max_aq_depth = 128,
-	.max_queue_depth = 1024,
+	.max_io_queue_depth = 1024,
 	.max_connections_allowed = 32,
 };
 
