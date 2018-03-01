@@ -324,8 +324,8 @@ spdk_rpc_construct_nvmf_subsystem(struct spdk_jsonrpc_server_conn *conn,
 	 */
 	for (i = 0; i < (int) req.hosts.num_hosts; i++) {
 		hosts[i].hostnqn = req.hosts.hosts[i];
-		hosts[i].max_queue_depth = 64;
-		hosts[i].max_queue_num = 4;
+		hosts[i].max_io_queue_depth = 64;
+		hosts[i].max_io_queue_num = 4;
 	}
 
 	ret = spdk_nvmf_construct_subsystem(req.nqn, req.mode, req.core,

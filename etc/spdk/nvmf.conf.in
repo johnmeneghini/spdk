@@ -67,7 +67,7 @@
   MaxQueuesPerSession 4
 
   # Set the maximum number of outstanding I/O per queue.
-  #MaxQueueDepth 128
+  #MaxIOQueueDepth 128
 
   # Set the maximum in-capsule data size. Must be a multiple of 16.
   #InCapsuleDataSize 4096
@@ -218,9 +218,9 @@
 #   is Listen <type> <address> where type currently can only be RDMA.
 # - Between 0 and 255 Host directives are allowed. This defines the
 #   NQNs of allowed hosts. If no Host directive is specified, all hosts
-#   are allowed to connect. Optionally, a max_queue_depth and max_queue_num
+#   are allowed to connect. Optionally, a max_io_queue_depth and max_queue_num
 #   parameter can be defined on the Host directive line. The format of the
-#   Host directive line is:  Host <nqn> [max_queue_depth] [max_queue_num]
+#   Host directive line is:  Host <nqn> [max_io_queue_depth] [max_queue_num]
 # - Exactly 1 NVMe directive specifying an NVMe device by PCI BDF. The
 #   PCI domain:bus:device.function can be replaced by "*" to indicate
 #   any PCI device.

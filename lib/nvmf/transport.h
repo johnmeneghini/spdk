@@ -49,7 +49,7 @@ struct spdk_nvmf_transport {
 	/**
 	 * Initialize the transport.
 	 */
-	int (*transport_init)(uint16_t max_queue_depth, uint32_t max_io_size,
+	int (*transport_init)(uint16_t max_io_queue_depth, uint32_t max_io_size,
 			      uint32_t in_capsule_data_size);
 
 	/**
