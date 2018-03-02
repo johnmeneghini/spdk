@@ -103,18 +103,6 @@ spdk_dma_virt_to_iovec(void *buf, uint32_t len, struct iovec *iov, int iovcnt)
 	return 1;
 }
 
-void
-spdk_iovec_get(size_t size, size_t align, uint64_t *phys_addr)
-{
-	spdk_dma_zmalloc(size, align, phys_addr);
-}
-
-void
-spdk_iovec_put(void *buf)
-{
-	rte_free(buf);
-}
-
 void *
 spdk_memzone_reserve(const char *name, size_t len, int socket_id, unsigned flags)
 {
