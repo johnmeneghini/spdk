@@ -170,10 +170,6 @@ void *spdk_dma_realloc(void *buf, size_t size, size_t align, uint64_t *phys_addr
  */
 void spdk_dma_free(void *buf);
 
-/* Get or Free iov segments */
-void spdk_iovec_get(size_t size, size_t align, uint64_t *phys_addr);
-void spdk_iovec_put(void *buf);
-
 /**
  * Reserve a named, process shared memory zone with the given size,
  *   socket_id and flags.

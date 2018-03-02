@@ -80,11 +80,6 @@ spdk_env_get_master_lcore(void)
 
 }
 
-void
-spdk_iovec_put(void *buf)
-{
-}
-
 int
 spdk_nvmf_session_get_features_number_of_queues(struct spdk_nvmf_request *req)
 {
