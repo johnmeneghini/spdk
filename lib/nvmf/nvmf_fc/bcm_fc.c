@@ -143,57 +143,6 @@ spdk_nvmf_bcm_fc_get_hwqp(struct spdk_nvmf_bcm_fc_nport *tgtport, uint64_t conn_
 				    fc_port->max_io_queues]);
 }
 
-/* Master thread NS unmap/detach handler for cases when NS unmap/detach found no IOs to drain in bdev.
- * In case an IO was found and needs to be drained, this callback will happen
- * when that particular IO (or the last IO aborted) completes and returns.
- */
-void
-spdk_nvmf_bcm_fc_ns_detach_cb(void *arg1, void *arg2)
-{
-	struct spdk_nvmf_bcm_fc_poller_api_detach_ns_on_conn_args *args = (struct
-			spdk_nvmf_bcm_fc_poller_api_detach_ns_on_conn_args *)arg1;
-	uint32_t pending_cb = 1;
-
-	/* The pending CB will be one */
-	args->detach_ns_cb(args->ctx, (void *)&pending_cb);
-	spdk_free(args);
-	return;
-}
-
-/* This is called from Master thread in order to drain IOs on bdev per connection
- * and specific NSID. The callback is needed to inform master thread/caller
- * of the completion.
- */
-int
-spdk_nvmf_bcm_fc_drain_nsid_on_conn(struct spdk_nvmf_bcm_fc_association *assoc,
-				    struct spdk_nvmf_bcm_fc_conn        *fc_conn,
-				    uint32_t                            nsid,
-				    void                                *ctx,
-				    spdk_nvmf_bcm_fc_detach_ns_cb      detach_ns_cb)
-{
-	struct spdk_nvmf_bcm_fc_poller_api_detach_ns_on_conn_args *detach_ns_args = spdk_calloc(1,
-			sizeof(struct spdk_nvmf_bcm_fc_poller_api_detach_ns_on_conn_args));
-
-	if (detach_ns_args) {
-
-		detach_ns_args->fc_conn = fc_conn;
-		detach_ns_args->nsid    = nsid;
-		detach_ns_args->hwqp    = spdk_nvmf_bcm_fc_get_hwqp(assoc->tgtport, fc_conn->conn_id);
-		/* Fill in the NS delete context */
-		detach_ns_args->ctx  = ctx;
-		detach_ns_args->detach_ns_cb = detach_ns_cb;
-
-		/* Send an event to the poller to drain IOs on bdev for a NSID on a conn */
-		spdk_nvmf_bcm_fc_poller_api(detach_ns_args->hwqp,
-					    SPDK_NVMF_BCM_FC_POLLER_API_NS_DETACH_ON_CONN,
-					    detach_ns_args);
-	} else {
-		assert(detach_ns_args);
-	}
-
-	return SPDK_SUCCESS;
-}
-
 /*
  * Return a fc nport with a matching handle.
  */

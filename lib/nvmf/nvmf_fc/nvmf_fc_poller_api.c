@@ -41,8 +41,6 @@
 #include "spdk/util.h"
 #include "spdk/endian.h"
 #include "spdk/event.h"
-#include "spdk/bdev.h"
-
 #include "spdk_internal/log.h"
 
 #include "bcm_fc.h"
@@ -295,51 +293,6 @@ nvmf_fc_poller_api_queue_sync(void *arg1, void *arg2)
 	TAILQ_INSERT_TAIL(&args->hwqp->sync_cbs, args, link);
 }
 
-/* Poller API for draining IOs on the bdev for a NSID on a particular connection */
-static void
-spdk_nvmf_bcm_fc_poller_api_detach_ns_on_conn(void *arg1, void *arg2)
-{
-	struct spdk_nvmf_bcm_fc_poller_api_detach_ns_on_conn_args *args = (struct
-			spdk_nvmf_bcm_fc_poller_api_detach_ns_on_conn_args *)arg1;
-	struct spdk_nvmf_bcm_fc_request *fc_req = NULL;
-	struct spdk_nvmf_bcm_fc_hwqp *hwqp = args->hwqp;
-	bool nsid_processed = false;
-	struct spdk_event *event = NULL;
-
-	TAILQ_FOREACH(fc_req, &hwqp->in_use_reqs, link) {
-
-		/* Call abort if it is an abortable I/O */
-		if ((fc_req->fc_conn->conn_id == args->fc_conn->conn_id) &&
-		    (fc_req->req.cmd->nvme_cmd.opc != SPDK_NVME_OPC_FABRIC) &&
-		    (fc_req->req.cmd->nvme_cmd.nsid == args->nsid)) {
-
-			if (fc_req->req.bdev_io) {
-				/* Need to update pending count only once per NSID */
-				if (nsid_processed == true) {
-					spdk_bdev_io_abort(fc_req->req.bdev_io, NULL);
-				} else {
-					spdk_bdev_io_abort(fc_req->req.bdev_io, args->ctx);
-					nsid_processed = true;
-				}
-			}
-		}
-	}
-
-	/* If there are no IOs found, callback to master thread.
-	 * If IOs were found, the callback will happen once the IO completes */
-	if (!nsid_processed) {
-		event = spdk_event_allocate(spdk_env_get_master_lcore(),
-					    spdk_nvmf_bcm_fc_ns_detach_cb,
-					    (void *) args, NULL);
-
-		spdk_event_call(event);
-		/* Just return, master thread will free the args in this case */
-		return;
-	}
-
-	spdk_free(args);
-}
-
 spdk_nvmf_bcm_fc_poller_api_ret_t
 spdk_nvmf_bcm_fc_poller_api(struct spdk_nvmf_bcm_fc_hwqp *hwqp, spdk_nvmf_bcm_fc_poller_api_t api,
 			    void *api_args)
@@ -384,11 +337,6 @@ spdk_nvmf_bcm_fc_poller_api(struct spdk_nvmf_bcm_fc_hwqp *hwqp, spdk_nvmf_bcm_fc
 		break;
 	case SPDK_NVMF_BCM_FC_POLLER_API_ADAPTER_EVENT:
 	case SPDK_NVMF_BCM_FC_POLLER_API_AEN:
-		break;
-	case SPDK_NVMF_BCM_FC_POLLER_API_NS_DETACH_ON_CONN:
-		event = spdk_event_allocate(lcore,
-					    spdk_nvmf_bcm_fc_poller_api_detach_ns_on_conn,
-					    api_args, NULL);
 		break;
 
 	default:
