@@ -441,7 +441,6 @@ typedef enum {
 	SPDK_NVMF_BCM_FC_POLLER_API_ABTS_RECEIVED,
 	SPDK_NVMF_BCM_FC_POLLER_API_ADAPTER_EVENT,
 	SPDK_NVMF_BCM_FC_POLLER_API_AEN,
-	SPDK_NVMF_BCM_FC_POLLER_API_NS_DETACH_ON_CONN,
 	SPDK_NVMF_BCM_FC_POLLER_API_QUEUE_SYNC,
 } spdk_nvmf_bcm_fc_poller_api_t;
 
@@ -501,19 +500,6 @@ struct spdk_nvmf_bcm_fc_poller_api_queue_sync_args {
 
 	/* Used internally by poller */
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_poller_api_queue_sync_args) link;
-};
-
-typedef void (*spdk_nvmf_bcm_fc_detach_ns_cb)(void *arg1, void *arg2);
-
-/* This is the args used by the poller API to issue aborts for NS unmap on a particular conection */
-struct spdk_nvmf_bcm_fc_poller_api_detach_ns_on_conn_args {
-	struct spdk_nvmf_bcm_fc_conn *fc_conn;
-	struct spdk_nvmf_bcm_fc_hwqp *hwqp;
-	uint32_t nsid;
-	/* Delete context transparent to the poller thread */
-	void *ctx;
-	/* Needed for the poller to callback master thread if no IO is found */
-	spdk_nvmf_bcm_fc_detach_ns_cb detach_ns_cb;
 };
 
 /*
@@ -578,15 +564,6 @@ void spdk_nvmf_bcm_fc_ls_init(struct spdk_nvmf_bcm_fc_port *fc_port);
 
 //void spdk_nvmf_bcm_fc_ls_fini(void);
 void spdk_nvmf_bcm_fc_ls_fini(struct spdk_nvmf_bcm_fc_port *fc_port);
-
-void spdk_nvmf_bcm_fc_ns_detach_cb(void *arg1, void *arg2);
-
-int
-spdk_nvmf_bcm_fc_drain_nsid_on_conn(struct spdk_nvmf_bcm_fc_association *assoc,
-				    struct spdk_nvmf_bcm_fc_conn *fc_conn,
-				    uint32_t nsid,
-				    void *ctx,
-				    spdk_nvmf_bcm_fc_detach_ns_cb detach_ns_cb);
 
 typedef void (*spdk_nvmf_fc_del_assoc_cb)(void *arg, uint32_t err);
 

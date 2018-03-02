@@ -65,8 +65,6 @@ void spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req, bool se
 void spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io,
 			void *ctx);
 
-void spdk_nvmf_bcm_fc_ns_detach_cb(void *arg1, void *arg2);
-
 void *
 spdk_dma_malloc(size_t size, size_t align, uint64_t *phys_addr)
 {
@@ -241,19 +239,6 @@ spdk_nvmf_bcm_fc_get_hwqp(struct spdk_nvmf_bcm_fc_nport *tgtport, uint64_t conn_
 	return (&fc_port->io_queues[(conn_id &
 				     SPDK_NVMF_FC_BCM_MRQ_CONNID_QUEUE_MASK) %
 				    fc_port->max_io_queues]);
-}
-
-void
-spdk_nvmf_bcm_fc_ns_detach_cb(void *arg1, void *arg2)
-{
-	struct spdk_nvmf_bcm_fc_poller_api_detach_ns_on_conn_args *args = (struct
-			spdk_nvmf_bcm_fc_poller_api_detach_ns_on_conn_args *)arg1;
-	uint32_t pending_cb = 1;
-
-	/* The pending CB will be one */
-	args->detach_ns_cb(args->ctx, (void *)&pending_cb);
-	free(args);
-	return;
 }
 
 struct spdk_nvmf_subsystem g_nvmf_subsys;
