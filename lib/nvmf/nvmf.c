@@ -157,6 +157,24 @@ spdk_nvmf_listen_addr_create(const char *trname, enum spdk_nvmf_adrfam adrfam, c
 	return listen_addr;
 }
 
+bool
+spdk_nvmf_listen_addr_delete(struct spdk_nvmf_listen_addr *addr)
+{
+	struct spdk_nvmf_listen_addr *listen_addr, *listen_addr_tmp;
+
+	TAILQ_FOREACH_SAFE(listen_addr, &g_nvmf_tgt.listen_addrs, link, listen_addr_tmp) {
+		if (spdk_nvmf_listen_addr_compare(addr, listen_addr)) {
+			TAILQ_REMOVE(&g_nvmf_tgt.listen_addrs, listen_addr, link);
+			spdk_nvmf_listen_addr_destroy(listen_addr);
+			return true;
+		}
+
+	}
+
+
+	return false;
+}
+
 void
 spdk_nvmf_listen_addr_destroy(struct spdk_nvmf_listen_addr *addr)
 {
