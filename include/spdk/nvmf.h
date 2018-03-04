@@ -277,6 +277,15 @@ bool spdk_nvmf_subsystem_host_allowed(struct spdk_nvmf_subsystem *subsystem, con
 struct spdk_nvmf_listen_addr *
 spdk_nvmf_tgt_listen(const char *trname, const char *traddr, const char *trsvcid);
 
+/**
+ * Destroy and free up a listen addr
+ *
+ * \param addr The addr to free
+ * \return true if listen addr found
+ */
+bool
+spdk_nvmf_listen_addr_delete(struct spdk_nvmf_listen_addr *addr);
+
 int
 spdk_nvmf_subsystem_add_listener(struct spdk_nvmf_subsystem *subsystem,
 				 struct spdk_nvmf_listen_addr *listen_addr);
