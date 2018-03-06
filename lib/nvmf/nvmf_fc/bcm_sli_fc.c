@@ -1187,8 +1187,24 @@ spdk_nvmf_bcm_fc_init_rqpair_buffers(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	assert(hdr->q.max_entries == payload->q.max_entries);
 	assert(hdr->q.max_entries <= MAX_RQ_ENTRIES);
 
+	/* Initialize the head and tail indexes */
 	hdr->q.head = hdr->q.tail = 0;
+	hdr->q.used = 0;
+
 	payload->q.head = payload->q.tail = 0;
+	payload->q.used = 0;
+
+	hwqp->queues.cq_rq.q.head = hwqp->queues.cq_rq.q.tail = 0;
+	hwqp->queues.cq_rq.q.used = 0;
+
+	hwqp->queues.cq_wq.q.head = hwqp->queues.cq_wq.q.tail = 0;
+	hwqp->queues.cq_wq.q.used = 0;
+
+	hwqp->queues.eq.q.head = hwqp->queues.eq.q.tail = 0;
+	hwqp->queues.eq.q.used = 0;
+
+	hwqp->queues.wq.q.head = hwqp->queues.wq.q.tail = 0;
+	hwqp->queues.wq.q.used = 0;
 
 	for (i = 0; i < hdr->q.max_entries; i++) {
 		rc = nvmf_fc_rqpair_buffer_post(hwqp, i, false);
