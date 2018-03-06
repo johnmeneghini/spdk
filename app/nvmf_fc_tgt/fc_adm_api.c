@@ -160,13 +160,15 @@ nvmf_fc_tgt_hwqp_clean_sync_cb(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 		TAILQ_REMOVE(&hwqp->sync_cbs, args, link);
 		ctx = args->cb_info.cb_data;
 		if (ctx) {
-			if (ctx->sync_poller_args) {
-				spdk_free(ctx->sync_poller_args);
+			if (++ctx->hwqps_responded == ctx->num_hwqps) {
+				if (ctx->sync_poller_args) {
+					spdk_free(ctx->sync_poller_args);
+				}
+				if (ctx->abts_poller_args) {
+					spdk_free(ctx->abts_poller_args);
+				}
+				spdk_free(ctx);
 			}
-			if (ctx->abts_poller_args) {
-				spdk_free(ctx->abts_poller_args);
-			}
-			spdk_free(ctx);
 		}
 	}
 }
