@@ -883,6 +883,7 @@ error:
 	return rc;
 }
 
+#ifdef BCM_SUPPORT_EQ_POLL
 static int
 nvmf_fc_parse_eq_entry(struct eqe *qe, uint16_t *cq_id)
 {
@@ -913,6 +914,7 @@ nvmf_fc_parse_eq_entry(struct eqe *qe, uint16_t *cq_id)
 	}
 	return rc;
 }
+#endif
 
 static uint32_t
 nvmf_fc_parse_cqe_ext_status(uint8_t *cqe)
@@ -1169,8 +1171,14 @@ spdk_nvmf_bcm_fc_init_rqpair_buffers(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	hwqp->queues.cq_rq.q.processed_limit = 64;
 
 	hwqp->queues.eq.auto_arm_flag = false;
+
+#ifdef BCM_SUPPORT_EQ_POLL
 	hwqp->queues.cq_wq.auto_arm_flag = true;
 	hwqp->queues.cq_rq.auto_arm_flag = true;
+#else
+	hwqp->queues.cq_wq.auto_arm_flag = false;
+	hwqp->queues.cq_rq.auto_arm_flag = false;
+#endif
 
 	hwqp->queues.eq.q.type = BCM_FC_QUEUE_TYPE_EQ;
 	hwqp->queues.cq_wq.q.type = BCM_FC_QUEUE_TYPE_CQ_WQ;
@@ -1179,9 +1187,15 @@ spdk_nvmf_bcm_fc_init_rqpair_buffers(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	hwqp->queues.rq_hdr.q.type = BCM_FC_QUEUE_TYPE_RQ_HDR;
 	hwqp->queues.rq_payload.q.type = BCM_FC_QUEUE_TYPE_RQ_DATA;
 
+#ifdef BCM_SUPPORT_EQ_POLL
 	/* Make sure CQs are in armed state */
 	nvmf_fc_bcm_notify_queue(&hwqp->queues.cq_wq.q, true, 0);
 	nvmf_fc_bcm_notify_queue(&hwqp->queues.cq_rq.q, true, 0);
+#else
+	/* Make sure CQs are not armed */
+	nvmf_fc_bcm_notify_queue(&hwqp->queues.cq_wq.q, false, 0);
+	nvmf_fc_bcm_notify_queue(&hwqp->queues.cq_rq.q, false, 0);
+#endif
 
 	assert(hdr->q.max_entries == payload->q.max_entries);
 	assert(hdr->q.max_entries <= MAX_RQ_ENTRIES);
@@ -2084,8 +2098,9 @@ nvmf_fc_process_cq_entry(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_eventq *c
 		}
 	}
 
-	nvmf_fc_bcm_notify_queue(&cq->q, cq->auto_arm_flag, n_processed);
-
+	if (n_processed) {
+		nvmf_fc_bcm_notify_queue(&cq->q, cq->auto_arm_flag, n_processed);
+	}
 	return rc;
 }
 
@@ -2141,6 +2156,7 @@ nvmf_fc_process_pending_ls_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 uint32_t
 spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 {
+#ifdef BCM_SUPPORT_EQ_POLL
 	int rc = 0, budget = 0;
 	uint32_t n_processed = 0;
 	uint32_t n_processed_total = 0;
@@ -2197,6 +2213,22 @@ spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	nvmf_fc_bcm_notify_queue(&eq->q, eq->auto_arm_flag, n_processed);
 
 	return (n_processed + n_processed_total);
+#else
+	assert(hwqp);
+	/* Check for WQE completions */
+	nvmf_fc_process_cq_entry(hwqp, &hwqp->queues.cq_wq);
+
+	/*
+	 * There might be some buffers/xri freed.
+	 * First give chance for pending frames
+	 */
+	nvmf_fc_process_pending_ls_rqst(hwqp);
+	nvmf_fc_process_pending_req(hwqp);
+
+	/* Check for any new commands */
+	nvmf_fc_process_cq_entry(hwqp, &hwqp->queues.cq_rq);
+	return 0;
+#endif
 }
 
 int
