@@ -2,6 +2,7 @@
 #  BSD LICENSE
 #
 #  Copyright (c) 2017 Broadcom.  All Rights Reserved.
+#  Copyright (c) 2018 NetApp.  All Rights Reserved.
 #  The term "Broadcom" refers to Broadcom Limited and/or its subsidiaries.
 #
 #  Redistribution and use in source and binary forms, with or without
@@ -31,14 +32,22 @@
 #  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
-SPDK_ROOT_DIR := $(abspath $(CURDIR)/../../../..)
-include $(SPDK_ROOT_DIR)/mk/spdk.common.mk
+SPDK_ROOT_DIR := $(abspath $(CURDIR)/../../../../../)
+SPDK_LIB_NVMF_FC_DIR = $(SPDK_ROOT_DIR)/lib/nvmf/nvmf_fc
 
-DIRS-y = ls util
+CFLAGS += -I$(SPDK_LIB_NVMF_FC_DIR)
 
-.PHONY: all clean $(DIRS-y)
+TEST_FILE = nvmf_fc_size.c
+OTHER_FILES = nvmf_fc_ls.o \
+	nvmf_fc_poller_api.o \
+	session.c \
 
-all: $(DIRS-y)
-clean: $(DIRS-y)
+include $(SPDK_ROOT_DIR)/mk/nvmf.unittest.mk
 
-include $(SPDK_ROOT_DIR)/mk/spdk.subdirs.mk
+#Rules for modules in nvmf_fc folder under nvmf folder
+#in order to compile the .o file into local directory.
+nvmf_fc_ls.o : $(SPDK_LIB_NVMF_FC_DIR)/nvmf_fc_ls.c 
+	$(COMPILE_C)
+
+nvmf_fc_poller_api.o : $(SPDK_LIB_NVMF_FC_DIR)/nvmf_fc_poller_api.c 
+	$(COMPILE_C)
