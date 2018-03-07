@@ -2043,7 +2043,7 @@ nvmf_fc_process_cq_entry(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_eventq *c
 	int rc = 0, budget = cq->q.processed_limit;
 	uint8_t	cqe[sizeof(cqe_t)];
 	uint16_t rid = UINT16_MAX;
-	uint32_t n_processed = 0;
+	uint32_t n_processed = 0, n_processed_total = 0;
 	bcm_qentry_type_e ctype;     /* completion type */
 
 	assert(hwqp);
@@ -2090,6 +2090,7 @@ nvmf_fc_process_cq_entry(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_eventq *c
 
 		if (n_processed >= (cq->q.posted_limit)) {
 			nvmf_fc_bcm_notify_queue(&cq->q, false, n_processed);
+			n_processed_total += n_processed;
 			n_processed = 0;
 		}
 
@@ -2101,7 +2102,12 @@ nvmf_fc_process_cq_entry(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_eventq *c
 	if (n_processed) {
 		nvmf_fc_bcm_notify_queue(&cq->q, cq->auto_arm_flag, n_processed);
 	}
-	return rc;
+
+	if (rc < 0) {
+		return rc;
+	} else {
+		return n_processed_total + n_processed;
+	}
 }
 
 static inline void
@@ -2215,10 +2221,13 @@ spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	}
 	return (n_processed + n_processed_total);
 #else
+	int n_processed = 0, rc = 0;
 	assert(hwqp);
 	/* Check for WQE completions */
-	nvmf_fc_process_cq_entry(hwqp, &hwqp->queues.cq_wq);
-
+	rc = nvmf_fc_process_cq_entry(hwqp, &hwqp->queues.cq_wq);
+	if (rc > 0) {
+		n_processed += rc;
+	}
 	/*
 	 * There might be some buffers/xri freed.
 	 * First give chance for pending frames
@@ -2227,8 +2236,11 @@ spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	nvmf_fc_process_pending_req(hwqp);
 
 	/* Check for any new commands */
-	nvmf_fc_process_cq_entry(hwqp, &hwqp->queues.cq_rq);
-	return 0;
+	rc = nvmf_fc_process_cq_entry(hwqp, &hwqp->queues.cq_rq);
+	if (rc > 0) {
+		n_processed += rc;
+	}
+	return n_processed;;
 #endif
 }
 
