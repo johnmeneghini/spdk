@@ -2210,8 +2210,9 @@ spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 		}
 	}
 
-	nvmf_fc_bcm_notify_queue(&eq->q, eq->auto_arm_flag, n_processed);
-
+	if (n_processed) {
+		nvmf_fc_bcm_notify_queue(&eq->q, eq->auto_arm_flag, n_processed);
+	}
 	return (n_processed + n_processed_total);
 #else
 	assert(hwqp);
