@@ -1,7 +1,7 @@
 /*
  *   BSD LICENSE
  *
- *   Copyright (c) 2017 Broadcom.  All Rights Reserved.
+ *   Copyright (c) 2018 Broadcom.  All Rights Reserved.
  *   The term "Broadcom" refers to Broadcom Limited and/or its subsidiaries.
  *
  *   Redistribution and use in source and binary forms, with or without
@@ -1838,7 +1838,6 @@ nvmf_fc_process_frame(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t buff_idx, fc_
 {
 	int rc = SPDK_SUCCESS;
 	uint32_t s_id, d_id;
-	uint16_t oxid, rxid;
 	struct spdk_nvmf_bcm_fc_nport *nport = NULL;
 	struct spdk_nvmf_bcm_fc_remote_port_info *rport = NULL;
 
@@ -1846,14 +1845,16 @@ nvmf_fc_process_frame(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t buff_idx, fc_
 	d_id = (uint32_t)frame->d_id;
 	s_id = from_be32(&s_id) >> 8;
 	d_id = from_be32(&d_id) >> 8;
-	oxid = (uint16_t)frame->ox_id;
-	oxid = (uint16_t)from_be16(&oxid);
-	rxid = (uint16_t)frame->rx_id;
-	rxid = (uint16_t)from_be16(&rxid);
 
+	/* Note: In tracelog below, we directly do endian conversion on rx_id and.
+	 * ox_id Since these are fields, we can't pass address to from_be16().
+	 * Since ox_id and rx_id are only needed for tracelog, assigning to local
+	 * vars. and doing conversion is a waste of time in non-debug builds. */
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
 		      "Process NVME frame s_id:0x%x d_id:0x%x oxid:0x%x rxid:0x%x.\n",
-		      s_id, d_id, oxid, rxid);
+		      s_id, d_id,
+		      ((frame->ox_id << 8) & 0xff00) | ((frame->ox_id >> 8) & 0xff),
+		      ((frame->rx_id << 8) & 0xff00) | ((frame->rx_id >> 8) & 0xff));
 
 	rc = nvmf_fc_find_nport_and_rport(hwqp, d_id, &nport, s_id, &rport);
 	if (rc) {
@@ -2188,6 +2189,7 @@ spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	if (n_processed) {
 		nvmf_fc_bcm_notify_queue(&eq->q, eq->auto_arm_flag, n_processed);
 	}
+
 	return (n_processed + n_processed_total);
 }
 
