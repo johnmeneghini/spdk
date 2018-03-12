@@ -884,7 +884,7 @@ error:
 	return rc;
 }
 
-#ifdef BCM_SUPPORT_EQ_POLL
+#if BCM_SUPPORT_EQ_POLL
 static int
 nvmf_fc_parse_eq_entry(struct eqe *qe, uint16_t *cq_id)
 {
@@ -1173,7 +1173,7 @@ spdk_nvmf_bcm_fc_init_rqpair_buffers(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 
 	hwqp->queues.eq.auto_arm_flag = false;
 
-#ifdef BCM_SUPPORT_EQ_POLL
+#if BCM_SUPPORT_EQ_POLL
 	hwqp->queues.cq_wq.auto_arm_flag = true;
 	hwqp->queues.cq_rq.auto_arm_flag = true;
 #else
@@ -1188,37 +1188,12 @@ spdk_nvmf_bcm_fc_init_rqpair_buffers(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	hwqp->queues.rq_hdr.q.type = BCM_FC_QUEUE_TYPE_RQ_HDR;
 	hwqp->queues.rq_payload.q.type = BCM_FC_QUEUE_TYPE_RQ_DATA;
 
-#ifdef BCM_SUPPORT_EQ_POLL
-	/* Make sure CQs are in armed state */
-	nvmf_fc_bcm_notify_queue(&hwqp->queues.cq_wq.q, true, 0);
-	nvmf_fc_bcm_notify_queue(&hwqp->queues.cq_rq.q, true, 0);
-#else
-	/* Make sure CQs are not armed */
-	nvmf_fc_bcm_notify_queue(&hwqp->queues.cq_wq.q, false, 0);
-	nvmf_fc_bcm_notify_queue(&hwqp->queues.cq_rq.q, false, 0);
-#endif
-
-	assert(hdr->q.max_entries == payload->q.max_entries);
-	assert(hdr->q.max_entries <= MAX_RQ_ENTRIES);
-
-	/* Initialize the head and tail indexes */
-	hdr->q.head = hdr->q.tail = 0;
-	hdr->q.used = 0;
-
-	payload->q.head = payload->q.tail = 0;
-	payload->q.used = 0;
-
-	hwqp->queues.cq_rq.q.head = hwqp->queues.cq_rq.q.tail = 0;
-	hwqp->queues.cq_rq.q.used = 0;
-
-	hwqp->queues.cq_wq.q.head = hwqp->queues.cq_wq.q.tail = 0;
-	hwqp->queues.cq_wq.q.used = 0;
-
-	hwqp->queues.eq.q.head = hwqp->queues.eq.q.tail = 0;
-	hwqp->queues.eq.q.used = 0;
-
-	hwqp->queues.wq.q.head = hwqp->queues.wq.q.tail = 0;
-	hwqp->queues.wq.q.used = 0;
+	if (hdr->q.max_entries != payload->q.max_entries) {
+		assert(0);
+	}
+	if (hdr->q.max_entries > MAX_RQ_ENTRIES) {
+		assert(0);
+	}
 
 	for (i = 0; i < hdr->q.max_entries; i++) {
 		rc = nvmf_fc_rqpair_buffer_post(hwqp, i, false);
@@ -1227,6 +1202,16 @@ spdk_nvmf_bcm_fc_init_rqpair_buffers(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 		}
 		hdr->rq_map[i] = i;
 	}
+
+#if BCM_SUPPORT_EQ_POLL
+	/* Make sure CQs are in armed state */
+	nvmf_fc_bcm_notify_queue(&hwqp->queues.cq_wq.q, true, 0);
+	nvmf_fc_bcm_notify_queue(&hwqp->queues.cq_rq.q, true, 0);
+#else
+	/* Make sure CQs are not armed */
+	nvmf_fc_bcm_notify_queue(&hwqp->queues.cq_wq.q, false, 0);
+	nvmf_fc_bcm_notify_queue(&hwqp->queues.cq_rq.q, false, 0);
+#endif
 
 	if (!rc) {
 		/* Ring doorbell for one less */
@@ -2163,7 +2148,7 @@ nvmf_fc_process_pending_ls_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 uint32_t
 spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 {
-#ifdef BCM_SUPPORT_EQ_POLL
+#if BCM_SUPPORT_EQ_POLL
 	int rc = 0, budget = 0;
 	uint32_t n_processed = 0;
 	uint32_t n_processed_total = 0;
