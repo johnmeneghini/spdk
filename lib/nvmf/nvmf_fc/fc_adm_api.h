@@ -403,9 +403,14 @@ typedef struct spdk_nvmf_bcm_fc_queue_dump_info spdk_nvmf_bcm_fc_queue_dump_info
 void spdk_post_event(void *context, struct spdk_event *event);
 
 /**
-  * \brief Function to print the contents of all the FC ports
+  * \brief Function to print a list of all the FC ports
   */
-void spdk_nvmf_bcm_fc_tgt_print_ports(void *arg1, void *arg2);
+void spdk_nvmf_bcm_fc_tgt_print_port_list(void *arg1, void *arg2);
+
+/**
+  * \brief Function to print the contents of an FC port
+  */
+void spdk_nvmf_bcm_fc_tgt_print_port(void *arg1, void *arg2);
 
 /**
   * \brief Function to print the contents of a given FC Nport

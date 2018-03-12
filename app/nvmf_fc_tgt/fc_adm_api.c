@@ -2273,14 +2273,49 @@ spdk_post_event(void *context, struct spdk_event *event)
 }
 
 /* ******************* DUMP/DISPLAY FUNCTIONS - BEGIN ****************************** */
-static void
-nvmf_tgt_fc_print_port(struct spdk_nvmf_bcm_fc_port *port)
+
+void
+spdk_nvmf_bcm_fc_tgt_print_port_list(void *arg1, void *arg2)
 {
-	int i;
-	struct spdk_nvmf_bcm_fc_hwqp *ls = &(port->ls_queue);
+	uint8_t port_hdl;
+	struct spdk_nvmf_bcm_fc_port *port;
+	SPDK_NOTICELOG("\nPort list\n");
+	SPDK_NOTICELOG("\n*******************************\n");
+
+	/*
+	 * Go through all possible port handles. Make no assumptions on
+	 * how many ports may have been set up in the system in this function.
+	 */
+	for (port_hdl = 0; port_hdl < SPDK_MAX_NUM_OF_FC_PORTS; port_hdl++) {
+		port = spdk_nvmf_bcm_fc_port_list_get(port_hdl);
+		if (port) {
+			SPDK_NOTICELOG("Port Hdl: %d\n", port->port_hdl);
+		}
+	}
+}
+
+void
+spdk_nvmf_bcm_fc_tgt_print_port(void *arg1, void *arg2)
+{
+	uint8_t *port_hdl = (uint8_t *)arg1;
+	struct spdk_nvmf_bcm_fc_port *port;
+	struct spdk_nvmf_bcm_fc_hwqp *ls;
 	struct spdk_nvmf_bcm_fc_hwqp *io;
 	struct spdk_nvmf_bcm_fc_nport *nport;
-	struct spdk_nvmf_bcm_fc_ls_rsrc_pool lspool = port->ls_rsrc_pool;
+	struct spdk_nvmf_bcm_fc_ls_rsrc_pool lspool;
+	int i;
+
+	SPDK_NOTICELOG("\nDump port details\n");
+	SPDK_NOTICELOG("\n*******************************\n");
+
+	port = spdk_nvmf_bcm_fc_port_list_get(*port_hdl);
+	if (port == NULL) {
+		SPDK_NOTICELOG("Port handle not found. Port Hdl: %d\n", *port_hdl);
+		goto out;
+	}
+
+	ls = &(port->ls_queue);
+	lspool = port->ls_rsrc_pool;
 
 	SPDK_NOTICELOG("Port Hdl: %d\n", port->port_hdl);
 	SPDK_NOTICELOG("Hw Port Status: %d\n", port->hw_port_status);
@@ -2326,28 +2361,10 @@ nvmf_tgt_fc_print_port(struct spdk_nvmf_bcm_fc_port *port)
 		SPDK_NOTICELOG("\tIO Resource Pool not present\n");
 	}
 	SPDK_NOTICELOG("\n");
-}
-
-void
-spdk_nvmf_bcm_fc_tgt_print_ports(void *arg1, void *arg2)
-{
-	uint8_t port_hdl;
-	struct spdk_nvmf_bcm_fc_port *port;
-	SPDK_NOTICELOG("\nDump all ports\n");
 	SPDK_NOTICELOG("\n*******************************\n");
-	/*
-	 * Go through all possible FCT port handles. Make no assumptions on
-	 * how many ports may have been set up in the system in this function.
-	 */
-	for (port_hdl = 0; port_hdl < SPDK_MAX_NUM_OF_FC_PORTS; port_hdl++) {
-		port = spdk_nvmf_bcm_fc_port_list_get(port_hdl);
 
-		if (port) {
-			/* Print the contents of this port */
-			nvmf_tgt_fc_print_port(port);
-			SPDK_NOTICELOG("\n*******************************\n");
-		}
-	}
+out:
+	spdk_free(arg1);
 }
 
 void
