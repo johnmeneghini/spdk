@@ -2083,11 +2083,13 @@ nvmf_fc_process_cq_entry(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_eventq *c
 			break;
 		}
 	}
-
+#if BCM_SUPPORT_EQ_POLL
+	nvmf_fc_bcm_notify_queue(&cq->q, cq->auto_arm_flag, n_processed);
+#else
 	if (n_processed) {
 		nvmf_fc_bcm_notify_queue(&cq->q, cq->auto_arm_flag, n_processed);
 	}
-
+#endif
 	if (rc < 0) {
 		return rc;
 	} else {
