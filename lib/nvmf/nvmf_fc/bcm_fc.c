@@ -461,6 +461,19 @@ spdk_nvmf_bcm_fc_port_is_offline(struct spdk_nvmf_bcm_fc_port *fc_port)
 	}
 }
 
+/*
+ * Returns true if the port is in online state.
+ */
+bool
+spdk_nvmf_bcm_fc_port_is_online(struct spdk_nvmf_bcm_fc_port *fc_port)
+{
+	if (fc_port && (fc_port->hw_port_status == SPDK_FC_PORT_ONLINE)) {
+		return true;
+	}
+
+	return false;
+}
+
 spdk_err_t
 spdk_nvmf_bcm_fc_port_set_online(struct spdk_nvmf_bcm_fc_port *fc_port)
 {

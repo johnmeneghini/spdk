@@ -629,6 +629,8 @@ spdk_err_t spdk_nvmf_bcm_fc_port_remove_nport(struct spdk_nvmf_bcm_fc_port *fc_p
 
 bool spdk_nvmf_bcm_fc_port_is_offline(struct spdk_nvmf_bcm_fc_port *fc_port);
 
+bool spdk_nvmf_bcm_fc_port_is_online(struct spdk_nvmf_bcm_fc_port *fc_port);
+
 spdk_err_t spdk_nvmf_bcm_fc_hwqp_port_set_online(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
 
 spdk_err_t spdk_nvmf_bcm_fc_hwqp_port_set_offline(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
