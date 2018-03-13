@@ -187,9 +187,9 @@ nvmf_fc_tgt_hw_port_reinit_validate(struct spdk_nvmf_bcm_fc_port *fc_port,
 	spdk_err_t err = SPDK_SUCCESS;
 	int        i;
 
-	/* Verify that the port was previously in offline state */
-	if (!spdk_nvmf_bcm_fc_port_is_offline(fc_port)) {
-		SPDK_ERRLOG("SPDK FC port %d already initialized.\n", args->port_handle);
+	/* Verify that the port was previously in offline or quiesced state */
+	if (spdk_nvmf_bcm_fc_port_is_online(fc_port)) {
+		SPDK_ERRLOG("SPDK FC port %d already initialized and online.\n", args->port_handle);
 		err = SPDK_ERR_INVALID_ARGS;
 		goto err;
 	}
@@ -213,6 +213,9 @@ nvmf_fc_tgt_hw_port_reinit_validate(struct spdk_nvmf_bcm_fc_port *fc_port,
 		spdk_nvmf_bcm_fc_init_poller_queues(&fc_port->io_queues[i]);
 	}
 
+
+	fc_port->hw_port_status = SPDK_FC_PORT_OFFLINE;
+
 	/* Validate the port information */
 	DEV_VERIFY(fc_port->xri_ring);
 	DEV_VERIFY(TAILQ_EMPTY(&fc_port->nport_list));
@@ -221,6 +224,7 @@ nvmf_fc_tgt_hw_port_reinit_validate(struct spdk_nvmf_bcm_fc_port *fc_port,
 	    (fc_port->num_nports != 0)) {
 		err = SPDK_ERR_INTERNAL;
 	}
+
 err:
 	return err;
 }
@@ -1264,6 +1268,13 @@ nvmf_fc_hw_port_init(void *arg1, void *arg2)
 	if (fc_port != NULL) {
 		/* Port already exists, check if it has to be re-initialized */
 		err = nvmf_fc_tgt_hw_port_reinit_validate(fc_port, args);
+		if (err) {
+			/*
+			 * In case of an error we do not want to free the fc_port
+			 * so we set that pointer to NULL.
+			 */
+			fc_port = NULL;
+		}
 		goto err;
 	}
 
