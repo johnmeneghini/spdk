@@ -672,4 +672,11 @@ spdk_err_t spdk_nvmf_bcm_fc_get_sess_init_traddr(char *traddr, struct spdk_nvmf_
 
 uint32_t spdk_nvmf_bcm_fc_get_hwqp_id(struct spdk_nvmf_request *req);
 
+static inline struct spdk_nvmf_bcm_fc_request *
+spdk_nvmf_bcm_fc_get_fc_req(struct spdk_nvmf_request *req)
+{
+	return (struct spdk_nvmf_bcm_fc_request *)
+	       ((uintptr_t)req - offsetof(struct spdk_nvmf_bcm_fc_request, req));
+}
+
 #endif

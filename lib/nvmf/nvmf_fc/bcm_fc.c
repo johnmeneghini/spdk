@@ -1,7 +1,7 @@
 /*
  *   BSD LICENSE
  *
- *   Copyright (c) 2017 Broadcom.  All Rights Reserved.
+ *   Copyright (c) 2018 Broadcom.  All Rights Reserved.
  *   The term "Broadcom" refers to Broadcom Limited and/or its subsidiaries.
  *
  *   Redistribution and use in source and binary forms, with or without
@@ -117,6 +117,7 @@ spdk_nvmf_bcm_fc_init_poller(struct spdk_nvmf_bcm_fc_port *fc_port,
 	(void)spdk_nvmf_bcm_fc_create_req_mempool(hwqp);
 	(void)spdk_nvmf_bcm_fc_create_reqtag_pool(hwqp);
 	TAILQ_INIT(&hwqp->sync_cbs);
+	TAILQ_INIT(&hwqp->ls_pending_queue);
 }
 
 void
@@ -662,17 +663,10 @@ nvmf_fc_get_fc_conn(struct spdk_nvmf_conn *conn)
 	       ((uintptr_t)conn - offsetof(struct spdk_nvmf_bcm_fc_conn, conn));
 }
 
-static inline struct spdk_nvmf_bcm_fc_request *
-nvmf_fc_get_fc_req(struct spdk_nvmf_request *req)
-{
-	return (struct spdk_nvmf_bcm_fc_request *)
-	       ((uintptr_t)req - offsetof(struct spdk_nvmf_bcm_fc_request, req));
-}
-
 struct spdk_nvmf_bcm_fc_nport *
 spdk_nvmf_bcm_req_fc_nport_get(struct spdk_nvmf_request *req)
 {
-	struct spdk_nvmf_bcm_fc_request *fc_req = nvmf_fc_get_fc_req(req);
+	struct spdk_nvmf_bcm_fc_request *fc_req = spdk_nvmf_bcm_fc_get_fc_req(req);
 	return fc_req->fc_conn->fc_assoc->tgtport;
 }
 
@@ -776,7 +770,7 @@ spdk_nvmf_bcm_fc_get_sess_init_traddr(char *traddr, struct spdk_nvmf_session *se
 inline uint32_t
 spdk_nvmf_bcm_fc_get_hwqp_id(struct spdk_nvmf_request *req)
 {
-	struct spdk_nvmf_bcm_fc_request *fc_req = nvmf_fc_get_fc_req(req);
+	struct spdk_nvmf_bcm_fc_request *fc_req = spdk_nvmf_bcm_fc_get_fc_req(req);
 	assert(fc_req->hwqp);
 	return fc_req->hwqp->hwqp_id;
 }
@@ -881,7 +875,7 @@ nvmf_fc_request_complete_process(void *arg1, void *arg2)
 {
 	int rc = 0;
 	struct spdk_nvmf_request *req = (struct spdk_nvmf_request *)arg1;
-	struct spdk_nvmf_bcm_fc_request *fc_req = nvmf_fc_get_fc_req(req);
+	struct spdk_nvmf_bcm_fc_request *fc_req = spdk_nvmf_bcm_fc_get_fc_req(req);
 	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
 	struct spdk_event *event = NULL;
 
@@ -923,7 +917,19 @@ nvmf_fc_request_complete_process(void *arg1, void *arg2)
 static int
 nvmf_fc_request_complete(struct spdk_nvmf_request *req)
 {
-	nvmf_fc_request_complete_process(req, NULL);
+	struct spdk_nvmf_bcm_fc_request *fc_req = spdk_nvmf_bcm_fc_get_fc_req(req);
+	struct spdk_event *event;
+	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
+	struct spdk_nvmf_bcm_fc_conn *fc_conn = fc_req->fc_conn;
+
+	/* Switch back to correct lcore for IOQ fabric commands */
+	if ((cmd->opc == SPDK_NVME_OPC_FABRIC) && (fc_conn->conn.type == CONN_TYPE_IOQ)) {
+		event = spdk_event_allocate(fc_req->hwqp->lcore_id,
+					    nvmf_fc_request_complete_process, req, NULL);
+		spdk_post_event(fc_req->hwqp->context, event);
+	} else {
+		nvmf_fc_request_complete_process(req, NULL);
+	}
 	return 0;
 }
 
