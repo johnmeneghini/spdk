@@ -255,9 +255,6 @@
 /* Support for MARKER */
 #define BCM_SUPPORT_ABTS_MARKERS                true
 
-/* Support E Q polling */
-#define BCM_SUPPORT_EQ_POLL                     false
-
 #define BCM_MARKER_CATAGORY_ALL_RQ		0x1
 #define BCM_MARKER_CATAGORY_ALL_RQ_EXCEPT_ONE	0x2
 
