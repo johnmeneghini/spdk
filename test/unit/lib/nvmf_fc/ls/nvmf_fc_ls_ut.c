@@ -1,7 +1,7 @@
 /*
  *   BSD LICENSE
  *
- *   Copyright (c) 2017 Broadcom.  All Rights Reserved.
+ *   Copyright (c) 2018 Broadcom.  All Rights Reserved.
  *   The term "Broadcom" refers to Broadcom Limited and/or its subsidiaries.
  *
  *   Redistribution and use in source and binary forms, with or without
@@ -52,6 +52,7 @@
 
 SPDK_LOG_REGISTER_TRACE_FLAG("nvmf", SPDK_TRACE_NVMF)
 
+#define LAST_RSLT_STOP_TEST 999
 
 /*
  * SPDK Stuff
@@ -286,7 +287,7 @@ static const char *fc_ut_bad_subsystem =
 
 static struct spdk_nvmf_host fc_ut_bad_host = {
 	.nqn = "nqn.bad_fc_host",
-	.max_aq_depth = 128,
+	.max_aq_depth = 32,
 	.max_io_queue_depth = 1024,
 	.max_connections_allowed = 32,
 };
@@ -299,17 +300,19 @@ static struct spdk_nvmf_host fc_ut_target = {
 	.nqn = "nqn.2017-11.fc_host",
 	.max_aq_depth = 32,
 	.max_io_queue_depth = 256,
-	.max_connections_allowed = 4,
+	.max_connections_allowed = 5,
 };
 
 static struct spdk_nvmf_host fc_ut_initiator = {
 	.nqn = "nqn.2017-11.fc_host",
-	.max_aq_depth = 31,
-	.max_io_queue_depth = 255,
-	.max_connections_allowed = 4,
+	.max_aq_depth = 32,
+	.max_io_queue_depth = 256,
+	.max_connections_allowed = 5,
 };
 
 static struct spdk_nvmf_host *fc_ut_host = &fc_ut_initiator;
+
+static uint32_t g_io_queue_depth = 1024;
 
 struct spdk_nvmf_host *
 spdk_nvmf_find_subsystem_host(struct spdk_nvmf_subsystem *subsystem, const char *hostnqn)
@@ -452,8 +455,6 @@ const struct spdk_nvmf_transport spdk_nvmf_transport_bcm_fc = {
  *  The Tests
  */
 
-static uint32_t g_test_run_type = 0;
-
 enum _test_run_type {
 	TEST_RUN_TYPE_CREATE_ASSOC = 1,
 	TEST_RUN_TYPE_CREATE_CONN,
@@ -462,14 +463,16 @@ enum _test_run_type {
 	TEST_RUN_TYPE_DIR_DISCONN_CALL,
 	TEST_RUN_TYPE_FAIL_LS_RSP,
 	TEST_RUN_TYPE_DISCONNECT_BAD_ASSOC,
+	TEST_RUN_TYPE_CREATE_MAX_ASSOC,
 };
 
+static uint32_t g_test_run_type = 0;
 static uint64_t g_curr_assoc_id = 0;
+static uint32_t g_create_assoc_test_cnt = 0;
 static uint16_t g_create_conn_test_cnt = 0;
 static int g_last_rslt = 0;
 static bool g_spdk_nvmf_bcm_fc_xmt_srsr_req = false;
 static struct spdk_nvmf_bcm_fc_remote_port_info rem_port;
-
 
 static void
 run_create_assoc_test(const char *subnqn,
@@ -491,7 +494,7 @@ run_create_assoc_test(const char *subnqn,
 		sizeof(struct nvmf_fc_lsdesc_cr_assoc_cmd) -
 		(2 * sizeof(uint32_t)));
 	to_be16(&ca_rqst.assoc_cmd.ersp_ratio, (host->max_aq_depth / 2));
-	to_be16(&ca_rqst.assoc_cmd.sqsize, host->max_aq_depth);
+	to_be16(&ca_rqst.assoc_cmd.sqsize, host->max_aq_depth - 1);
 	snprintf(&ca_rqst.assoc_cmd.subnqn[0], strlen(subnqn) + 1, "%s", subnqn);
 	snprintf(&ca_rqst.assoc_cmd.hostnqn[0], strlen(host->nqn) + 1, "%s", host->nqn);
 	ls_rqst.rqstbuf.virt = &ca_rqst;
@@ -532,7 +535,7 @@ run_create_conn_test(struct spdk_nvmf_host *host,
 		(2 * sizeof(uint32_t)));
 
 	to_be16(&cc_rqst.connect_cmd.ersp_ratio, (host->max_io_queue_depth / 2));
-	to_be16(&cc_rqst.connect_cmd.sqsize, host->max_io_queue_depth);
+	to_be16(&cc_rqst.connect_cmd.sqsize, host->max_io_queue_depth - 1);
 	to_be16(&cc_rqst.connect_cmd.qid, qid);
 
 	/* fill in association id descriptor */
@@ -625,7 +628,7 @@ run_direct_disconn_test(struct spdk_nvmf_bcm_fc_nport *tgtport,
 }
 
 static int
-handle_ca_rsp(struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst)
+handle_ca_rsp(struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst, bool max_assoc_test)
 {
 	struct nvmf_fc_ls_acc_hdr *acc_hdr =
 		(struct nvmf_fc_ls_acc_hdr *) ls_rqst->rspbuf.virt;
@@ -654,9 +657,15 @@ handle_ca_rsp(struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst)
 			g_curr_assoc_id = acc->assoc_id.association_id;
 			g_create_conn_test_cnt++;
 			return 0;
-		} else {
-			CU_FAIL("Unexpected reject response for create association");
+		} else if (max_assoc_test) {
+			/* reject reason code should be insufficient resources */
+			struct nvmf_fc_ls_rjt *rjt =
+				(struct nvmf_fc_ls_rjt *)ls_rqst->rspbuf.virt;
+			if (rjt->rjt.reason_code == FCNVME_RJT_RC_INSUFF_RES) {
+				return LAST_RSLT_STOP_TEST;
+			}
 		}
+		CU_FAIL("Unexpected reject response for create association");
 	} else {
 		CU_FAIL("Response not for create association");
 	}
@@ -805,7 +814,9 @@ handle_disconn_bad_assoc_rsp(struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst)
 }
 
 
-static struct spdk_nvmf_bcm_fc_port fcport;
+static struct spdk_nvmf_bcm_fc_port fcport = {
+	.max_io_queues = 16,
+};
 static struct spdk_nvmf_bcm_fc_nport tgtport;
 static struct spdk_nvmf_bcm_fc_remote_port_info rport;
 
@@ -822,15 +833,14 @@ ls_tests_init(void)
 	g_nvmf_tgt.opts.max_io_queue_depth = fc_ut_target.max_io_queue_depth;
 	g_nvmf_tgt.opts.max_queues_per_session = fc_ut_target.max_connections_allowed;
 
-	bzero(&fcport, sizeof(struct spdk_nvmf_bcm_fc_port));
+	//bzero(&fcport, sizeof(struct spdk_nvmf_bcm_fc_port));
 	fcport.hw_port_status = SPDK_FC_PORT_ONLINE;
-	fcport.max_io_queues = 16;
 	for (i = 0; i < fcport.max_io_queues; i++) {
 		fcport.io_queues[i].lcore_id = i;
 		fcport.io_queues[i].fc_port = &fcport;
 		fcport.io_queues[i].num_conns = 0;
 		fcport.io_queues[i].cid_cnt = 0;
-		fcport.io_queues[i].queues.rq_payload.num_buffers = fc_ut_target.max_io_queue_depth * 4;
+		fcport.io_queues[i].queues.rq_payload.num_buffers = g_io_queue_depth;
 		fcport.io_queues[i].free_q_slots = fcport.io_queues[i].queues.rq_payload.num_buffers;
 		TAILQ_INIT(&fcport.io_queues[i].connection_list);
 		TAILQ_INIT(&fcport.io_queues[i].in_use_reqs);
@@ -872,7 +882,7 @@ create_single_assoc_test(void)
 }
 
 static void
-create_assoc_test(void)
+create_max_conns_test(void)
 {
 	uint16_t qid = 1;
 	/* main test driver */
@@ -891,6 +901,7 @@ create_assoc_test(void)
 		}
 
 		/* disconnect the association */
+		g_last_rslt = 0;
 		g_test_run_type = TEST_RUN_TYPE_DISCONNECT;
 		run_disconn_test(&tgtport, g_curr_assoc_id);
 		g_create_conn_test_cnt = 0;
@@ -909,23 +920,31 @@ static void
 create_max_assoc_conns_test(void)
 {
 	/* run test to create max. associations with max. connections */
-	uint16_t i;
+	uint16_t i = 0;
 
 	g_last_rslt = 0;
-	for (i = 0; i < fcport.ls_rsrc_pool.assocs_count &&
-	     g_last_rslt == 0; i++) {
-		g_test_run_type = TEST_RUN_TYPE_CREATE_ASSOC;
+	g_create_assoc_test_cnt = 0;
+	while (1) {
+		g_test_run_type = TEST_RUN_TYPE_CREATE_MAX_ASSOC;
 		run_create_assoc_test(fc_ut_good_subsystem, fc_ut_host, &tgtport);
 		if (g_last_rslt == 0) {
 			int j;
-			assoc_id[i] = g_curr_assoc_id;
+			g_create_assoc_test_cnt++;
+			assoc_id[i++] = g_curr_assoc_id;
 			g_test_run_type = TEST_RUN_TYPE_CREATE_CONN;
 			for (j = 1; j < fc_ut_host->max_connections_allowed; j++) {
 				if (g_last_rslt == 0) {
 					run_create_conn_test(fc_ut_host, &tgtport, g_curr_assoc_id, (uint16_t) j);
 				}
 			}
+		} else {
+			break;
 		}
+	}
+
+	if (g_last_rslt == LAST_RSLT_STOP_TEST) {
+		printf("(%d assocs.) ", g_create_assoc_test_cnt);
+		g_last_rslt = 0;
 	}
 }
 
@@ -937,7 +956,7 @@ direct_delete_assoc_test(void)
 	if (g_last_rslt == 0) {
 		/* remove associations by calling delete directly */
 		g_test_run_type = TEST_RUN_TYPE_DIR_DISCONN_CALL;
-		for (i = 0; i < fcport.ls_rsrc_pool.assocs_count; i++) {
+		for (i = 0; i < g_create_assoc_test_cnt; i++) {
 			run_direct_disconn_test(&tgtport,
 						from_be64(&assoc_id[i]),
 						true);
@@ -973,7 +992,7 @@ spdk_nvmf_bcm_fc_xmt_ls_rsp(struct spdk_nvmf_bcm_fc_nport *tgtport,
 {
 	switch (g_test_run_type) {
 	case TEST_RUN_TYPE_CREATE_ASSOC:
-		g_last_rslt = handle_ca_rsp(ls_rqst);
+		g_last_rslt = handle_ca_rsp(ls_rqst, false);
 		break;
 	case TEST_RUN_TYPE_CREATE_CONN:
 		g_last_rslt = handle_cc_rsp(ls_rqst);
@@ -985,10 +1004,13 @@ spdk_nvmf_bcm_fc_xmt_ls_rsp(struct spdk_nvmf_bcm_fc_nport *tgtport,
 		g_last_rslt = handle_conn_bad_assoc_rsp(ls_rqst);
 		break;
 	case TEST_RUN_TYPE_FAIL_LS_RSP:
-		g_last_rslt = handle_ca_rsp(ls_rqst);
+		g_last_rslt = handle_ca_rsp(ls_rqst, false);
 		return 1;
 	case TEST_RUN_TYPE_DISCONNECT_BAD_ASSOC:
 		g_last_rslt = handle_disconn_bad_assoc_rsp(ls_rqst);
+		break;
+	case TEST_RUN_TYPE_CREATE_MAX_ASSOC:
+		g_last_rslt = handle_ca_rsp(ls_rqst, true);
 		break;
 
 	default:
@@ -1042,23 +1064,26 @@ spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io,
 static void
 usage(const char *program_name)
 {
-	printf("%s options:\n", program_name);
+	printf("%s [options]\n", program_name);
+	printf("options:\n");
 	spdk_tracelog_usage(stdout, "-t");
-	printf(" -a value - Admin Queue depth (default: %u)\n",
-	       fc_ut_target.max_aq_depth);
-	printf(" -q value - IO Queue depth (default: %u)\n",
+	printf(" -i value - Number of IO Queues (default: %u)\n",
+	       fcport.max_io_queues);
+	printf(" -d value - IO Queue depth (default: %u)\n",
+	       g_io_queue_depth);
+	printf(" -q value - SQ size (default: %u)\n",
 	       fc_ut_target.max_io_queue_depth);
-	printf(" -c value - IO Queue count (default: %u)\n",
+	printf(" -c value - Connection count (default: %u)\n",
 	       fc_ut_target.max_connections_allowed);
-	printf(" -u test - Unit test to run\n");
-	printf("    0 : Run all tests (default)\n");
-	printf("    1 : CASS/DISC create single assoc testx\n");
-	printf("    2 : CASS/CIOC/DISC create_assoc_testx\n");
-	printf("    3 : CIOC to invalid assoc_id connection test\n");
-	printf("    4 : Create max assoc conns test\n");
-	printf("    5 : Delete assoc test\n");
-	printf("    6 : LS response failure test\n");
-	printf("    7 : Disconnect bad assoc_id test\n");
+	printf(" -u test# - Unit test# to run\n");
+	printf("            0 : Run all tests (default)\n");
+	printf("            1 : CASS/DISC create single assoc test\n");
+	printf("            2 : Max. conns. test\n");
+	printf("            3 : CIOC to invalid assoc_id connection test\n");
+	printf("            4 : Create max assoc conns test\n");
+	printf("            5 : Delete assoc test\n");
+	printf("            6 : LS response failure test\n");
+	printf("            7 : Disconnect bad assoc_id test\n");
 }
 
 int main(int argc, char **argv)
@@ -1069,21 +1094,12 @@ int main(int argc, char **argv)
 	uint16_t val;
 	int op;
 
-	while ((op = getopt(argc, argv, "a:q:c:t:u:")) != -1) {
+	while ((op = getopt(argc, argv, "a:q:c:t:u:d:i:")) != -1) {
 		switch (op) {
-		case 'a':
-			val = (uint16_t) atoi(optarg);
-			if (val < 32) {
-				fprintf(stderr, "Max. admin queue depth must be at least 32\n");
-				usage(argv[0]);
-				return -1;
-			}
-			fc_ut_target.max_aq_depth = val;
-			break;
 		case 'q':
 			val = (uint16_t) atoi(optarg);
 			if (val < 16) {
-				fprintf(stderr, "Max. queue depth must be at least 16\n");
+				fprintf(stderr, "SQ size must be at least 16\n");
 				usage(argv[0]);
 				return -1;
 			}
@@ -1092,7 +1108,7 @@ int main(int argc, char **argv)
 		case 'c':
 			val = atoi(optarg);
 			if (val < 2) {
-				fprintf(stderr, "Max. connections must be at least 2\n");
+				fprintf(stderr, "Connection count must be at least 2\n");
 				usage(argv[0]);
 				return -1;
 			}
@@ -1108,14 +1124,33 @@ int main(int argc, char **argv)
 		case 'u':
 			test = atoi(optarg);
 			break;
+		case 'd':
+			val = atoi(optarg);
+			if (val < 16) {
+				fprintf(stderr, "IO queue depth must be at least 16\n");
+				usage(argv[0]);
+				return -1;
+			}
+			g_io_queue_depth = val;
+			break;
+		case 'i':
+			val = atoi(optarg);
+			if (val < 2) {
+				fprintf(stderr, "Max. io queues must be at least 2\n");
+				usage(argv[0]);
+				return -1;
+			}
+			fcport.max_io_queues = val;
+			break;
+
+
 		default:
 			usage(argv[0]);
 			return -1;
 		}
 	}
 
-	fc_ut_initiator.max_aq_depth = fc_ut_target.max_aq_depth - 1;
-	fc_ut_initiator.max_io_queue_depth = fc_ut_target.max_io_queue_depth - 1;
+	fc_ut_initiator.max_io_queue_depth = fc_ut_target.max_io_queue_depth;
 	fc_ut_initiator.max_connections_allowed = fc_ut_target.max_connections_allowed;
 
 	if (CU_initialize_registry() != CUE_SUCCESS) {
@@ -1135,7 +1170,7 @@ int main(int argc, char **argv)
 			return CU_get_error();
 		}
 
-		if (CU_add_test(suite, "CASS/CIOC/DISC", create_assoc_test) == NULL) {
+		if (CU_add_test(suite, "Max. Connections", create_max_conns_test) == NULL) {
 			CU_cleanup_registry();
 			return CU_get_error();
 		}
@@ -1175,7 +1210,7 @@ int main(int argc, char **argv)
 			}
 			break;
 		case 2:
-			if (CU_add_test(suite, "CASS/CIOC/DISC", create_assoc_test) == NULL) {
+			if (CU_add_test(suite, "Max. Connections", create_max_conns_test) == NULL) {
 				CU_cleanup_registry();
 				return CU_get_error();
 			}

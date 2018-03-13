@@ -1,7 +1,7 @@
 /*
  *   BSD LICENSE
  *
- *   Copyright (c) 2017 Broadcom.  All Rights Reserved.
+ *   Copyright (c) 2018 Broadcom.  All Rights Reserved.
  *   The term "Broadcom" refers to Broadcom Limited and/or its subsidiaries.
  *
  *   Redistribution and use in source and binary forms, with or without
@@ -123,7 +123,6 @@ enum fcnvme_ls_rjt_reason {
 enum fcnvme_ls_rjt_explan {
 	FCNVME_RJT_EXP_NONE	   = 0x00,  /* No additional explanation */
 	FCNVME_RJT_EXP_OXID_RXID   = 0x17,  /* invalid OX_ID-RX_ID combo */
-	FCNVME_RJT_EXP_INSUF_RES   = 0x29,  /* insufficient resources */
 	FCNVME_RJT_EXP_UNAB_DATA   = 0x2a,  /* unable to supply data */
 	FCNVME_RJT_EXP_INV_LEN     = 0x2d,  /* invalid payload length */
 	FCNVME_RJT_EXP_INV_ESRP    = 0x40,  /* invalid ESRP ratio */
