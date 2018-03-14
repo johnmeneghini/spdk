@@ -2016,7 +2016,7 @@ nvmf_fc_process_cq_entry(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_eventq *c
 	int rc = 0, budget = cq->q.processed_limit;
 	uint8_t	cqe[sizeof(cqe_t)];
 	uint16_t rid = UINT16_MAX;
-	uint32_t n_processed = 0, n_processed_total = 0;
+	uint32_t n_processed = 0;
 	bcm_qentry_type_e ctype;     /* completion type */
 
 	assert(hwqp);
@@ -2063,7 +2063,6 @@ nvmf_fc_process_cq_entry(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_eventq *c
 
 		if (n_processed >= (cq->q.posted_limit)) {
 			nvmf_fc_bcm_notify_queue(&cq->q, false, n_processed);
-			n_processed_total += n_processed;
 			n_processed = 0;
 		}
 
@@ -2074,11 +2073,7 @@ nvmf_fc_process_cq_entry(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_eventq *c
 
 	nvmf_fc_bcm_notify_queue(&cq->q, cq->auto_arm_flag, n_processed);
 
-	if (rc < 0) {
-		return rc;
-	} else {
-		return n_processed_total + n_processed;
-	}
+	return rc;
 }
 
 static inline void
