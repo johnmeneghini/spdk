@@ -718,8 +718,7 @@ spdk_nvmf_bcm_fc_get_num_nport_sessions_in_subsystem(uint8_t port_hdl, uint16_t 
 	TAILQ_FOREACH(assoc, &fc_nport->fc_associations, link) {
 		if (assoc->subsystem == subsys) {
 			struct spdk_nvmf_bcm_fc_conn *fc_conn = TAILQ_FIRST(&assoc->fc_conns);
-			if (fc_conn->conn.sess != NULL) {
-				assert(fc_conn->conn.qid == 0);
+			if (fc_conn && fc_conn->conn.sess != NULL) {
 				++num_sessions;
 			}
 		}
@@ -744,12 +743,13 @@ spdk_nvmf_bcm_fc_is_spdk_session_on_nport(uint8_t port_hdl, uint16_t nport_hdl,
 	}
 
 	struct spdk_nvmf_bcm_fc_session *fc_session = spdk_nvmf_bcm_fc_get_fc_session(session);
-	if (fc_session) {
-		if (fc_session->fc_assoc) {
-			if (fc_session->fc_assoc->tgtport == fc_nport) {
-				return true;
-			}
-		}
+	if (fc_session && fc_session->fc_assoc && fc_session->fc_assoc->tgtport == fc_nport) {
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
+			      "Controller: %d corresponding to association: %p(%lu:%d) is on port: %d nport: %d\n",
+			      session->cntlid, fc_session->fc_assoc, fc_session->fc_assoc->assoc_id,
+			      fc_session->fc_assoc->assoc_state, port_hdl,
+			      nport_hdl);
+		return true;
 	}
 	return false;
 }
