@@ -341,12 +341,14 @@ spdk_bdev_get_io(struct spdk_mempool *pool)
 
 	if (!bdev_io) {
 		SPDK_ERRLOG("Unable to get spdk_bdev_io\n");
-		spdk_abort();
+		assert("Unable to get spdk_bdev_io" == 0);
+		goto out;
 	}
 	memset(bdev_io, 0, sizeof(*bdev_io));
 
 	bdev_io->bdev_io_pool = pool;
 
+out:
 	return bdev_io;
 }
 

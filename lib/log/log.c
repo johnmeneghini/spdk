@@ -110,14 +110,9 @@ spdk_log_register_trace_flag(const char *name, struct spdk_trace_flag *flag)
 {
 	struct spdk_trace_flag *iter;
 
-	if (name == NULL || flag == NULL) {
-		SPDK_ERRLOG("missing spdk_trace_flag parameters\n");
-		spdk_abort();
-	}
-
 	if (get_trace_flag(name)) {
 		SPDK_ERRLOG("duplicate spdk_trace_flag '%s'\n", name);
-		spdk_abort();
+		return;
 	}
 
 	TAILQ_FOREACH(iter, &g_trace_flags, tailq) {
