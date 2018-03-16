@@ -213,8 +213,17 @@ nvmf_discovery_ctrlr_process_admin_cmd(struct spdk_nvmf_request *req)
 static int
 nvmf_discovery_ctrlr_process_io_cmd(struct spdk_nvmf_request *req)
 {
-	/* Discovery controllers do not support I/O queues, so this code should be unreachable. */
-	abort();
+	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
+
+	/*
+	 * Discovery controllers do not support I/O queues,
+	 * so this code should be unreachable.
+	 */
+	assert("Discovery controllers do not support I/O queues; \
+this code should be unreachable." == 0);
+
+	response->status.sc = SPDK_NVME_SC_OPERATION_DENIED;
+	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 }
 
 static void

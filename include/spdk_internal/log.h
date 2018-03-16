@@ -41,6 +41,7 @@
 
 #include "spdk/log.h"
 #include "spdk/queue.h"
+#include "spdk/assert.h"
 
 extern enum spdk_log_level g_spdk_log_level;
 extern enum spdk_log_level g_spdk_log_print_level;
@@ -62,6 +63,8 @@ struct spdk_trace_flag flag = { \
 	.enabled = false, \
 	.name = str, \
 }; \
+SPDK_STATIC_ASSERT(sizeof(str) > 1, "str is NULL"); \
+SPDK_STATIC_ASSERT(sizeof(flag) == sizeof (struct spdk_trace_flag), "flag must be struct spdk_trace_flag"); \
 __attribute__((constructor)) static void register_trace_flag_##flag(void) \
 { \
 	spdk_log_register_trace_flag(str, &flag); \
