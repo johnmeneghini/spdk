@@ -390,7 +390,7 @@ spdk_reactor_construct(struct spdk_reactor *reactor, uint32_t lcore, uint64_t ma
 
 	snprintf(ring_name, sizeof(ring_name) - 1, "spdk_event_queue_%u", lcore);
 	reactor->events =
-		spdk_ring_create(ring_name, 65536, reactor->socket_id, RING_F_SC_DEQ);
+		spdk_ring_create(ring_name, spdk_event_ring_size_get(), reactor->socket_id, RING_F_SC_DEQ);
 	assert(reactor->events != NULL);
 
 	reactor->event_mempool = g_spdk_event_mempool[reactor->socket_id];
@@ -540,7 +540,7 @@ spdk_reactors_init(unsigned int max_delay_us)
 		if ((1ULL << i) & socket_mask) {
 			snprintf(mempool_name, sizeof(mempool_name), "spdk_event_mempool_%d", i);
 			g_spdk_event_mempool[i] = spdk_mempool_create(mempool_name,
-						  (262144 / socket_count),
+						  (spdk_event_mempool_size_get() / socket_count),
 						  sizeof(struct spdk_event), -1, i);
 
 			if (g_spdk_event_mempool[i] == NULL) {
@@ -554,7 +554,7 @@ spdk_reactors_init(unsigned int max_delay_us)
 				 */
 				g_spdk_event_mempool[i] = spdk_mempool_create(
 								  mempool_name,
-								  (262144 / socket_count),
+								  (spdk_event_mempool_size_get() / socket_count),
 								  sizeof(struct spdk_event), -1,
 								  SPDK_ENV_SOCKET_ID_ANY);
 

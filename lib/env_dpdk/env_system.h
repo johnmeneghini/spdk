@@ -219,5 +219,20 @@ spdk_pid_t spdk_getpid(void)
 	return getpid();
 }
 
+static inline
+int spdk_event_ring_size_get(void)
+{
+#define SPDK_EVENT_RING_SIZE 65536
+
+	return SPDK_EVENT_RING_SIZE;
+}
+
+static inline
+int spdk_event_mempool_size_get(void)
+{
+#define SPDK_EVENT_MEMPOOL_SIZE 262144
+
+	return SPDK_EVENT_MEMPOOL_SIZE;
+}
 
 #endif /* SPDK_ENV_SYSTEM_H */

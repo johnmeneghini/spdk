@@ -997,6 +997,15 @@ int spdk_usleep(int usec);
  */
 spdk_pid_t spdk_getpid(void);
 
+/**
+ * returns the size of the event ring.
+ */
+int spdk_event_ring_size_get(void);
+
+/**
+ * returns the size of event mempool.
+ */
+int spdk_event_mempool_size_get(void);
 
 #ifdef __cplusplus
 }
