@@ -336,3 +336,19 @@ spdk_ring_dequeue(struct spdk_ring *ring, void **objs, size_t count)
 	return rte_ring_sc_dequeue_burst((struct rte_ring *)ring, objs, count, NULL);
 #endif
 }
+
+int
+spdk_event_ring_size_get(void)
+{
+#define SPDK_EVENT_RING_SIZE 65536
+
+	return SPDK_EVENT_RING_SIZE;
+}
+
+int
+spdk_event_mempool_size_get(void)
+{
+#define SPDK_EVENT_MEMPOOL_SIZE 262144
+
+	return SPDK_EVENT_MEMPOOL_SIZE;
+}

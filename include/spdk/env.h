@@ -474,6 +474,16 @@ void spdk_mem_register(void *vaddr, size_t len);
  */
 void spdk_mem_unregister(void *vaddr, size_t len);
 
+/**
+ * returns the size of the event ring.
+ */
+int spdk_event_ring_size_get(void);
+
+/**
+ * returns the size of event mempool.
+ */
+int spdk_event_mempool_size_get(void);
+
 #ifdef __cplusplus
 }
 #endif

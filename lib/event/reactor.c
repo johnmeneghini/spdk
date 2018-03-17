@@ -419,7 +419,8 @@ spdk_reactor_construct(struct spdk_reactor *reactor, uint32_t lcore, uint64_t ma
 	TAILQ_INIT(&reactor->active_pollers);
 	TAILQ_INIT(&reactor->timer_pollers);
 
-	reactor->events = spdk_ring_create(SPDK_RING_TYPE_MP_SC, 65536, reactor->socket_id);
+	reactor->events = spdk_ring_create(SPDK_RING_TYPE_MP_SC, spdk_event_ring_size_get(),
+					   reactor->socket_id);
 	assert(reactor->events != NULL);
 
 	reactor->event_mempool = g_spdk_event_mempool[reactor->socket_id];
@@ -558,7 +559,7 @@ spdk_reactors_init(unsigned int max_delay_us)
 		if ((1ULL << i) & socket_mask) {
 			snprintf(mempool_name, sizeof(mempool_name), "evtpool%d_%d", i, getpid());
 			g_spdk_event_mempool[i] = spdk_mempool_create(mempool_name,
-						  (262144 / socket_count),
+						  (spdk_event_mempool_size_get() / socket_count),
 						  sizeof(struct spdk_event), -1, i);
 
 			if (g_spdk_event_mempool[i] == NULL) {
@@ -572,7 +573,7 @@ spdk_reactors_init(unsigned int max_delay_us)
 				 */
 				g_spdk_event_mempool[i] = spdk_mempool_create(
 								  mempool_name,
-								  (262144 / socket_count),
+								  (spdk_event_mempool_size_get() / socket_count),
 								  sizeof(struct spdk_event), -1,
 								  SPDK_ENV_SOCKET_ID_ANY);
 
