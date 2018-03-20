@@ -65,6 +65,7 @@ void spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req, bool se
 void spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io,
 			void *ctx);
 
+
 void *
 spdk_dma_malloc(size_t size, size_t align, uint64_t *phys_addr)
 {
@@ -240,6 +241,7 @@ spdk_nvmf_bcm_fc_get_hwqp(struct spdk_nvmf_bcm_fc_nport *tgtport, uint64_t conn_
 				     SPDK_NVMF_FC_BCM_MRQ_CONNID_QUEUE_MASK) %
 				    fc_port->max_io_queues]);
 }
+
 struct spdk_nvmf_subsystem g_nvmf_subsys;
 
 struct spdk_nvmf_subsystem *
@@ -765,6 +767,9 @@ handle_conn_bad_assoc_rsp(struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst)
 				  FCNVME_RJT_RC_INV_ASSOC);
 			CU_ASSERT(rjt->rjt.reason_explanation ==
 				  FCNVME_RJT_EXP_NONE);
+			/* make sure reserved fields are 0 */
+			CU_ASSERT(rjt->rjt.rsvd8 == 0);
+			CU_ASSERT(rjt->rjt.rsvd12 == 0);
 			return 0;
 		} else {
 			CU_FAIL("Unexpected accept response for create conn. on bad assoc_id");
@@ -939,7 +944,12 @@ create_max_assoc_conns_test(void)
 		}
 	}
 
-	if (g_last_rslt == LAST_RSLT_STOP_TEST) {
+	/* verify how many associations created against how many should be created */
+	if (g_create_assoc_test_cnt < fcport.ls_rsrc_pool.assocs_count) {
+		CU_FAIL("Too few associations created");
+	} else if (g_create_assoc_test_cnt > fcport.ls_rsrc_pool.assocs_count) {
+		CU_FAIL("Too many associations created");
+	} else if (g_last_rslt == LAST_RSLT_STOP_TEST) {
 		printf("(%d assocs.) ", g_create_assoc_test_cnt);
 		g_last_rslt = 0;
 	}
@@ -1097,7 +1107,6 @@ int main(int argc, char **argv)
 			val = (uint16_t) atoi(optarg);
 			if (val < 16) {
 				fprintf(stderr, "SQ size must be at least 16\n");
-				usage(argv[0]);
 				return -1;
 			}
 			fc_ut_target.max_io_queue_depth = val;
@@ -1106,7 +1115,6 @@ int main(int argc, char **argv)
 			val = atoi(optarg);
 			if (val < 2) {
 				fprintf(stderr, "Connection count must be at least 2\n");
-				usage(argv[0]);
 				return -1;
 			}
 			fc_ut_target.max_connections_allowed = val;
@@ -1125,7 +1133,6 @@ int main(int argc, char **argv)
 			val = atoi(optarg);
 			if (val < 16) {
 				fprintf(stderr, "IO queue depth must be at least 16\n");
-				usage(argv[0]);
 				return -1;
 			}
 			g_io_queue_depth = val;
@@ -1133,8 +1140,12 @@ int main(int argc, char **argv)
 		case 'i':
 			val = atoi(optarg);
 			if (val < 2) {
-				fprintf(stderr, "Max. io queues must be at least 2\n");
-				usage(argv[0]);
+				fprintf(stderr, "Number of io queues must be at least 2\n");
+				return -1;
+			}
+			if (val > NVMF_FC_MAX_IO_QUEUES) {
+				fprintf(stderr, "Number of io queues can't be greater than %d\n",
+					NVMF_FC_MAX_IO_QUEUES);
 				return -1;
 			}
 			fcport.max_io_queues = val;
@@ -1249,6 +1260,8 @@ int main(int argc, char **argv)
 			break;
 
 		default:
+			fprintf(stderr, "Invalid test number\n");
+			usage(argv[0]);
 			CU_cleanup_registry();
 			return -1;
 			break;

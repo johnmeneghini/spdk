@@ -229,6 +229,7 @@ nvmf_fc_ls_format_rjt(void *buf, uint16_t buflen, uint8_t ls_cmd,
 {
 	struct nvmf_fc_ls_rjt *rjt = buf;
 
+	bzero(buf, sizeof(struct nvmf_fc_ls_rjt));
 	nvmf_fc_ls_format_rsp_hdr(buf, FCNVME_LSDESC_RQST,
 				  nvmf_fc_lsdesc_len(sizeof(struct nvmf_fc_ls_rjt)),
 				  ls_cmd);
@@ -250,6 +251,7 @@ nvmf_fc_association_init(struct spdk_nvmf_bcm_fc_association *assoc)
 {
 	assoc->assoc_state = SPDK_NVMF_BCM_FC_OBJECT_ZOMBIE;
 
+#ifdef NVMF_FC_LS_SEND_LS_DISCONNECT
 	/* allocate rqst/resp buffers to send LS disconnect to initiator */
 	assoc->snd_disconn_bufs.rqst.virt = spdk_dma_malloc(
 			sizeof(struct nvmf_fc_ls_disconnect_rqst)  +
@@ -258,7 +260,7 @@ nvmf_fc_association_init(struct spdk_nvmf_bcm_fc_association *assoc)
 
 	if (assoc->snd_disconn_bufs.rqst.virt == NULL) {
 		SPDK_ERRLOG("***ERROR*** - no memory for send LS disconnect buffers");
-		spdk_abort();
+		assert("***ERROR*** - no memory for send LS disconnect buffers" == 1);
 	}
 
 	assoc->snd_disconn_bufs.rqst.phys = spdk_vtophys(
@@ -278,15 +280,18 @@ nvmf_fc_association_init(struct spdk_nvmf_bcm_fc_association *assoc)
 	assoc->snd_disconn_bufs.sgl.phys = assoc->snd_disconn_bufs.rsp.phys +
 					   sizeof(struct nvmf_fc_ls_rjt);
 	assoc->snd_disconn_bufs.sgl.len = 2 * sizeof(bcm_sge_t);
+#endif
 }
 
 static void
 nvmf_fc_association_fini(struct spdk_nvmf_bcm_fc_association *assoc)
 {
+#ifdef NVMF_FC_LS_SEND_LS_DISCONNECT
 	if (assoc->snd_disconn_bufs.rqst.virt) {
 		spdk_dma_free(assoc->snd_disconn_bufs.rqst.virt);
 		assoc->snd_disconn_bufs.rqst.virt = NULL;
 	}
+#endif
 }
 
 static struct spdk_nvmf_bcm_fc_association *
@@ -331,7 +336,9 @@ nvmf_fc_ls_new_association(uint32_t s_id,
 
 		TAILQ_INIT(&assoc->fc_conns);
 		assoc->ls_del_op_ctx = NULL;
+#ifdef NVMF_FC_LS_SEND_LS_DISCONNECT
 		assoc->snd_disconn_bufs.rpi = rpi;
+#endif
 
 		/* Back pointer to host specific controller configuration. */
 		assoc->host = host;
@@ -1371,6 +1378,7 @@ nvmf_fc_ls_process_disc(struct spdk_nvmf_bcm_fc_nport *tgtport,
 
 	else {
 		/* format response */
+		bzero(acc, sizeof(*acc));
 		ls_rqst->rsp_len = sizeof(*acc);
 
 		nvmf_fc_ls_format_rsp_hdr(acc, FCNVME_LS_ACC,
