@@ -47,8 +47,8 @@ include $(SPDK_ROOT_DIR)/mk/nvmf.unittest.mk
 
 #Rules for modules in nvmf_fc folder under nvmf folder
 #in order to compile the .o file into local directory.
-nvmf_fc_ls.o : $(SPDK_LIB_NVMF_FC_DIR)/nvmf_fc_ls.c 
+nvmf_fc_ls.o : $(SPDK_LIB_NVMF_FC_DIR)/nvmf_fc_ls.c
 	$(COMPILE_C)
 
-nvmf_fc_poller_api.o : $(SPDK_LIB_NVMF_FC_DIR)/nvmf_fc_poller_api.c 
+nvmf_fc_poller_api.o : $(SPDK_LIB_NVMF_FC_DIR)/nvmf_fc_poller_api.c
 	$(COMPILE_C)

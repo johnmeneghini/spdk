@@ -96,6 +96,7 @@ static int nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req);
 int spdk_nvmf_bcm_fc_create_reqtag_pool(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
 int spdk_nvmf_bcm_fc_issue_marker(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint64_t u_id,
 				  uint16_t skip_rq);
+bool spdk_nvmf_bcm_fc_req_in_xfer(struct spdk_nvmf_bcm_fc_request *fc_req);
 
 static inline uint16_t
 nvmf_fc_advance_conn_sqhead(struct spdk_nvmf_conn *conn)
@@ -467,8 +468,8 @@ nvmf_fc_req_in_get_buff(struct spdk_nvmf_bcm_fc_request *fc_req)
 	}
 }
 
-static inline bool
-nvmf_fc_req_in_xfer(struct spdk_nvmf_bcm_fc_request *fc_req)
+bool
+spdk_nvmf_bcm_fc_req_in_xfer(struct spdk_nvmf_bcm_fc_request *fc_req)
 {
 	switch (fc_req->state) {
 	case SPDK_NVMF_BCM_FC_REQ_READ_XFER:
@@ -614,7 +615,7 @@ spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 
 	/* If port is dead, skip abort wqe */
 	kill_req = nvmf_fc_is_port_dead(fc_req->hwqp);
-	if (kill_req && nvmf_fc_req_in_xfer(fc_req)) {
+	if (kill_req && spdk_nvmf_bcm_fc_req_in_xfer(fc_req)) {
 		fc_req->is_aborted = true;
 		goto complete;
 	}
@@ -630,7 +631,7 @@ spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 	if (nvmf_fc_req_in_bdev(fc_req)) {
 		/* Notify bdev */
 		nvmf_fc_req_bdev_abort(fc_req, NULL);
-	} else if (nvmf_fc_req_in_xfer(fc_req)) {
+	} else if (spdk_nvmf_bcm_fc_req_in_xfer(fc_req)) {
 		/* Notify hw */
 		spdk_nvmf_bcm_fc_issue_abort(fc_req->hwqp, fc_req->xri,
 					     send_abts, NULL, NULL);
