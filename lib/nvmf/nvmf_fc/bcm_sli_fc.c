@@ -837,6 +837,15 @@ nvmf_fc_post_wqe(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint8_t *entry, bool notify
 		goto error;
 	}
 
+	/* Make sure queue is online */
+	if (hwqp->state != SPDK_FC_HWQP_ONLINE) {
+		/*
+		SPDK_ERRLOG("%s queue is not online. WQE not posted. hwqp_id = %d type = %#x\n",
+			    __func__, hwqp->hwqp_id, wq->q.type);
+		 */
+		goto error;
+	}
+
 	/* Make sure queue is not full */
 	if (nvmf_fc_queue_full(&wq->q)) {
 		SPDK_ERRLOG("%s queue full. type = %#x\n", __func__, wq->q.type);
