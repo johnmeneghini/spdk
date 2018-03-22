@@ -65,6 +65,9 @@ void spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req, bool se
 void spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io,
 			void *ctx);
 
+void spdk_nvmf_bcm_fc_req_abort_complete(void *arg1, void *arg2);
+
+bool spdk_nvmf_bcm_fc_req_in_xfer(struct spdk_nvmf_bcm_fc_request *fc_req);
 
 void *
 spdk_dma_malloc(size_t size, size_t align, uint64_t *phys_addr)
@@ -1066,6 +1069,18 @@ spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io,
 		   void *ctx)
 {
 	return;
+}
+
+void
+spdk_nvmf_bcm_fc_req_abort_complete(void *arg1, void *arg2)
+{
+	return;
+}
+
+bool
+spdk_nvmf_bcm_fc_req_in_xfer(struct spdk_nvmf_bcm_fc_request *fc_req)
+{
+	return false;
 }
 
 static void

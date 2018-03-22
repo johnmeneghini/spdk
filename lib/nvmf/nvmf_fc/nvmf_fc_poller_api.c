@@ -54,6 +54,10 @@ spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req, bool send_ab
 void
 nvmf_fc_poller_queue_sync_done(void *arg1, void *arg2);
 
+extern void spdk_nvmf_bcm_fc_req_abort_complete(void *arg1, void *arg2);
+
+extern bool spdk_nvmf_bcm_fc_req_in_xfer(struct spdk_nvmf_bcm_fc_request *fc_req);
+
 static void
 nvmf_fc_poller_api_cb_event(void *arg1, void *arg2)
 {
@@ -127,9 +131,27 @@ nvmf_fc_poller_api_quiesce_queue(void *arg1, void *arg2)
 {
 	struct spdk_nvmf_bcm_fc_poller_api_quiesce_queue_args *q_args =
 		(struct spdk_nvmf_bcm_fc_poller_api_quiesce_queue_args *) arg1;
+	struct spdk_nvmf_bcm_fc_request *fc_req = NULL, *tmp;
+	struct spdk_event *event = NULL;
 
 	/* should be already, but make sure queue is quiesced */
 	q_args->hwqp->state = SPDK_FC_HWQP_OFFLINE;
+
+	/*
+	 * Kill all the outstanding commands that are in the transfer state and
+	 * in the process of being aborted.
+	 * We can run into this situation if an adapter reset happens when an IT delete
+	 * is in progress.
+	 */
+	TAILQ_FOREACH_SAFE(fc_req, &q_args->hwqp->in_use_reqs, link, tmp) {
+		if (spdk_nvmf_bcm_fc_req_in_xfer(fc_req) && fc_req->is_aborted == true) {
+			event = spdk_event_allocate(fc_req->poller_lcore,
+						    spdk_nvmf_bcm_fc_req_abort_complete, (void *)fc_req, NULL);
+			spdk_post_event(fc_req->hwqp->context, event);
+
+		}
+	}
+
 	/* perform callback */
 	nvmf_fc_poller_api_perform_cb(&q_args->cb_info, 0);
 }
@@ -141,6 +163,7 @@ nvmf_fc_poller_api_activate_queue(void *arg1, void *arg2)
 		(struct spdk_nvmf_bcm_fc_poller_api_quiesce_queue_args *) arg1;
 
 	q_args->hwqp->state = SPDK_FC_HWQP_ONLINE;
+
 	/* perform callback */
 	nvmf_fc_poller_api_perform_cb(&q_args->cb_info, 0);
 }
