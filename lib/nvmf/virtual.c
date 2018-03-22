@@ -506,8 +506,9 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 	}
 
 	io_bytes = llen * bdev->blocklen;
-	if (io_bytes > req->length) {
-		SPDK_ERRLOG("Read/Write NLB > SGL length\n");
+	if (io_bytes != req->length) {
+		SPDK_ERRLOG("Read/Write NLB length(%ld) != SGL length(%d)\n", io_bytes, req->length);
+		response->status.dnr = 1;
 		response->status.sc = SPDK_NVME_SC_DATA_SGL_LENGTH_INVALID;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
