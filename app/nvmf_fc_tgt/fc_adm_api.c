@@ -1987,6 +1987,9 @@ nvmf_fc_abts_recv(void *arg1, void *arg2)
 	struct spdk_nvmf_bcm_fc_nport *nport   = NULL;
 	spdk_err_t                     err     = SPDK_SUCCESS;
 
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "FC ABTS received. RPI:%d, oxid:%d, rxid:%d\n", args->rpi,
+		      args->oxid, args->rxid);
+
 	/*
 	 * 1. Make sure the nport port exists.
 	 */
@@ -1998,13 +2001,23 @@ nvmf_fc_abts_recv(void *arg1, void *arg2)
 	}
 
 	/*
-	 * 2. Pass the received ABTS-LS to the library for handling.
+	 * 2. If the nport is in the process of being deleted, drop the ABTS.
+	 */
+	if (nport->nport_state == SPDK_NVMF_BCM_FC_OBJECT_TO_BE_DELETED) {
+		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM,
+			      "FC ABTS dropped because the nport is being deleted; RPI:%d, oxid:%d, rxid:%d\n",
+			      args->rpi, args->oxid, args->rxid);
+		err = SPDK_SUCCESS;
+		goto out;
+
+	}
+
+	/*
+	 * 3. Pass the received ABTS-LS to the library for handling.
 	 */
 	spdk_nvmf_bcm_fc_handle_abts_frame(nport, args->rpi, args->oxid, args->rxid);
 
 out:
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_ADM, "FC ABTS received. RPI:%d, oxid:%d, rxid:%d\n", args->rpi,
-		      args->oxid, args->rxid);
 	if (cb_func != NULL) {
 		/*
 		 * Passing pointer to the args struct as the first argument.
