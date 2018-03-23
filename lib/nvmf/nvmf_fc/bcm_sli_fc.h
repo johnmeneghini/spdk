@@ -388,6 +388,8 @@ typedef struct fc_abts_ctx {
 	uint16_t oxid;
 	uint16_t rxid;
 	struct spdk_nvmf_bcm_fc_nport *nport;
+	uint16_t nport_hdl;
+	uint8_t port_hdl;
 	void *abts_poller_args;
 	void *sync_poller_args;
 	int num_hwqps;

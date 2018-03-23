@@ -275,6 +275,7 @@ static void
 nvmf_fc_abts_handled_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
 {
 	fc_abts_ctx_t *ctx = cb_data;
+	struct spdk_nvmf_bcm_fc_nport *nport  = NULL;
 
 	if (ret != SPDK_NVMF_BCM_FC_POLLER_API_OXID_NOT_FOUND) {
 		ctx->handled = true;
@@ -283,11 +284,21 @@ nvmf_fc_abts_handled_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
 	ctx->hwqps_responded ++;
 
 	if (ctx->hwqps_responded < ctx->num_hwqps) {
-		return; /* Wait for all pollers to complete. */
+		/* Wait for all pollers to complete. */
+		return;
 	}
 
-	if (!ctx->handled) {
-		/* Try syncing the queues and try one moretime */
+	nport = spdk_nvmf_bcm_fc_nport_get(ctx->port_hdl, ctx->nport_hdl);
+
+	if (!(nport && ctx->nport == nport)) {
+		/* Nport can be deleted while this abort is being
+		 * processed by the pollers.
+		 */
+		SPDK_NOTICELOG("nport_%d deleted while processing ABTS frame, rpi: 0x%x, oxid: 0x%x, rxid: 0x%x\n",
+			       ctx->nport_hdl, ctx->rpi, ctx->oxid, ctx->rxid);
+		goto out;
+	} else if (!ctx->handled) {
+		/* Try syncing the queues and try one more time */
 		if (!ctx->queue_synced && (nvmf_fc_handle_abts_notfound(ctx) == 0)) {
 
 			SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
@@ -308,6 +319,7 @@ nvmf_fc_abts_handled_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
 	}
 	SPDK_NOTICELOG("BLS_%s sent for ABTS frame nport: %d, rpi: 0x%x, oxid: 0x%x, rxid: 0x%x\n",
 		       (ctx->handled) ? "ACC" : "REJ", ctx->nport->nport_hdl, ctx->rpi, ctx->oxid, ctx->rxid);
+out:
 
 	free(ctx->abts_poller_args);
 	free(ctx);
@@ -369,6 +381,8 @@ spdk_nvmf_bcm_fc_handle_abts_frame(struct spdk_nvmf_bcm_fc_nport *nport, uint16_
 	ctx->oxid	= oxid;
 	ctx->rxid	= rxid;
 	ctx->nport	= nport;
+	ctx->nport_hdl  = nport->nport_hdl;
+	ctx->port_hdl   = nport->fc_port->port_hdl;
 	ctx->num_hwqps	= hwqp_cnt;
 	ctx->ls_hwqp 	= &nport->fc_port->ls_queue;
 	ctx->fcp_rq_id  = nport->fc_port->fcp_rq_id;
