@@ -557,7 +557,7 @@ nvmf_fc_handle_xmt_ls_rsp_failure(struct spdk_nvmf_bcm_fc_association *assoc,
 				  bool assoc_conn)
 {
 	struct nvmf_fc_ls_del_conn_api_data *api_data;
-	union nvmf_fc_ls_op_ctx *opd = nvmf_fc_ls_new_op_ctx();
+	union nvmf_fc_ls_op_ctx *opd = NULL;
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Transmit LS response failure "
 		      "for assoc_id 0x%lx conn_id 0x%lx\n", assoc->assoc_id,

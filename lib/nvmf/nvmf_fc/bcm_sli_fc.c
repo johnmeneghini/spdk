@@ -2144,6 +2144,7 @@ spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	uint8_t eqe[sizeof(eqe_t)] = { 0 };
 	uint16_t cq_id;
 	struct fc_eventq *eq;
+	bool pending_req_processed = false;
 
 	assert(hwqp);
 	eq = &hwqp->queues.eq;
@@ -2172,6 +2173,7 @@ spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 				 */
 				nvmf_fc_process_pending_ls_rqst(hwqp);
 				nvmf_fc_process_pending_req(hwqp);
+				pending_req_processed = true;
 			} else if (cq_id == hwqp->queues.cq_rq.q.qid) {
 				nvmf_fc_process_cq_entry(hwqp, &hwqp->queues.cq_rq);
 			} else {
@@ -2189,6 +2191,10 @@ spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 		if (!budget || (hwqp->state == SPDK_FC_HWQP_OFFLINE)) {
 			break;
 		}
+	}
+
+	if (!pending_req_processed) {
+		nvmf_fc_process_pending_req(hwqp);
 	}
 
 	if (n_processed) {
