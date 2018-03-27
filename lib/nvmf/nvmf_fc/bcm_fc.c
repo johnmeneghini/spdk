@@ -436,7 +436,7 @@ spdk_nvmf_bcm_fc_get_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	 * corresponding ring. Send this back.
 	 */
 	if (0 == spdk_ring_dequeue(hwqp->fc_port->xri_ring, (void **)&xri, 1)) {
-		SPDK_ERRLOG("Not enough XRIs available in the ring. Sizing messed up\n");
+		/* This code path can be hit thousands of times.  This is not an error */
 		hwqp->counters.no_xri++;
 		return NULL;
 	}
