@@ -257,6 +257,7 @@ struct spdk_nvmf_bcm_fc_port {
 	uint32_t xri_count;
 	uint16_t fcp_rq_id;
 	struct spdk_ring *xri_ring;
+	struct spdk_nvmf_bcm_fc_xri *xri_elem_pool;
 	struct spdk_nvmf_bcm_fc_hwqp ls_queue;
 	uint32_t max_io_queues;
 	struct spdk_nvmf_bcm_fc_hwqp io_queues[NVMF_FC_MAX_IO_QUEUES];
