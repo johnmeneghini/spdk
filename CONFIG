@@ -78,7 +78,7 @@ CONFIG_RDMA?=y
 CONFIG_BCM_FC?=y
 
 # Enable Broadcom FC driver (requires CONFIG_BCM_FC=y)
-CONFIG_BCM_FC_DRV?=y
+CONFIG_BCM_FC_DRV?=n
 
 # Build Ceph RBD support in bdev modules
 # Requires librbd development libraries
