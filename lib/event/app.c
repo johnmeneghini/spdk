@@ -119,7 +119,7 @@ spdk_app_start(struct spdk_app_opts *opts, spdk_event_fn start_fn,
 
 	if (!opts) {
 		SPDK_ERRLOG("opts should not be NULL\n");
-		exit(EXIT_FAILURE);
+		return EXIT_FAILURE;
 	}
 
 #ifndef SPDK_NO_RLIMIT
@@ -138,12 +138,12 @@ spdk_app_start(struct spdk_app_opts *opts, spdk_event_fn start_fn,
 		if (rc != 0) {
 			SPDK_ERRLOG("Could not read config file %s\n", opts->config_file);
 			spdk_conf_free(config);
-			exit(EXIT_FAILURE);
+			return EXIT_FAILURE;
 		}
 		if (spdk_conf_first_section(config) == NULL) {
 			SPDK_ERRLOG("Invalid config file %s\n", opts->config_file);
 			spdk_conf_free(config);
-			exit(EXIT_FAILURE);
+			return EXIT_FAILURE;
 		}
 	}
 	spdk_conf_set_as_default(config);
@@ -196,7 +196,7 @@ spdk_app_start(struct spdk_app_opts *opts, spdk_event_fn start_fn,
 	if (spdk_reactors_init(opts->max_delay_us)) {
 		SPDK_ERRLOG("Invalid reactor mask.\n");
 		spdk_conf_free(g_spdk_app.config);
-		exit(EXIT_FAILURE);
+		return EXIT_FAILURE;
 	}
 
 	/* setup signal handler thread */
@@ -209,7 +209,7 @@ spdk_app_start(struct spdk_app_opts *opts, spdk_event_fn start_fn,
 	if (rc < 0) {
 		SPDK_ERRLOG("sigaction(SIGPIPE) failed\n");
 		spdk_conf_free(g_spdk_app.config);
-		exit(EXIT_FAILURE);
+		return EXIT_FAILURE;
 	}
 
 	if (opts->shutdown_cb != NULL) {
@@ -223,7 +223,7 @@ spdk_app_start(struct spdk_app_opts *opts, spdk_event_fn start_fn,
 		if (rc < 0) {
 			SPDK_ERRLOG("sigaction(SIGINT) failed\n");
 			spdk_conf_free(g_spdk_app.config);
-			exit(EXIT_FAILURE);
+			return EXIT_FAILURE;
 		}
 		sigaddset(&signew, SIGINT);
 
@@ -233,7 +233,7 @@ spdk_app_start(struct spdk_app_opts *opts, spdk_event_fn start_fn,
 		if (rc < 0) {
 			SPDK_ERRLOG("sigaction(SIGTERM) failed\n");
 			spdk_conf_free(g_spdk_app.config);
-			exit(EXIT_FAILURE);
+			return EXIT_FAILURE;
 		}
 		sigaddset(&signew, SIGTERM);
 	}
@@ -245,7 +245,7 @@ spdk_app_start(struct spdk_app_opts *opts, spdk_event_fn start_fn,
 		if (rc < 0) {
 			SPDK_ERRLOG("sigaction(SIGUSR1) failed\n");
 			spdk_conf_free(g_spdk_app.config);
-			exit(EXIT_FAILURE);
+			return EXIT_FAILURE;
 		}
 		sigaddset(&signew, SIGUSR1);
 	}

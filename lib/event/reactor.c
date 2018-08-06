@@ -653,7 +653,8 @@ spdk_poller_register(struct spdk_poller **ppoller, spdk_poller_fn fn, void *arg,
 	poller = calloc(1, sizeof(*poller));
 	if (poller == NULL) {
 		SPDK_ERRLOG("Poller memory allocation failed\n");
-		abort();
+		assert(false);
+		return;
 	}
 
 	poller->lcore = lcore;
@@ -669,13 +670,15 @@ spdk_poller_register(struct spdk_poller **ppoller, spdk_poller_fn fn, void *arg,
 
 	if (*ppoller != NULL) {
 		SPDK_ERRLOG("Attempted reuse of poller pointer\n");
-		abort();
+		assert(false);
+		return;
 	}
 
 	if (lcore >= SPDK_MAX_REACTORS) {
 		SPDK_ERRLOG("Attempted to use lcore %u which is larger than max lcore %u\n",
 			    lcore, SPDK_MAX_REACTORS - 1);
-		abort();
+		assert(false);
+		return;
 	}
 
 	*ppoller = poller;
