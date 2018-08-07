@@ -49,10 +49,10 @@ else
 	#       But sometimes after all the work of provisioning, we can't
 	#       get the requested number of hugepages without rebooting.
 	#       So do it here just in case
-	sysctl -w vm.nr_hugepages=1024
+	sysctl -w vm.nr_hugepages=8192
 	HUGEPAGES=`sysctl -n  vm.nr_hugepages`
-	if [ $HUGEPAGES != 1024 ]; then
-		echo "Warning: Unable to get 1024 hugepages, only got $HUGEPAGES"
+	if [ $HUGEPAGES != 8192 ]; then
+		echo "Warning: Unable to get 8192 hugepages, only got $HUGEPAGES"
 		echo "Warning: Adjusting HUGEMEM in /home/vagrant/autorun-spdk.conf"
 		sed "s/HUGEMEM=.*$/HUGEMEM=${HUGEPAGES}/g" /home/vagrant/autorun-spdk.conf > /home/vagrant/foo.conf
 		mv -f /home/vagrant/foo.conf /home/vagrant/autorun-spdk.conf
