@@ -168,6 +168,7 @@ nvmf_virtual_ctrlr_get_data(struct spdk_nvmf_session *session)
 	session->vcdata.cqes.max = 0x04;
 	session->vcdata.maxcmd = g_nvmf_tgt.opts.max_io_queue_depth;
 	session->vcdata.nn = MAX_VIRTUAL_NAMESPACE;
+	/* TODO: Madhu - Check if the next two lines are Ok. in our env. */
 	session->vcdata.vwc.present = 1;
 	session->vcdata.sgls.supported = 1;
 	strncpy((char *)session->vcdata.subnqn, session->subsys->subnqn, sizeof(session->vcdata.subnqn));
@@ -701,7 +702,7 @@ nvmf_virtual_ctrlr_process_io_cmd(struct spdk_nvmf_request *req)
 	uint32_t nsid;
 	struct spdk_bdev *bdev;
 	struct spdk_bdev_desc *desc;
-	struct spdk_io_channel *ch;
+	struct spdk_io_channel *ch = NULL;
 	struct spdk_nvmf_subsystem *subsystem = req->conn->sess->subsys;
 	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
 	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
@@ -723,22 +724,7 @@ nvmf_virtual_ctrlr_process_io_cmd(struct spdk_nvmf_request *req)
 	}
 
 	desc = subsystem->dev.virt.desc[nsid - 1];
-	struct spdk_io_channel **nsid_ch = subsystem->dev.virt.ch[nsid - 1];
-	if (nsid_ch == NULL) {
-		nsid_ch = subsystem->dev.virt.ch[nsid - 1] = calloc(spdk_env_get_core_count(),
-				sizeof(struct spdk_io_channel *));
-		ch = subsystem->dev.virt.ch[nsid - 1][spdk_env_get_current_core()] = spdk_bdev_get_io_channel(
-					subsystem->dev.virt.desc[nsid - 1]);
-	}
-	if (nsid_ch[spdk_env_get_current_core()] == NULL) {
-		nsid_ch[spdk_env_get_current_core()] = spdk_bdev_get_io_channel(subsystem->dev.virt.desc[nsid - 1]);
-		if (nsid_ch[spdk_env_get_current_core()] == NULL) {
-			SPDK_ERRLOG("io_channel allocation failed\n");
-			response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
-			return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_ERROR;
-		}
-	}
-	ch = nsid_ch[spdk_env_get_current_core()];
+
 	switch (cmd->opc) {
 	case SPDK_NVME_OPC_READ:
 	case SPDK_NVME_OPC_WRITE:
@@ -829,17 +815,10 @@ nvmf_virtual_ctrlr_attach(struct spdk_nvmf_subsystem *subsystem)
 static void
 nvmf_virtual_ctrlr_detach(struct spdk_nvmf_subsystem *subsystem)
 {
-	uint32_t i, j;
+	uint32_t i;
 
 	for (i = 0; i < subsystem->dev.virt.max_nsid; i++) {
 		if (subsystem->dev.virt.ns_list[i]) {
-			if (subsystem->dev.virt.ch[i] != NULL) {
-				SPDK_ENV_FOREACH_CORE(j) {
-					if (subsystem->dev.virt.ch[i][j] != NULL) {
-						spdk_put_io_channel(subsystem->dev.virt.ch[i][j]);
-					}
-				}
-			}
 			spdk_bdev_close(subsystem->dev.virt.desc[i]);
 			subsystem->dev.virt.ch[i] = NULL;
 			subsystem->dev.virt.ns_list[i] = NULL;

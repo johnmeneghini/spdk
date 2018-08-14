@@ -405,6 +405,8 @@ spdk_nvmf_bcm_fc_handle_abts_frame(struct spdk_nvmf_bcm_fc_nport *nport, uint16_
 
 	return;
 bls_rej:
+	/* TODO: Madhu - Where did this code come from??
+	 * Not present in dev or KB */
 	if (ctx) {
 		free(ctx);
 	}

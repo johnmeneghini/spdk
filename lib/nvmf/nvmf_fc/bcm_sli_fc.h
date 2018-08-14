@@ -314,6 +314,9 @@ typedef struct bcm_bde {
 } bcm_bde_t;
 
 /* FS-5 FC frame NVME header */
+/* TODO: Madhu - why was __be32 changed to uint32_t all over
+ * here? Messes up merges with Brcm.
+ */
 typedef struct fc_frame_hdr {
 	uint32_t 	r_ctl: 8,
 			d_id: 24;

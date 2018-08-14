@@ -619,6 +619,7 @@ spdk_nvmf_subsystem_add_ns(struct spdk_nvmf_subsystem *subsystem, struct spdk_bd
 		}
 	}
 
+	/* TODO: Madhu - check if this works okay for NS unmap w/ hot_remove cb. */
 	rc = spdk_bdev_open(bdev, true, spdk_nvmf_ctrlr_hot_remove, subsystem,
 			    &subsystem->dev.virt.desc[i]);
 	if (rc != 0) {

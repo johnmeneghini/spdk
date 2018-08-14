@@ -333,7 +333,7 @@ spdk_nvmf_session_connect(struct spdk_nvmf_conn *conn,
 		return;
 	}
 
-	subsystem = spdk_nvmf_find_subsystem(data->subnqn);
+	subsystem = spdk_nvmf_find_subsystem((const char *)data->subnqn);
 
 	if (subsystem == NULL) {
 		SPDK_ERRLOG("Could not find subsystem '%s'\n", data->subnqn);

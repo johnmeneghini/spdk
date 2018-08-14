@@ -303,7 +303,7 @@ spdk_nvmf_bcm_fc_create_reqtag_pool(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	snprintf(name, sizeof(name), "NVMF_FC_REQTAG_POOL:%d", unique_number);
 
 	/* Create reqtag ring */
-	wq->reqtag_ring = spdk_ring_create(SPDK_RING_TYPE_MP_SC, (MAX_REQTAG_POOL_SIZE + 1),
+	wq->reqtag_ring = spdk_ring_create(SPDK_RING_TYPE_MP_MC, (MAX_REQTAG_POOL_SIZE + 1),
 					   SPDK_ENV_SOCKET_ID_ANY);
 	if (!wq->reqtag_ring) {
 		SPDK_ERRLOG("create fc reqtag ring failed\n");

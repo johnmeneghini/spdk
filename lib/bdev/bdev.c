@@ -209,7 +209,15 @@ spdk_bdev_get_by_name(const char *bdev_name)
 	struct spdk_bdev *bdev = spdk_bdev_first();
 
 	while (bdev != NULL) {
-		if (strcmp(bdev_name, bdev->name) == 0) {
+		/* TODO: Madhu. This actually, needs to be fixed properly.
+		 * In blockdev_create_wafl_ns, the size of 64 is used as
+		 * the maximum value for creating the bdev->name.
+		 * We should do a strncmp here with 64. Actually need
+		 * to add a common #define that can be used between blockdev_wafl
+		 * and this file.
+		 */
+		if (strncmp(bdev_name, bdev->name, 64) == 0) {
+
 			return bdev;
 		}
 		bdev = spdk_bdev_next(bdev);
@@ -454,35 +462,35 @@ spdk_bdev_initialize(spdk_bdev_init_cb cb_fn, void *cb_arg,
 			spdk_bdev_module_init_complete(-1);
 			return;
 		}
-	}
 
-	/**
-	 * Ensure no more than half of the total buffers end up local caches, by
-	 *   using spdk_env_get_core_count() to determine how many local caches we need
-	 *   to account for.
-	 */
-	cache_size = BUF_SMALL_POOL_SIZE / (2 * spdk_env_get_core_count());
-	g_bdev_mgr.buf_small_pool = spdk_mempool_create("buf_small_pool",
-				    BUF_SMALL_POOL_SIZE,
-				    SPDK_BDEV_SMALL_BUF_MAX_SIZE + 512,
-				    cache_size,
-				    SPDK_ENV_SOCKET_ID_ANY);
-	if (!g_bdev_mgr.buf_small_pool) {
-		SPDK_ERRLOG("create rbuf small pool failed\n");
-		spdk_bdev_module_init_complete(-1);
-		return;
-	}
+		/**
+		 * Ensure no more than half of the total buffers end up local caches, by
+		 *   using spdk_env_get_core_count() to determine how many local caches we need
+		 *   to account for.
+		 */
+		cache_size = BUF_SMALL_POOL_SIZE / (2 * spdk_env_get_core_count());
+		g_bdev_mgr.buf_small_pool = spdk_mempool_create("buf_small_pool",
+					    BUF_SMALL_POOL_SIZE,
+					    SPDK_BDEV_SMALL_BUF_MAX_SIZE + 512,
+					    cache_size,
+					    SPDK_ENV_SOCKET_ID_ANY);
+		if (!g_bdev_mgr.buf_small_pool) {
+			SPDK_ERRLOG("create rbuf small pool failed\n");
+			spdk_bdev_module_init_complete(-1);
+			return;
+		}
 
-	cache_size = BUF_LARGE_POOL_SIZE / (2 * spdk_env_get_core_count());
-	g_bdev_mgr.buf_large_pool = spdk_mempool_create("buf_large_pool",
-				    BUF_LARGE_POOL_SIZE,
-				    SPDK_BDEV_LARGE_BUF_MAX_SIZE + 512,
-				    cache_size,
-				    SPDK_ENV_SOCKET_ID_ANY);
-	if (!g_bdev_mgr.buf_large_pool) {
-		SPDK_ERRLOG("create rbuf large pool failed\n");
-		spdk_bdev_module_init_complete(-1);
-		return;
+		cache_size = BUF_LARGE_POOL_SIZE / (2 * spdk_env_get_core_count());
+		g_bdev_mgr.buf_large_pool = spdk_mempool_create("buf_large_pool",
+					    BUF_LARGE_POOL_SIZE,
+					    SPDK_BDEV_LARGE_BUF_MAX_SIZE + 512,
+					    cache_size,
+					    SPDK_ENV_SOCKET_ID_ANY);
+		if (!g_bdev_mgr.buf_large_pool) {
+			SPDK_ERRLOG("create rbuf large pool failed\n");
+			spdk_bdev_module_init_complete(-1);
+			return;
+		}
 	}
 
 #ifdef SPDK_CONFIG_VTUNE
@@ -521,11 +529,11 @@ spdk_bdev_finish(void)
 				    BUF_LARGE_POOL_SIZE);
 			assert(false);
 		}
-	}
 
-	spdk_mempool_free(g_bdev_mgr.bdev_io_pool);
-	spdk_mempool_free(g_bdev_mgr.buf_small_pool);
-	spdk_mempool_free(g_bdev_mgr.buf_large_pool);
+		spdk_mempool_free(g_bdev_mgr.bdev_io_pool);
+		spdk_mempool_free(g_bdev_mgr.buf_small_pool);
+		spdk_mempool_free(g_bdev_mgr.buf_large_pool);
+	}
 
 	spdk_io_device_unregister(&g_bdev_mgr, NULL);
 
@@ -591,6 +599,7 @@ __submit_request(struct spdk_bdev *bdev, struct spdk_bdev_io *bdev_io)
 
 	assert(bdev_io->status == SPDK_BDEV_IO_STATUS_PENDING);
 
+	/* TODO: Madhu - Need tocheck if ch can be NULL Maybe remove below 2 lines */
 	ch = bdev_io->ch->channel;
 
 	bdev_io->ch->io_outstanding++;
@@ -1276,6 +1285,9 @@ spdk_bdev_io_complete(struct spdk_bdev_io *bdev_io, enum spdk_bdev_io_status sta
 		 * Defer completion to avoid potential infinite recursion if the
 		 * user's completion callback issues a new I/O.
 		 */
+		/* TODO: Madhu - This will blow up!! In general spdk_thread_send_msg
+		 * is not easy to manage. We don't have the infra for this. */
+		/* We have to do the post_event here. */
 		spdk_thread_send_msg(spdk_io_channel_get_thread(bdev_io->ch->channel),
 				     _spdk_bdev_io_complete, bdev_io);
 	} else {
