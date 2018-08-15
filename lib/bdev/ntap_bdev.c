@@ -1,8 +1,7 @@
 /*-
  *   BSD LICENSE
  *
- *   Copyright (C) 2008-2012 Daisuke Aoyama <aoyama@peach.ne.jp>.
- *   Copyright (c) Intel Corporation.
+ *   Copyright (c) Netapp.
  *   All rights reserved.
  *
  *   Redistribution and use in source and binary forms, with or without
