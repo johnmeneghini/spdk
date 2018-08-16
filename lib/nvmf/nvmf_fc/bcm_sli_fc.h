@@ -39,6 +39,8 @@
 #ifndef __BCM_SLI_FC_H__
 #define __BCM_SLI_FC_H__
 
+#include "spdk/stdinc.h"
+
 #define BCM_MAJOR_CODE_STANDARD 0
 #define BCM_MAJOR_CODE_SENTINEL 1
 
@@ -314,22 +316,19 @@ typedef struct bcm_bde {
 } bcm_bde_t;
 
 /* FS-5 FC frame NVME header */
-/* TODO: Madhu - why was __be32 changed to uint32_t all over
- * here? Messes up merges with Brcm.
- */
 typedef struct fc_frame_hdr {
-	uint32_t 	r_ctl: 8,
-			d_id: 24;
-	uint32_t  cs_ctl: 8,
-		  s_id: 24;
-	uint32_t  type: 8,
-		  f_ctl: 24;
-	uint32_t  seq_id: 8,
-		  df_ctl: 8,
-		  seq_cnt: 16;
-	uint32_t  ox_id: 16,
-		  rx_id: 16;
-	uint32_t parameter;
+	__be32 	r_ctl: 8,
+		d_id: 24;
+	__be32  cs_ctl: 8,
+		s_id: 24;
+	__be32  type: 8,
+		f_ctl: 24;
+	__be32  seq_id: 8,
+		df_ctl: 8,
+		seq_cnt: 16;
+	__be32  ox_id: 16,
+		rx_id: 16;
+	__be32 parameter;
 
 } fc_frame_hdr_t;
 

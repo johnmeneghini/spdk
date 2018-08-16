@@ -34,6 +34,8 @@
 #ifndef __FC_NVME_H__
 #define __FC_NVME_H__
 
+#include "spdk/stdinc.h"
+
 /*
  * FC-NVMe Spec. Definitions
  */
@@ -159,10 +161,10 @@ struct nvmf_fc_ls_rqst_w0 {
  * LS request information descriptor
  */
 struct nvmf_fc_lsdesc_rqst {
-	uint32_t desc_tag;		/* FCNVME_LSDESC_xxx */
-	uint32_t desc_len;
+	__be32 desc_tag;		/* FCNVME_LSDESC_xxx */
+	__be32 desc_len;
 	struct nvmf_fc_ls_rqst_w0 w0;
-	uint32_t rsvd12;
+	__be32 rsvd12;
 };
 
 /*
@@ -170,7 +172,7 @@ struct nvmf_fc_lsdesc_rqst {
  */
 struct nvmf_fc_ls_acc_hdr {
 	struct nvmf_fc_ls_rqst_w0 w0;
-	uint32_t desc_list_len;
+	__be32 desc_list_len;
 	struct nvmf_fc_lsdesc_rqst rqst;
 	/* Followed by cmd-specific ACC descriptors, see next definitions */
 };
@@ -207,32 +209,32 @@ enum {
  * LS descriptor connection id
  */
 struct nvmf_fc_lsdesc_conn_id {
-	uint32_t desc_tag;
-	uint32_t desc_len;
-	uint64_t connection_id;
+	__be32 desc_tag;
+	__be32 desc_len;
+	__be64 connection_id;
 };
 
 /*
  * LS decriptor association id
  */
 struct nvmf_fc_lsdesc_assoc_id {
-	uint32_t desc_tag;
-	uint32_t desc_len;
-	uint64_t association_id;
+	__be32 desc_tag;
+	__be32 desc_len;
+	__be64 association_id;
 };
 
 /*
  * LS Create Association descriptor
  */
 struct nvmf_fc_lsdesc_cr_assoc_cmd {
-	uint32_t  desc_tag;
-	uint32_t  desc_len;
-	uint16_t  ersp_ratio;
-	uint16_t  rsvd10;
-	uint32_t  rsvd12[9];
-	uint16_t  cntlid;
-	uint16_t  sqsize;
-	uint32_t  rsvd52;
+	__be32  desc_tag;
+	__be32  desc_len;
+	__be16  ersp_ratio;
+	__be16  rsvd10;
+	__be32  rsvd12[9];
+	__be16  cntlid;
+	__be16  sqsize;
+	__be32  rsvd52;
 	uint8_t hostid[FCNVME_ASSOC_HOSTID_LEN];
 	uint8_t hostnqn[FCNVME_ASSOC_HOSTNQN_LEN];
 	uint8_t subnqn[FCNVME_ASSOC_SUBNQN_LEN];
@@ -244,7 +246,7 @@ struct nvmf_fc_lsdesc_cr_assoc_cmd {
  */
 struct nvmf_fc_ls_cr_assoc_rqst {
 	struct nvmf_fc_ls_rqst_w0 w0;
-	uint32_t desc_list_len;
+	__be32 desc_list_len;
 	struct nvmf_fc_lsdesc_cr_assoc_cmd assoc_cmd;
 };
 
@@ -261,14 +263,14 @@ struct nvmf_fc_ls_cr_assoc_acc {
  * LS Create IO Connection descriptor
  */
 struct nvmf_fc_lsdesc_cr_conn_cmd {
-	uint32_t desc_tag;
-	uint32_t desc_len;
-	uint16_t ersp_ratio;
-	uint16_t rsvd10;
-	uint32_t rsvd12[9];
-	uint16_t qid;
-	uint16_t sqsize;
-	uint32_t rsvd52;
+	__be32 desc_tag;
+	__be32 desc_len;
+	__be16 ersp_ratio;
+	__be16 rsvd10;
+	__be32 rsvd12[9];
+	__be16 qid;
+	__be16 sqsize;
+	__be32 rsvd52;
 };
 
 /*
@@ -276,7 +278,7 @@ struct nvmf_fc_lsdesc_cr_conn_cmd {
  */
 struct nvmf_fc_ls_cr_conn_rqst {
 	struct nvmf_fc_ls_rqst_w0 w0;
-	uint32_t desc_list_len;
+	__be32 desc_list_len;
 	struct nvmf_fc_lsdesc_assoc_id assoc_id;
 	struct nvmf_fc_lsdesc_cr_conn_cmd connect_cmd;
 };
@@ -293,12 +295,12 @@ struct nvmf_fc_ls_cr_conn_acc {
  * LS Disconnect descriptor
  */
 struct nvmf_fc_lsdesc_disconn_cmd {
-	uint32_t desc_tag;
-	uint32_t desc_len;
-	uint32_t rsvd8;
-	uint32_t rsvd12;
-	uint32_t rsvd16;
-	uint32_t rsvd20;
+	__be32 desc_tag;
+	__be32 desc_len;
+	__be32 rsvd8;
+	__be32 rsvd12;
+	__be32 rsvd16;
+	__be32 rsvd20;
 };
 
 /*
@@ -306,7 +308,7 @@ struct nvmf_fc_lsdesc_disconn_cmd {
  */
 struct nvmf_fc_ls_disconnect_rqst {
 	struct nvmf_fc_ls_rqst_w0 w0;
-	uint32_t desc_list_len;
+	__be32 desc_list_len;
 	struct nvmf_fc_lsdesc_assoc_id assoc_id;
 	struct nvmf_fc_lsdesc_disconn_cmd disconn_cmd;
 };
@@ -322,15 +324,15 @@ struct nvmf_fc_ls_disconnect_acc {
  * LS Reject descriptor
  */
 struct nvmf_fc_lsdesc_rjt {
-	uint32_t desc_tag;
-	uint32_t desc_len;
+	__be32 desc_tag;
+	__be32 desc_len;
 	uint8_t rsvd8;
 
 	uint8_t reason_code;
 	uint8_t reason_explanation;
 
 	uint8_t vendor;
-	uint32_t 	rsvd12;
+	__be32 	rsvd12;
 };
 
 /*
@@ -338,7 +340,7 @@ struct nvmf_fc_lsdesc_rjt {
  */
 struct nvmf_fc_ls_rjt {
 	struct nvmf_fc_ls_rqst_w0 w0;
-	uint32_t desc_list_len;
+	__be32 desc_list_len;
 	struct nvmf_fc_lsdesc_rqst rqst;
 	struct nvmf_fc_lsdesc_rjt rjt;
 };

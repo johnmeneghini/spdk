@@ -47,6 +47,7 @@
 #include "spdk/endian.h"
 #include "spdk/error.h"
 #include "spdk_internal/log.h"
+#include "spdk/stdinc.h"
 
 #include "bcm_fc.h"
 
@@ -179,18 +180,18 @@ union nvmf_fc_ls_op_ctx {
 #define be16_to_cpu(i) from_be16((i))
 #define be64_to_cpu(i) from_be64((i))
 
-static inline uint32_t cpu_to_be32(uint32_t in)
+static inline __be32 cpu_to_be32(uint32_t in)
 {
 	uint32_t t;
 	to_be32(&t, in);
-	return (uint32_t)t;
+	return (__be32)t;
 }
 
-static inline uint32_t nvmf_fc_lsdesc_len(size_t sz)
+static inline __be32 nvmf_fc_lsdesc_len(size_t sz)
 {
 	uint32_t t;
 	to_be32(&t, sz - (2 * sizeof(uint32_t)));
-	return (uint32_t)t;
+	return (__be32)t;
 }
 
 static struct spdk_nvmf_subsystem *

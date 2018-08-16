@@ -90,6 +90,10 @@ extern "C" {
 #include <sys/user.h>
 #include <sys/wait.h>
 
+#ifndef LINUX_TYPES_DEFINED
+#include <linux/types.h>
+#endif
+
 #ifdef __cplusplus
 }
 #endif
