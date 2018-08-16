@@ -42,11 +42,15 @@
 #include "spdk/likely.h"
 #include "spdk/queue.h"
 #include "spdk/nvme_spec.h"
-#include "spdk/scsi_spec.h"
 
 #include "spdk_internal/bdev.h"
 #include "spdk_internal/log.h"
 #include "spdk/string.h"
+/* TODO: As part of RDMA, the abstractions for both
+ * transports to be built out here and this should
+ * be removed.
+ */
+#include "../nvmf/nvmf_fc/bcm_fc.h"
 
 
 
@@ -138,14 +142,7 @@ spdk_bdev_get_by_name(const char *bdev_name)
 	struct spdk_bdev *bdev = spdk_bdev_first();
 
 	while (bdev != NULL) {
-		/* TODO: Madhu. This actually, needs to be fixed properly.
-		 * In blockdev_create_wafl_ns, the size of 64 is used as
-		 * the maximum value for creating the bdev->name.
-		 * We should do a strncmp here with 64. Actually need
-		 * to add a common #define that can be used between blockdev_wafl
-		 * and this file.
-		 */
-		if (strncmp(bdev_name, bdev->name, 64) == 0) {
+		if (strncmp(bdev_name, bdev->name, SPDK_BDEV_MAX_NAME_LENGTH) == 0) {
 
 			return bdev;
 		}
@@ -624,7 +621,7 @@ spdk_bdev_free_io(struct spdk_bdev_io *bdev_io)
 }
 
 static void
-_spdk_bdev_io_complete(void *ctx)
+_spdk_bdev_io_complete(void *ctx, void *arg2)
 {
 	struct spdk_bdev_io *bdev_io = ctx;
 
@@ -636,6 +633,12 @@ void
 spdk_bdev_io_complete(struct spdk_bdev_io *bdev_io, enum spdk_bdev_io_status status)
 {
 	bdev_io->status = status;
+	/*
+	 * TODO: Have to abstract the type of request when RDMA/TCP come along.
+	 * Will have to use a transport API.
+	 */
+	struct spdk_nvmf_bcm_fc_request *fc_req = (struct spdk_nvmf_bcm_fc_request *)bdev_io->caller_ctx;
+	struct spdk_event *event = NULL;
 
 	/*
 	 * Check the gencnt, to see if this I/O was issued before the most
@@ -653,13 +656,12 @@ spdk_bdev_io_complete(struct spdk_bdev_io *bdev_io, enum spdk_bdev_io_status sta
 		 * Defer completion to avoid potential infinite recursion if the
 		 * user's completion callback issues a new I/O.
 		 */
-		/* TODO: Madhu - This will blow up!! In general spdk_thread_send_msg
-		 * is not easy to manage. We don't have the infra for this. */
-		/* We have to do the post_event here. */
-		spdk_thread_send_msg(spdk_io_channel_get_thread(bdev_io->ch->channel),
-				     _spdk_bdev_io_complete, bdev_io);
+		event = spdk_event_allocate(fc_req->poller_lcore,
+					    _spdk_bdev_io_complete,
+					    (void *)bdev_io, NULL);
+		spdk_post_event(fc_req->hwqp->context, event);
 	} else {
-		_spdk_bdev_io_complete(bdev_io);
+		_spdk_bdev_io_complete(bdev_io, NULL);
 	}
 }
 

@@ -47,6 +47,8 @@
 #define SPDK_BDEV_SMALL_BUF_MAX_SIZE 8192
 #define SPDK_BDEV_LARGE_BUF_MAX_SIZE (64 * 1024)
 
+#define SPDK_BDEV_MAX_NAME_LENGTH       64
+
 typedef void (*spdk_bdev_remove_cb_t)(void *remove_ctx);
 
 /**

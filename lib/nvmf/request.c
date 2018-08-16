@@ -335,8 +335,6 @@ spdk_nvmf_request_exec(struct spdk_nvmf_request *req)
 		}
 	}
 
-	/* TODO: Madhu - Need to double check this change
-	 * if read/write still does not work */
 	if (status == SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE) {
 		spdk_nvmf_request_complete(req);
 	}

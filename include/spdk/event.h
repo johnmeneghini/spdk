@@ -186,4 +186,9 @@ struct spdk_mempool *spdk_get_event_mempool(uint32_t lcore);
  *   */
 void spdk_event_execute(struct spdk_event *event);
 
+/**
+  * \brief Pass the given event to the associated lcore with an application context
+  */
+void spdk_post_event(void *context, struct spdk_event *event);
+
 #endif
