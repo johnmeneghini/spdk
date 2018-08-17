@@ -61,8 +61,8 @@ extern struct spdk_nvmf_tgt g_nvmf_tgt;
 
 struct spdk_nvmf_listen_addr *spdk_nvmf_listen_addr_create(const char *trname,
 		enum spdk_nvmf_adrfam adrfam, const char *traddr, const char *trsvcid);
-bool
-spdk_nvmf_listen_addr_compare(struct spdk_nvmf_listen_addr *a, struct spdk_nvmf_listen_addr *b);
+bool spdk_nvmf_listen_addr_compare(struct spdk_nvmf_listen_addr *a,
+				   struct spdk_nvmf_listen_addr *b);
 void spdk_nvmf_listen_addr_destroy(struct spdk_nvmf_listen_addr *addr);
 void spdk_nvmf_listen_addr_cleanup(struct spdk_nvmf_listen_addr *addr);
 

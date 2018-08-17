@@ -2,8 +2,8 @@
  *
  *   BSD LICENSE
  *
- *   Copyright (c) 2017 Broadcom.  All Rights Reserved.
- *   The term "Broadcom" refers to Broadcom Limited and/or its subsidiaries.
+ *   Copyright (c) 2018 Broadcom.  All Rights Reserved.
+ *   The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -1219,6 +1219,8 @@ typedef struct bcm_send_frame_wqe_s {
 			: 8,
 			cq_id: 16;
 	uint32_t	fc_header_2_5[4];
+	uint32_t        inline_rsp;
+	uint32_t        rsvdN[15];
 } bcm_send_frame_wqe_t;
 
 typedef struct bcm_gen_request64_wqe_s {

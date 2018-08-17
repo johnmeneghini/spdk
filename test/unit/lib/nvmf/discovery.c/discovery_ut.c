@@ -113,6 +113,12 @@ spdk_bdev_get_name(const struct spdk_bdev *bdev)
 	return "test";
 }
 
+uint8_t
+spdk_bdev_get_ana_state(struct spdk_bdev *bdev, uint16_t cntlid)
+{
+	return 1;
+}
+
 static int
 test_transport1_listen_addr_add(struct spdk_nvmf_listen_addr *listen_addr)
 {
@@ -260,6 +266,11 @@ test_discovery_log(void)
 	listen_addr = spdk_nvmf_tgt_listen("test_transport1", SPDK_NVMF_ADRFAM_IPV4, "1234", "5678");
 	SPDK_CU_ASSERT_FATAL(listen_addr != NULL);
 
+	SPDK_CU_ASSERT_FATAL(spdk_nvmf_subsystem_add_listener(subsystem, listen_addr) == 0);
+
+	/* Add the same listen_addr to the same subsystem again. This should return success
+	 * but without actually adding a duplicate listen_addr to the subsystem. As a consequence,
+	 * the genctr value is also expected to remain unaffected. */
 	SPDK_CU_ASSERT_FATAL(spdk_nvmf_subsystem_add_listener(subsystem, listen_addr) == 0);
 
 	/* Get only genctr (first field in the header) */

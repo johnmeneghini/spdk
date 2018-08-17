@@ -545,7 +545,8 @@ enum spdk_nvme_status_code_type {
 	SPDK_NVME_SCT_GENERIC		= 0x0,
 	SPDK_NVME_SCT_COMMAND_SPECIFIC	= 0x1,
 	SPDK_NVME_SCT_MEDIA_ERROR	= 0x2,
-	/* 0x3-0x6 - reserved */
+	SPDK_NVME_SCT_PATH_RELATED	= 0x3,
+	/* 0x4-0x6 - reserved */
 	SPDK_NVME_SCT_VENDOR_SPECIFIC	= 0x7,
 };
 
@@ -623,6 +624,9 @@ enum spdk_nvme_command_specific_status_code {
 	/* 0x17 - reserved */
 	SPDK_NVME_SC_NAMESPACE_ALREADY_ATTACHED         = 0x18,
 	SPDK_NVME_SC_NAMESPACE_IS_PRIVATE               = 0x19,
+	/* ANA specific errors */
+	SPDK_NVME_SC_ANA_GROUP_IDENTIFIER_INVALID       = 0x24,
+	SPDK_NVME_SC_ANA_ATTACH_FAILED                  = 0x25,
 	SPDK_NVME_SC_NAMESPACE_NOT_ATTACHED             = 0x1a,
 	SPDK_NVME_SC_THINPROVISIONING_NOT_SUPPORTED     = 0x1b,
 	SPDK_NVME_SC_CONTROLLER_LIST_INVALID            = 0x1c,
@@ -650,6 +654,16 @@ enum spdk_nvme_media_error_status_code {
 	SPDK_NVME_SC_COMPARE_FAILURE			= 0x85,
 	SPDK_NVME_SC_ACCESS_DENIED			= 0x86,
 	SPDK_NVME_SC_DEALLOCATED_OR_UNWRITTEN_BLOCK     = 0x87,
+};
+
+/**
+ * Path Related status codes
+ */
+enum spdk_nvme_path_related_status_code {
+	SPDK_NVME_SC_INTERNAL_PATH_ERROR		= 0x00,
+	SPDK_NVME_SC_ANA_PERSISTENT_LOSS		= 0x01,
+	SPDK_NVME_SC_ANA_INACCESSIBLE			= 0x02,
+	SPDK_NVME_SC_ANA_TRANSITION			= 0x03,
 };
 
 /**
@@ -692,6 +706,14 @@ enum spdk_nvme_admin_opcode {
 	SPDK_NVME_OPC_SECURITY_RECEIVE			= 0x82,
 
 	SPDK_NVME_OPC_SANITIZE				= 0x84,
+};
+
+/**
+ * Asynchronous Event Configuration
+ */
+enum spdk_nvme_aer_config {
+	SPDK_NVME_AER_NS_ATTR_NOTICES			= 0x100,
+	SPDK_NVME_AER_ANA_CHANGE_NOTICES		= 0x800,
 };
 
 /**
@@ -875,12 +897,32 @@ enum aer_notice_info {
 	AER_NOTICE_INFO_NS_ATTR_CHANGED   = 0,
 	AER_NOTICE_INFO_FW_ACTIV_STARTING = 1,
 	AER_NOTICE_INFO_TEL_LOG_CHANGED   = 2,
+	AER_NOTICE_INFO_ANA_CHANGE	  = 3,
 };
 
 enum aer_cmd_set_info {
 	AER_CMD_SET_INFO_RESV_LOG_AVBL    = 0,
 	AER_CMD_SET_INFO_SANITIZE_OP_CMPL = 1,
 };
+
+union spdk_nvme_aer_cq_entry {
+	uint32_t	raw;
+	struct {
+		/** asynchronous event type */
+		uint32_t event_type	: 3;
+
+		uint32_t reserved1	: 5;
+
+		/** asynchronous event info */
+		uint32_t event_info	: 8;
+
+		/** log page identifier */
+		uint32_t log_page	: 8;
+
+		uint32_t reserved2	: 8;
+	} bits;
+};
+SPDK_STATIC_ASSERT(sizeof(union spdk_nvme_aer_cq_entry) == 4, "Incorrect size");
 
 #define SPDK_NVME_SPEC_SERIAL_NUMBER_SIZE 20
 #define SPDK_NVME_SPEC_MPDEL_NUMBER_SIZE 40
@@ -916,7 +958,8 @@ struct __attribute__((packed)) spdk_nvme_ctrlr_data {
 		uint8_t multi_port	: 1;
 		uint8_t multi_host	: 1;
 		uint8_t sr_iov		: 1;
-		uint8_t reserved	: 5;
+		uint8_t ana_reporting	: 1;
+		uint8_t reserved	: 4;
 	} cmic;
 
 	/** maximum data transfer size */
@@ -1144,7 +1187,24 @@ struct __attribute__((packed)) spdk_nvme_ctrlr_data {
 		} bits;
 	} sanicap;
 
-	uint8_t			reserved3[180];
+	uint8_t			reserved31[10];
+
+	uint8_t			anatt;
+	struct {
+		uint8_t optimized : 1;
+		uint8_t non_optimized : 1;
+		uint8_t inaccessible : 1;
+		uint8_t persistent_loss : 1;
+		uint8_t change : 1;
+		uint8_t reserved : 1;
+		uint8_t anagrpid : 1;
+		uint8_t non_zero_anagrpid: 1;
+	} anacap;
+
+	uint32_t		anagrpmax;
+	uint32_t		nanagrpid;
+
+	uint8_t			reserved32[160];
 
 	/* bytes 512-703: nvm command set attributes */
 
@@ -1224,7 +1284,9 @@ struct __attribute__((packed)) spdk_nvme_ctrlr_data {
 		uint32_t	reserved2: 11;
 	} sgls;
 
-	uint8_t			reserved4[228];
+	uint32_t		mnan;
+
+	uint8_t			reserved4[224];
 
 	uint8_t			subnqn[256];
 
@@ -1435,7 +1497,11 @@ struct spdk_nvme_ns_data {
 	/** NVM capacity */
 	uint64_t		nvmcap[2];
 
-	uint8_t			reserved64[40];
+	uint8_t			reserved64[28];
+
+	uint32_t		anagrpid;
+
+	uint8_t			reserved641[8];
 
 	/** namespace globally unique identifier */
 	uint8_t			nguid[16];
@@ -1611,6 +1677,9 @@ enum spdk_nvme_log_page {
 
 	/** Command effects log (optional) */
 	SPDK_NVME_LOG_COMMAND_EFFECTS_LOG	= 0x05,
+
+	/** Asymmetric Namespace Access (optional) */
+	SPDK_NVME_ANA_LOG			= 0x0c,
 
 	/* 0x06-0x6F - reserved */
 
@@ -1879,6 +1948,33 @@ SPDK_STATIC_ASSERT(sizeof(struct spdk_nvme_fw_commit) == 4, "Incorrect size");
 #define SPDK_NVME_IO_FLAGS_PRACT (1U << 29)
 #define SPDK_NVME_IO_FLAGS_FORCE_UNIT_ACCESS (1U << 30)
 #define SPDK_NVME_IO_FLAGS_LIMITED_RETRY (1U << 31)
+
+#define SPDK_NVME_ANA_OPTIMIZED 01
+#define SPDK_NVME_ANA_NON_OPTIMIZED 02
+#define SPDK_NVME_ANA_INACCESSIBLE 03
+#define SPDK_NVME_ANA_PERSISTENT_LOSS 04
+#define SPDK_NVME_ANA_CHANGE 0x0f
+
+struct spdk_nvmf_ana_group_desc_format {
+	uint32_t anagrpid;
+	uint32_t num_nsids;
+	uint64_t change_count;
+	struct {
+		uint8_t state : 4;
+		uint8_t reserved : 4;
+	} ana_state;
+	uint8_t reserved0[15];
+	uint32_t nsid_list[0];
+};
+SPDK_STATIC_ASSERT(sizeof(struct spdk_nvmf_ana_group_desc_format) == 32, "Incorrect size");
+
+struct spdk_nvmf_ana_log_page {
+	uint64_t change_count;
+	uint16_t num_group_descs;
+	uint8_t reserved0[6];
+	struct spdk_nvmf_ana_group_desc_format descs[0];
+};
+SPDK_STATIC_ASSERT(sizeof(struct spdk_nvmf_ana_log_page) == 16, "Incorrect size");
 
 #ifdef __cplusplus
 }

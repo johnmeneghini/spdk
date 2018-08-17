@@ -2,7 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2018 Broadcom.  All Rights Reserved.
- *   The term "Broadcom" refers to Broadcom Limited and/or its subsidiaries.
+ *   The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -97,6 +97,10 @@ int spdk_nvmf_bcm_fc_create_reqtag_pool(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
 int spdk_nvmf_bcm_fc_issue_marker(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint64_t u_id,
 				  uint16_t skip_rq);
 bool spdk_nvmf_bcm_fc_req_in_xfer(struct spdk_nvmf_bcm_fc_request *fc_req);
+static int nvmf_fc_send_frame(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
+			      uint32_t s_id, uint32_t d_id, uint16_t ox_id,
+			      uint8_t htype, uint8_t r_ctl, uint32_t f_ctl,
+			      uint8_t *payload, uint32_t plen);
 
 static inline uint16_t
 nvmf_fc_advance_conn_sqhead(struct spdk_nvmf_conn *conn)
@@ -279,7 +283,7 @@ nvmf_fc_record_req_trace_point(struct spdk_nvmf_bcm_fc_request *fc_req,
 		tpoint_id = TRACE_FC_REQ_PENDING;
 		break;
 	default:
-		assert(tpoint_id != SPDK_TRACE_MAX_TPOINT_ID);
+		assert(0);
 		break;
 	}
 	if (tpoint_id != SPDK_TRACE_MAX_TPOINT_ID) {
@@ -363,8 +367,12 @@ static fc_reqtag_t *
 nvmf_fc_lookup_reqtag(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint16_t index)
 {
 	assert(index < MAX_REQTAG_POOL_SIZE);
-
-	return hwqp->queues.wq.p_reqtags[index];
+	if (index < MAX_REQTAG_POOL_SIZE) {
+		return hwqp->queues.wq.p_reqtags[index];
+	} else {
+		SPDK_ERRLOG("Invalid index\n");
+		return NULL;
+	}
 }
 
 static int
@@ -666,8 +674,20 @@ nvmf_fc_find_nport_and_rport(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 	struct spdk_nvmf_bcm_fc_remote_port_info *r_port;
 
 	assert(hwqp);
+	if (hwqp == NULL) {
+		SPDK_ERRLOG("Error: hwqp is NULL\n");
+		return -1;
+	}
 	assert(nport);
+	if (nport == NULL) {
+		SPDK_ERRLOG("Error: nport is NULL\n");
+		return -1;
+	}
 	assert(rport);
+	if (rport == NULL) {
+		SPDK_ERRLOG("Error: rport is NULL\n");
+		return -1;
+	}
 
 	TAILQ_FOREACH(n_port, &hwqp->fc_port->nport_list, link) {
 		if (n_port->d_id == d_id) {
@@ -1431,9 +1451,11 @@ nvmf_fc_io_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 	spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_SUCCESS);
 
 io_done:
-	spdk_nvmf_bcm_fc_release_xri(fc_req->hwqp, fc_req->xri,
-				     cqe_entry->u.generic.xb, nvmf_fc_abts_required(cqe));
-	fc_req->xri = NULL;
+	if (fc_req->xri) {
+		spdk_nvmf_bcm_fc_release_xri(fc_req->hwqp, fc_req->xri,
+					     cqe_entry->u.generic.xb, nvmf_fc_abts_required(cqe));
+		fc_req->xri = NULL;
+	}
 
 	if (fc_req->is_aborted) {
 		spdk_nvmf_bcm_fc_req_abort_complete(fc_req, NULL);
@@ -1487,8 +1509,16 @@ nvmf_fc_fill_sgl(struct spdk_nvmf_bcm_fc_request *fc_req)
 	struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd *req_buf = NULL;
 	struct spdk_nvmf_bcm_fc_hwqp *hwqp = fc_req->hwqp;
 
-	assert((fc_req->req.iovcnt) <= BCM_MAX_IOVECS);
+	assert((fc_req->req.iovcnt) <= MAX_NUM_OF_IOVECTORS);
+	if ((fc_req->req.iovcnt) > MAX_NUM_OF_IOVECTORS) {
+		SPDK_ERRLOG("Error: (fc_req->req.iovcnt) > MAX_NUM_OF_IOVECTORS\n");
+		return 0;
+	}
 	assert(fc_req->req.iovcnt != 0);
+	if (fc_req->req.iovcnt == 0) {
+		SPDK_ERRLOG("Error: fc_req->req.iovcnt == 0\n");
+		return 0;
+	}
 
 	/* Use RQ buffer for SGL */
 	req_buf = hwqp->queues.rq_payload.buffer[fc_req->buf_index].virt;
@@ -1613,16 +1643,30 @@ nvmf_fc_recv_data(struct spdk_nvmf_bcm_fc_request *fc_req)
 	return rc;
 }
 
+static bool
+nvmf_fc_use_send_frame(struct spdk_nvmf_request *req)
+{
+	/* For now use for only keepalives. */
+	if (req->conn->type == CONN_TYPE_AQ &&
+	    (req->cmd->nvme_cmd.opc == SPDK_NVME_OPC_KEEP_ALIVE)) {
+		return true;
+	}
+	return false;
+}
+
+
 static int
 nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req)
 {
 	struct spdk_nvme_cmd *cmd = &fc_req->req.cmd->nvme_cmd;
 	struct spdk_nvmf_bcm_fc_conn *fc_conn = fc_req->fc_conn;
 
-	/* Allocate an XRI */
-	fc_req->xri = spdk_nvmf_bcm_fc_get_xri(fc_req->hwqp);
-	if (!fc_req->xri) {
-		goto pending;
+	/* Allocate an XRI if we dont use send frame for this command. */
+	if (!nvmf_fc_use_send_frame(&fc_req->req)) {
+		fc_req->xri = spdk_nvmf_bcm_fc_get_xri(fc_req->hwqp);
+		if (!fc_req->xri) {
+			goto pending;
+		}
 	}
 
 	if (fc_req->req.length) {
@@ -1812,6 +1856,10 @@ nvmf_fc_handle_nvme_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_frame_hdr
 	fc_req->hwqp = hwqp;
 	fc_req->fc_conn = fc_conn;
 	fc_req->req.xfer = xfer;
+	fc_req->s_id = (uint32_t)frame->s_id;
+	fc_req->d_id = (uint32_t)frame->d_id;
+	fc_req->s_id = from_be32(&fc_req->s_id) >> 8;
+	fc_req->d_id = from_be32(&fc_req->d_id) >> 8;
 
 	nvmf_fc_record_req_trace_point(fc_req, SPDK_NVMF_BCM_FC_REQ_INIT);
 	if (nvmf_fc_execute_nvme_rqst(fc_req)) {
@@ -1957,8 +2005,20 @@ nvmf_fc_process_rqpair(struct spdk_nvmf_bcm_fc_hwqp *hwqp, fc_eventq_t *cq, uint
 	uint8_t code = cqe[BCM_CQE_CODE_OFFSET];
 
 	assert(hwqp);
+	if (hwqp == NULL) {
+		SPDK_ERRLOG("Error: hwqp is NULL\n");
+		return -1;
+	}
 	assert(cq);
+	if (cq == NULL) {
+		SPDK_ERRLOG("Error: cq is NULL\n");
+		return -1;
+	}
 	assert(cqe);
+	if (cqe == NULL) {
+		SPDK_ERRLOG("Error: cqe is NULL\n");
+		return -1;
+	}
 
 	rq_status = nvmf_fc_rqe_rqid_and_index(cqe, &rq_id, &rq_index);
 	if (0 != rq_status) {
@@ -2148,6 +2208,10 @@ spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	bool pending_req_processed = false;
 
 	assert(hwqp);
+	if (hwqp == NULL) {
+		SPDK_ERRLOG("Error: hwqp is NULL\n");
+		return 0;
+	}
 	eq = &hwqp->queues.eq;
 
 	budget = eq->q.processed_limit;
@@ -2338,12 +2402,55 @@ spdk_nvmf_bcm_fc_send_data(struct spdk_nvmf_bcm_fc_request *fc_req)
 }
 
 static int
+nvmf_fc_sendframe_fc_rsp(struct spdk_nvmf_bcm_fc_request *fc_req,
+			 uint8_t *ersp_buf, uint32_t ersp_len)
+{
+	int rc = 0;
+	uint8_t good_rsp[NVME_FC_GOOD_RSP_LEN] = { 0 };
+	uint8_t *rsp = NULL, rsp_len, rctl;
+
+	if (!ersp_buf) {
+		rsp 	= good_rsp;
+		rsp_len = NVME_FC_GOOD_RSP_LEN;
+		rctl	= NVME_FC_R_CTL_STATUS;
+	} else {
+		rsp	= ersp_buf;
+		rsp_len	= ersp_len;
+		rctl	= NVME_FC_R_CTL_ERSP_STATUS;
+	}
+
+	rc = nvmf_fc_send_frame(fc_req->hwqp, fc_req->s_id, fc_req->d_id, fc_req->oxid,
+				NVME_FC_TYPE_FC_EXCHANGE, rctl, NVME_FC_F_CTL_RSP, rsp, rsp_len);
+	if (rc) {
+		SPDK_ERRLOG("%s: SendFrame failed. rc = %d\n", __func__, rc);
+	} else {
+		cqe_t cqe;
+
+		memset(&cqe, 0, sizeof(cqe_t));
+		cqe.u.wcqe.status = BCM_FC_WCQE_STATUS_SUCCESS;
+
+		/*
+		 * In case of success, dont care for sendframe wqe completion.
+		 * treat as the FC_REQ completed successfully.
+		 */
+		nvmf_fc_io_cmpl_cb(fc_req->hwqp, (uint8_t *)&cqe,
+				   BCM_FC_WCQE_STATUS_SUCCESS, fc_req);
+	}
+
+	return rc;
+}
+
+static int
 nvmf_fc_xmt_rsp(struct spdk_nvmf_bcm_fc_request *fc_req, uint8_t *ersp_buf, uint32_t ersp_len)
 {
 	int rc = 0;
 	uint8_t wqe[128] = { 0 };
 	bcm_fcp_trsp64_wqe_t *trsp = (bcm_fcp_trsp64_wqe_t *)wqe;
 	struct spdk_nvmf_bcm_fc_hwqp *hwqp = fc_req->hwqp;
+
+	if (nvmf_fc_use_send_frame(&fc_req->req)) {
+		return nvmf_fc_sendframe_fc_rsp(fc_req, ersp_buf, ersp_len);
+	}
 
 	if (!ersp_buf) {
 		/* Auto-Gen all zeroes in IU 12-byte payload */
@@ -2396,7 +2503,6 @@ spdk_nvmf_bcm_fc_handle_rsp(struct spdk_nvmf_bcm_fc_request *fc_req)
 
 	if (nvmf_fc_send_ersp_required(fc_req, fc_conn->rsp_count,
 				       fc_req->transfered_len)) {
-
 		/* Fill ERSP Len */
 		to_be16(&ersp_len, (sizeof(struct spdk_nvmf_fc_ersp_iu) /
 				    sizeof(uint32_t)));
@@ -2640,18 +2746,19 @@ spdk_nvmf_bcm_fc_issue_marker(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint64_t u_id,
 	return nvmf_fc_post_wqe(hwqp, (uint8_t *)marker, true, nvmf_fc_def_cmpl_cb, NULL);
 }
 
-#ifdef UNSOL_ABTS_SUPPORT
 static void
-nvmf_fc_default_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
+nvmf_fc_sendframe_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 {
 	if (status) {
-		SPDK_ERRLOG("Generic WQE Compl(%d) error\n", status);
+		SPDK_ERRLOG("SendFrame WQE Compl(%d) error\n", status);
 	}
 }
 
 static int
-nvmf_fc_unsol_abort(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t s_id, uint32_t d_id,
-		    uint16_t ox_id)
+nvmf_fc_send_frame(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
+		   uint32_t s_id, uint32_t d_id, uint16_t ox_id,
+		   uint8_t htype, uint8_t r_ctl, uint32_t f_ctl,
+		   uint8_t *payload, uint32_t plen)
 
 {
 	uint8_t wqe[128] = { 0 };
@@ -2660,15 +2767,23 @@ nvmf_fc_unsol_abort(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t s_id, uint32_t 
 	bcm_send_frame_wqe_t *sf = (bcm_send_frame_wqe_t *)wqe;
 	fc_frame_hdr_le_t hdr;
 
+	/*
+	 * Make sure we dont have payload greater than 64 bytes which
+	 * is the space availble to inline in WQE.
+	 */
+	if (plen > 64) {
+		return -1;
+	}
+
 	/* Build header */
 	memset(&hdr, 0, sizeof(fc_frame_hdr_le_t));
 
 	hdr.d_id	 = s_id;
 	hdr.s_id	 = d_id;
-	hdr.r_ctl	 = NVME_FC_R_CTL_BA_ABTS;
+	hdr.r_ctl	 = r_ctl;
 	hdr.cs_ctl	 = 0;
-	hdr.f_ctl	 = NVME_FC_F_CTL_END_SEQ | NVME_FC_F_CTL_SEQ_INIT;
-	hdr.type	 = NVME_FC_TYPE_BLS;
+	hdr.f_ctl	 = f_ctl;
+	hdr.type	 = htype;
 	hdr.seq_cnt	 = 0;
 	hdr.df_ctl	 = 0;
 	hdr.rx_id	 = 0xffff;
@@ -2681,9 +2796,7 @@ nvmf_fc_unsol_abort(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t s_id, uint32_t 
 
 	p_hdr = (uint32_t *)&hdr;
 
-	/* WQE */
-	sf->dbde = false;
-
+	/* Fill header in WQE */
 	sf->fc_header_0_1[0] = p_hdr[0];
 	sf->fc_header_0_1[1] = p_hdr[1];
 	sf->fc_header_2_5[0] = p_hdr[2];
@@ -2691,25 +2804,30 @@ nvmf_fc_unsol_abort(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t s_id, uint32_t 
 	sf->fc_header_2_5[2] = p_hdr[4];
 	sf->fc_header_2_5[3] = p_hdr[5];
 
-	sf->frame_length = 0; /* No payload */
+	/* If payload present, copy inline in wqe. */
+	if (plen) {
+		sf->frame_length = plen;
+		sf->dbde = true;
+		sf->bde.bde_type = BCM_BDE_TYPE_BDE_IMM;
+		sf->bde.buffer_length = plen;
+		sf->bde.u.imm.offset = 64;
+		memcpy(&sf->inline_rsp, payload, plen);
+	}
+
 	sf->xri_tag	 = hwqp->send_frame_xri;
-	sf->pu		 = 0;
-	sf->context_tag	 = 0;
-	sf->ct		 = 0;
 	sf->command	 = BCM_WQE_SEND_FRAME;
-	sf->class	 = BCM_ELS_REQUEST64_CLASS_3;
-	sf->timer	 = 3;
 	sf->sof		 = 0x2e; /* SOFI3 */
 	sf->eof		 = 0x42; /* EOFT */
-	sf->qosd	 = 0;
+	sf->wqes	 = 1;
+	sf->iod		 = BCM_ELS_REQUEST64_DIR_WRITE;
+	sf->qosd	 = 0;    /* Include in QOS */
 	sf->lenloc	 = 1;
-	sf->xc		 = 0;
+	sf->xc		 = 1;
 	sf->xbl		 = 1;
 	sf->cmd_type	 = BCM_CMD_SEND_FRAME_WQE;
 	sf->cq_id	 = 0xffff;
 
-	rc = nvmf_fc_post_wqe(hwqp, (uint8_t *)sf, true, nvmf_fc_default_cmpl_cb, NULL);
+	rc = nvmf_fc_post_wqe(hwqp, (uint8_t *)sf, true, nvmf_fc_sendframe_cmpl_cb, NULL);
 
 	return rc;
 }
-#endif

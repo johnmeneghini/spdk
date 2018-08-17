@@ -64,17 +64,14 @@ spdk_nvmf_find_subsystem(const char *subnqn)
 	return NULL;
 }
 
-struct spdk_nvmf_subsystem *
-spdk_nvmf_find_subsystem_with_cntlid(uint16_t cntlid)
+struct spdk_nvmf_session *
+spdk_nvmf_subsystem_get_ctrlr(struct spdk_nvmf_subsystem *subsystem, uint16_t cntlid)
 {
-	struct spdk_nvmf_subsystem	*subsystem;
 	struct spdk_nvmf_session 	*session;
 
-	TAILQ_FOREACH(subsystem, &g_nvmf_tgt.subsystems, entries) {
-		TAILQ_FOREACH(session, &subsystem->sessions, link) {
-			if (session->cntlid == cntlid) {
-				return subsystem;
-			}
+	TAILQ_FOREACH(session, &subsystem->sessions, link) {
+		if (session->cntlid == cntlid) {
+			return session;
 		}
 	}
 
@@ -247,6 +244,7 @@ spdk_nvmf_create_subsystem(const char *nqn,
 		return NULL;
 	}
 
+	TAILQ_INIT(&subsystem->ana_groups);
 	TAILQ_INIT(&subsystem->allowed_listeners);
 	TAILQ_INIT(&subsystem->hosts);
 	TAILQ_INIT(&subsystem->sessions);
@@ -274,6 +272,7 @@ spdk_nvmf_delete_subsystem(struct spdk_nvmf_subsystem *subsystem)
 	struct spdk_nvmf_subsystem_allowed_listener	*allowed_listener, *allowed_listener_tmp;
 	struct spdk_nvmf_host		*host, *host_tmp;
 	struct spdk_nvmf_session	*session, *session_tmp;
+	struct spdk_nvmf_ana_group *ana_group = NULL, *ana_group_tmp = NULL;
 
 	if (!subsystem) {
 		return;
@@ -298,6 +297,12 @@ spdk_nvmf_delete_subsystem(struct spdk_nvmf_subsystem *subsystem)
 
 	TAILQ_FOREACH_SAFE(session, &subsystem->sessions, link, session_tmp) {
 		spdk_nvmf_session_destruct(session);
+	}
+
+	TAILQ_FOREACH_SAFE(ana_group, &subsystem->ana_groups, link, ana_group_tmp) {
+		TAILQ_REMOVE(&subsystem->ana_groups, ana_group, link);
+		free(ana_group);
+		subsystem->num_ana_groups--;
 	}
 
 	if (subsystem->ops->detach) {
@@ -504,6 +509,11 @@ spdk_nvmf_subsystem_add_listener(struct spdk_nvmf_subsystem *subsystem,
 {
 	struct spdk_nvmf_subsystem_allowed_listener *allowed_listener;
 
+	TAILQ_FOREACH(allowed_listener, &subsystem->allowed_listeners, link) {
+		if (spdk_nvmf_listen_addr_compare(allowed_listener->listen_addr, listen_addr)) {
+			return 0;
+		}
+	}
 	allowed_listener = calloc(1, sizeof(*allowed_listener));
 	if (!allowed_listener) {
 		return -1;
@@ -564,7 +574,11 @@ spdk_nvmf_get_ns_id_desc(uint8_t nidt, uint8_t nid[])
 	struct spdk_nvme_ns_id_desc *desc;
 	uint8_t nidl;
 
-	assert((nidt >= SPDK_NVME_NIDT_EUI64) || (nidt <= SPDK_NVME_NIDT_UUID));
+	assert((nidt >= SPDK_NVME_NIDT_EUI64) && (nidt <= SPDK_NVME_NIDT_UUID));
+	if ((nidt < SPDK_NVME_NIDT_EUI64) || (nidt > SPDK_NVME_NIDT_UUID)) {
+		SPDK_ERRLOG("Invalid value for nidt\n");
+		return NULL;
+	}
 
 	if (nidt == SPDK_NVME_NIDT_EUI64) {
 		nidl = SPDK_NVME_NIDL_EUI64;
@@ -584,12 +598,220 @@ spdk_nvmf_get_ns_id_desc(uint8_t nidt, uint8_t nid[])
 	return desc;
 }
 
+uint8_t
+spdk_nvmf_subsystem_get_ana_group_state(struct spdk_nvmf_subsystem *subsystem,
+					uint32_t anagrpid, uint16_t cntlid)
+{
+	struct spdk_bdev *bdev = NULL;
+
+	if (!subsystem) {
+		SPDK_ERRLOG("Invalid subsystem passed during get_ana_group_state\n");
+		assert(subsystem != NULL);
+		return SPDK_NVME_ANA_INACCESSIBLE;
+	}
+
+	for (uint32_t i = 0; i < MAX_VIRTUAL_NAMESPACE; i++) {
+		bdev = subsystem->dev.virt.ns_list[i];
+		if (bdev && bdev->anagrpid == anagrpid) {
+			return spdk_bdev_get_ana_state(bdev, cntlid);
+		}
+	}
+
+	/*
+	 * There are no namespace belonging to a particular
+	 * ana group.
+	 */
+	SPDK_ERRLOG("Subsystem %s: no namespaces found for ana_group %u\n",
+		    spdk_nvmf_subsystem_get_nqn(subsystem), anagrpid);
+	return SPDK_NVME_ANA_INACCESSIBLE;
+}
+
+struct spdk_nvmf_ana_group *
+spdk_nvmf_subsystem_find_ana_group(struct spdk_nvmf_subsystem *subsystem, uint32_t anagrpid)
+{
+	struct spdk_nvmf_ana_group *ana_group = NULL;
+
+	if (!subsystem) {
+		SPDK_ERRLOG("Invalid subsystem passed during find_ana_group\n");
+		assert(subsystem != NULL);
+		return NULL;
+	}
+
+	TAILQ_FOREACH(ana_group, &subsystem->ana_groups, link) {
+		if (ana_group->anagrpid == anagrpid) {
+			return ana_group;
+		}
+	}
+	return NULL;
+}
+
+int
+spdk_nvmf_subsystem_remove_ana_group(struct spdk_nvmf_subsystem *subsystem, uint32_t anagrpid)
+{
+	struct spdk_nvmf_ana_group *ana_group = NULL;
+
+	if (!subsystem) {
+		SPDK_ERRLOG("Invalid subsystem passed during remove_ana_group\n");
+		assert(subsystem != NULL);
+		return -1;
+	}
+
+	ana_group = spdk_nvmf_subsystem_find_ana_group(subsystem, anagrpid);
+	if (!ana_group) {
+		SPDK_ERRLOG("Subsystem %s: attempt to remove invalid ana_group %u\n",
+			    spdk_nvmf_subsystem_get_nqn(subsystem), anagrpid);
+		return -1;
+	}
+
+	if (ana_group->num_nsids) {
+		SPDK_ERRLOG("Subsystem %s: attempt to remove ana_group %u with namespaces %u\n",
+			    spdk_nvmf_subsystem_get_nqn(subsystem), anagrpid, ana_group->num_nsids);
+		return -1;
+	}
+
+	TAILQ_REMOVE(&subsystem->ana_groups, ana_group, link);
+	free(ana_group);
+	subsystem->num_ana_groups--;
+	/*
+	 * Note that we are not publishing an AEN OR incrementing change_count
+	 * here deliberately. Applications are expected to increment the change count
+	 * and publish the AEN when they deem appropriate
+	 */
+	return 0;
+}
+
+int
+spdk_nvmf_subsystem_add_ana_group(struct spdk_nvmf_subsystem *subsystem, uint32_t anagrpid,
+				  void *app_ctxt)
+{
+	struct spdk_nvmf_ana_group *ana_group = NULL;
+	struct spdk_nvmf_ana_group *ana_group_tmp = NULL;
+	bool found_successor = false;
+
+	if (!subsystem) {
+		SPDK_ERRLOG("Invalid subsystem passed during add_ana_group\n");
+		assert(subsystem != NULL);
+		return -1;
+	}
+
+	ana_group = spdk_nvmf_subsystem_find_ana_group(subsystem, anagrpid);
+	if (ana_group) {
+		SPDK_TRACELOG(SPDK_TRACE_NVMF, "Subsystem %s: attempt to add an existent ana_group %u\n",
+			      spdk_nvmf_subsystem_get_nqn(subsystem), anagrpid);
+		return 0;
+	}
+
+	ana_group = calloc(1, sizeof(struct spdk_nvmf_ana_group));
+	if (ana_group == NULL) {
+		SPDK_ERRLOG("Subsystem %s: failed while allocating ana group %u \n",
+			    spdk_nvmf_subsystem_get_nqn(subsystem), anagrpid);
+		return -1;
+	}
+
+	ana_group->anagrpid = anagrpid;
+	ana_group->num_nsids = 0;
+	ana_group->app_ctxt = app_ctxt;
+
+	TAILQ_FOREACH(ana_group_tmp, &subsystem->ana_groups, link) {
+		if (ana_group_tmp->anagrpid > anagrpid) {
+			found_successor = true;
+			break;
+		}
+	}
+
+	if (found_successor) {
+		assert(ana_group_tmp != NULL);
+		TAILQ_INSERT_BEFORE(ana_group_tmp, ana_group, link);
+	} else {
+		TAILQ_INSERT_TAIL(&subsystem->ana_groups, ana_group, link);
+	}
+	subsystem->num_ana_groups++;
+	/*
+	 * Note that we are not publishing an AEN OR incrementing change_count
+	 * here deliberately. Applications are expected to increment the change count
+	 * and publish the AEN when they deem appropriate
+	 */
+	return 0;
+}
+
+static void
+spdk_nvmf_subsystem_adjust_max_nsid(struct spdk_nvmf_subsystem *subsystem)
+{
+	int32_t i;
+
+	if (!subsystem) {
+		SPDK_ERRLOG("Invalid subsystem passed during adjust_max_nsid\n");
+		assert(subsystem != NULL);
+		return;
+	}
+
+	subsystem->dev.virt.max_nsid = 0;
+	for (i = MAX_VIRTUAL_NAMESPACE - 1; i >= 0 ; --i) {
+		if (subsystem->dev.virt.ns_list[i] != NULL) {
+			subsystem->dev.virt.max_nsid = i + 1;
+			break;
+		}
+	}
+}
+
+int
+spdk_nvmf_subsystem_remove_ns(struct spdk_nvmf_subsystem *subsystem, uint32_t nsid)
+{
+	struct spdk_bdev *bdev = NULL;
+	struct spdk_nvmf_ana_group *ana_group = NULL;
+
+	if (!subsystem) {
+		SPDK_ERRLOG("Invalid subsystem passed during remove_ns\n");
+		assert(subsystem != NULL);
+		return -1;
+	}
+
+	if (nsid > subsystem->dev.virt.max_nsid || nsid == 0) {
+		SPDK_ERRLOG("Subsystem %s: Remove namespace for invalid nsid %u\n",
+			    spdk_nvmf_subsystem_get_nqn(subsystem), nsid);
+		return -1;
+	}
+
+
+	bdev = subsystem->dev.virt.ns_list[nsid - 1];
+	if (bdev == NULL) {
+		SPDK_ERRLOG("Subsytem %s: Remove namespace with invalid bdev nsid %u\n",
+			    spdk_nvmf_subsystem_get_nqn(subsystem), nsid);
+		return -1;
+	}
+
+	if (bdev->anagrpid) {
+		ana_group = spdk_nvmf_subsystem_find_ana_group(subsystem, bdev->anagrpid);
+		if (!ana_group) {
+			SPDK_ERRLOG("Subsystem %s: Unable to find ana group %u for nsid %u\n",
+				    spdk_nvmf_subsystem_get_nqn(subsystem), bdev->anagrpid, nsid);
+			return -1;
+		}
+		ana_group->num_nsids--;
+		bdev->anagrpid = 0;
+		/* It is possible that this is  the last ns  in the ana group
+		 * but we dont remove the ana group and  expect the application
+		 * to remove the group  explicitly
+		 */
+	}
+
+	subsystem->dev.virt.ch[nsid - 1]      = NULL;
+	subsystem->dev.virt.ns_list[nsid - 1] = NULL;
+
+	if (nsid == subsystem->dev.virt.max_nsid) {
+		spdk_nvmf_subsystem_adjust_max_nsid(subsystem);
+	}
+
+	return 0;
+}
+
 uint32_t
 spdk_nvmf_subsystem_add_ns(struct spdk_nvmf_subsystem *subsystem, struct spdk_bdev *bdev,
-			   uint32_t nsid)
+			   uint32_t nsid, uint32_t anagrpid)
 {
 	uint32_t i;
 	int rc;
+	struct spdk_nvmf_ana_group *ana_group = NULL;
 
 	assert(subsystem->mode == NVMF_SUBSYSTEM_MODE_VIRTUAL);
 
@@ -619,6 +841,16 @@ spdk_nvmf_subsystem_add_ns(struct spdk_nvmf_subsystem *subsystem, struct spdk_bd
 		}
 	}
 
+	if (anagrpid) {
+		/** We expect the application to create ana group before adding a namespace */
+		ana_group = spdk_nvmf_subsystem_find_ana_group(subsystem, anagrpid);
+		if (!ana_group) {
+			SPDK_ERRLOG("Subsystem %s: namespace add on invalid ana group %u\n", subsystem->subnqn,
+				    anagrpid);
+			return 0;
+		}
+	}
+
 	/* TODO: Madhu - check if this works okay for NS unmap w/ hot_remove cb. */
 	rc = spdk_bdev_open(bdev, true, spdk_nvmf_ctrlr_hot_remove, subsystem,
 			    &subsystem->dev.virt.desc[i]);
@@ -626,15 +858,23 @@ spdk_nvmf_subsystem_add_ns(struct spdk_nvmf_subsystem *subsystem, struct spdk_bd
 		SPDK_ERRLOG("Subsystem %s: bdev %s cannot be opened, error=%d\n",
 			    subsystem->subnqn, spdk_bdev_get_name(bdev), rc);
 		return rc;
+
 	}
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Subsystem %s: bdev %s assigned nsid %" PRIu32 "\n",
-		      spdk_nvmf_subsystem_get_nqn(subsystem),
-		      spdk_bdev_get_name(bdev),
-		      nsid);
+	if (ana_group) {
+		ana_group->num_nsids++;
+		bdev->anagrpid = anagrpid;
+	}
 
 	subsystem->dev.virt.ns_list[i] = bdev;
-	subsystem->dev.virt.max_nsid = spdk_max(subsystem->dev.virt.max_nsid, nsid);
+	subsystem->dev.virt.max_nsid =  spdk_max(subsystem->dev.virt.max_nsid, nsid);
+
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Subsystem %s: bdev %s assigned nsid %" PRIu32 " anagrpid %u\n",
+		      spdk_nvmf_subsystem_get_nqn(subsystem),
+		      spdk_bdev_get_name(bdev),
+		      nsid,
+		      anagrpid);
+
 	return nsid;
 }
 

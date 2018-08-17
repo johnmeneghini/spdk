@@ -181,6 +181,12 @@ spdk_bdev_get_name(const struct spdk_bdev *bdev)
 	return "test";
 }
 
+uint8_t
+spdk_bdev_get_ana_state(struct spdk_bdev *bdev, uint16_t cntlid)
+{
+	return 1;
+}
+
 static void
 test_spdk_nvmf_tgt_listen(void)
 {
@@ -207,33 +213,111 @@ test_spdk_nvmf_tgt_listen(void)
 }
 
 static void
-test_spdk_nvmf_subsystem_add_ns(void)
+test_spdk_nvmf_subsystem_add_remove_ns(void)
 {
 	struct spdk_nvmf_subsystem subsystem = {
 		.mode = NVMF_SUBSYSTEM_MODE_VIRTUAL,
 		.dev.virt.max_nsid = 0,
 		.dev.virt.ns_list = {},
 	};
-	struct spdk_bdev bdev1 = {}, bdev2 = {};
+	struct spdk_bdev bdev1 = {}, bdev2 = {}, bdev3 = {};
+	struct spdk_nvmf_ana_group *ana_group = NULL;
 	uint32_t nsid;
+	int ret,  app_ctxt = 3;
 
-	/* Allow NSID to be assigned automatically */
-	nsid = spdk_nvmf_subsystem_add_ns(&subsystem, &bdev1, 0);
+	/* Allow NSID to be assigned automatically without an ana group */
+	nsid = spdk_nvmf_subsystem_add_ns(&subsystem, &bdev1, 0, 0);
 	/* NSID 1 is the first unused ID */
 	CU_ASSERT(nsid == 1);
 	CU_ASSERT(subsystem.dev.virt.max_nsid == 1);
 	CU_ASSERT(subsystem.dev.virt.ns_list[nsid - 1] == &bdev1);
 
-	/* Request a specific NSID */
-	nsid = spdk_nvmf_subsystem_add_ns(&subsystem, &bdev2, 5);
+	/* Request a specific NSID without an ana group */
+	nsid = spdk_nvmf_subsystem_add_ns(&subsystem, &bdev2, 5, 0);
 	CU_ASSERT(nsid == 5);
 	CU_ASSERT(subsystem.dev.virt.max_nsid == 5);
 	CU_ASSERT(subsystem.dev.virt.ns_list[nsid - 1] == &bdev2);
 
 	/* Request an NSID that is already in use */
-	nsid = spdk_nvmf_subsystem_add_ns(&subsystem, &bdev2, 5);
+	nsid = spdk_nvmf_subsystem_add_ns(&subsystem, &bdev2, 5, 0);
 	CU_ASSERT(nsid == 0);
 	CU_ASSERT(subsystem.dev.virt.max_nsid == 5);
+
+	/* Add a namespace with a non-existent ANA group */
+	nsid = spdk_nvmf_subsystem_add_ns(&subsystem, &bdev3, 0, 3);
+	CU_ASSERT(nsid == 0);
+	/* max_nsid should be unchanged */
+	CU_ASSERT(subsystem.dev.virt.max_nsid == 5);
+
+	/* Initialize ana_groups list in subsystem */
+	TAILQ_INIT(&subsystem.ana_groups);
+
+	/* Add a new ANA group */
+	CU_ASSERT(subsystem.num_ana_groups == 0);
+	ret = spdk_nvmf_subsystem_add_ana_group(&subsystem, 3, NULL);
+	CU_ASSERT(ret == 0);
+	CU_ASSERT(subsystem.num_ana_groups == 1);
+
+	/* Add a second ANA group */
+	CU_ASSERT(subsystem.num_ana_groups == 1);
+	ret = spdk_nvmf_subsystem_add_ana_group(&subsystem, 2, &app_ctxt);
+	CU_ASSERT(ret == 0);
+	CU_ASSERT(subsystem.num_ana_groups == 2);
+
+	/* Make sure ana_group 2 is the first entry in the list */
+	ana_group = TAILQ_FIRST(&subsystem.ana_groups);
+	CU_ASSERT(ana_group->anagrpid == 2);
+	CU_ASSERT(ana_group->num_nsids == 0);
+	CU_ASSERT(ana_group->app_ctxt == &app_ctxt);
+
+	/* Add a namespace with an ANA group */
+	nsid = spdk_nvmf_subsystem_add_ns(&subsystem, &bdev3, 0, 2);
+	CU_ASSERT(nsid == 2);
+	CU_ASSERT(bdev3.anagrpid == 2);
+	CU_ASSERT(ana_group->num_nsids == 1);
+	/* max_nsid should be unchanged */
+	CU_ASSERT(subsystem.dev.virt.max_nsid == 5);
+
+	/* Remove ana group with existing namespaces should fail */
+	CU_ASSERT(subsystem.num_ana_groups == 2);
+	ret = spdk_nvmf_subsystem_remove_ana_group(&subsystem, 2);
+	CU_ASSERT(ret == -1);
+	CU_ASSERT(subsystem.num_ana_groups == 2);
+
+	/* Remove a non-existent ana group */
+	CU_ASSERT(subsystem.num_ana_groups == 2);
+	ret = spdk_nvmf_subsystem_remove_ana_group(&subsystem, 5);
+	CU_ASSERT(ret == -1);
+	CU_ASSERT(subsystem.num_ana_groups == 2);
+
+	/* Remove an ana group with no namespaces */
+	CU_ASSERT(subsystem.num_ana_groups == 2);
+	ret = spdk_nvmf_subsystem_remove_ana_group(&subsystem, 3);
+	CU_ASSERT(ret == 0);
+	CU_ASSERT(subsystem.num_ana_groups == 1);
+
+	/* Remove a non-existent namespace */
+	ret = spdk_nvmf_subsystem_remove_ns(&subsystem, 10);
+	CU_ASSERT(ret == -1);
+	CU_ASSERT(subsystem.dev.virt.max_nsid == 5);
+
+	/* Remove a namespace not in any ANA group */
+	ret = spdk_nvmf_subsystem_remove_ns(&subsystem, 5);
+	CU_ASSERT(ret == 0);
+	CU_ASSERT(subsystem.dev.virt.max_nsid == 2);
+
+	/* Remove a namespace in an ANA group */
+	ret = spdk_nvmf_subsystem_remove_ns(&subsystem, 2);
+	CU_ASSERT(ret == 0);
+	CU_ASSERT(subsystem.dev.virt.max_nsid == 1);
+	CU_ASSERT(bdev3.anagrpid == 0);
+	CU_ASSERT(ana_group->num_nsids == 0);
+
+	/* Remove empty ANA group */
+	CU_ASSERT(subsystem.num_ana_groups == 1);
+	ret = spdk_nvmf_subsystem_remove_ana_group(&subsystem, 2);
+	CU_ASSERT(ret == 0);
+	CU_ASSERT(subsystem.num_ana_groups == 0);
 }
 
 static void
@@ -296,8 +380,9 @@ int main(int argc, char **argv)
 	if (
 		CU_add_test(suite, "create_subsystem", nvmf_test_create_subsystem) == NULL ||
 		CU_add_test(suite, "nvmf_tgt_listen", test_spdk_nvmf_tgt_listen) == NULL ||
-		CU_add_test(suite, "nvmf_subsystem_add_ns", test_spdk_nvmf_subsystem_add_ns) == NULL ||
-		CU_add_test(suite, "find_subsystem", nvmf_test_find_subsystem) == NULL) {
+		CU_add_test(suite, "find_subsystem", nvmf_test_find_subsystem) == NULL ||
+		CU_add_test(suite, "nvmf_subsystem_add_remove_ns",
+			    test_spdk_nvmf_subsystem_add_remove_ns) == NULL) {
 		CU_cleanup_registry();
 		return CU_get_error();
 	}

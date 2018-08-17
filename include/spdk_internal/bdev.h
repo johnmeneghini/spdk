@@ -171,6 +171,9 @@ struct spdk_bdev_fn_table {
 
 	/* Abort a given IO. */
 	void (*abort_request)(struct spdk_bdev_io *, void *abt_ctx);
+
+	/* Get ANA path state for a given bdev via a given controller */
+	uint8_t (*get_ana_state)(void *ctx, uint16_t cntlid);
 };
 
 /** bdev I/O completion status */
@@ -188,6 +191,9 @@ struct spdk_bdev {
 
 	/** Unique name for this block device. */
 	char *name;
+
+	/** ANA group id of this bdev */
+	uint32_t anagrpid;
 
 	/** Unique product name for this kind of block device. */
 	char *product_name;
@@ -209,6 +215,9 @@ struct spdk_bdev {
 	 * This causes double buffering on writes.
 	 */
 	int need_aligned_buffer;
+
+	/** thin provisioning, not used at the moment */
+	int thin_provisioning;
 
 	/**
 	 * Pointer to the bdev module that registered this bdev.

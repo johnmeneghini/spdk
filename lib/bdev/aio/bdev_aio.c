@@ -360,6 +360,7 @@ create_aio_disk(const char *name, const char *fname)
 	if (!fdisk->disk.name) {
 		goto error_return;
 	}
+
 	fdisk->disk.product_name = "AIO disk";
 	fdisk->disk.module = SPDK_GET_BDEV_MODULE(aio);
 

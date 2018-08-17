@@ -82,7 +82,7 @@ struct spdk_bdev;
  */
 struct spdk_bdev_desc;
 
-/** bdev I/O type */
+/** Blockdev I/O type */
 enum spdk_bdev_io_type {
 	SPDK_BDEV_IO_TYPE_READ = 1,
 	SPDK_BDEV_IO_TYPE_WRITE,
@@ -453,6 +453,8 @@ int spdk_bdev_free_io(struct spdk_bdev_io *bdev_io);
 void spdk_bdev_get_io_stat(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 			   struct spdk_bdev_io_stat *stat);
 
+uint8_t spdk_bdev_get_ana_state(struct spdk_bdev *bdev, uint16_t cntlid);
+
 struct spdk_bdev_io *spdk_bdev_read_init(struct spdk_bdev_desc *desc,
 		struct spdk_io_channel *ch,
 		struct spdk_mempool *bdev_io_pool,
@@ -462,6 +464,7 @@ struct spdk_bdev_io *spdk_bdev_read_init(struct spdk_bdev_desc *desc,
 		int32_t *iovcnt,
 		int32_t length,
 		uint64_t offset);
+
 int spdk_bdev_read_fini(struct spdk_bdev_io *bdev_io);
 
 struct spdk_bdev_io   *spdk_bdev_write_init(struct spdk_bdev_desc *desc,

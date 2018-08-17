@@ -39,7 +39,8 @@
 #include "spdk/nvme.h"
 #include "spdk/nvmf.h"
 
-struct spdk_nvmf_subsystem *spdk_nvmf_find_subsystem_with_cntlid(uint16_t cntlid);
+struct spdk_nvmf_session *spdk_nvmf_subsystem_get_ctrlr(struct spdk_nvmf_subsystem *subsystem,
+		uint16_t cntlid);
 
 void spdk_nvmf_get_discovery_log_page(struct spdk_nvmf_request *req, uint64_t offset,
 				      uint32_t length);

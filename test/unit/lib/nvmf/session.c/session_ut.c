@@ -41,8 +41,8 @@ SPDK_LOG_REGISTER_TRACE_FLAG("nvmf", SPDK_TRACE_NVMF)
 
 struct spdk_nvmf_tgt g_nvmf_tgt;
 
-struct spdk_nvmf_subsystem *
-spdk_nvmf_find_subsystem_with_cntlid(uint16_t cntlid)
+struct spdk_nvmf_session *
+spdk_nvmf_subsystem_get_ctrlr(struct spdk_nvmf_subsystem *subsystem, uint16_t cntlid)
 {
 	return NULL;
 }
@@ -89,8 +89,10 @@ test_process_aer_rsp(void)
 	strcpy(subsystem->subnqn, "nqn.2016-06.io.spdk:subsystem1");
 	req->rsp = rsp;
 	session->subsys = subsystem;
-	session->aer_ctxt.is_aer_pending = false;
+	session->aer_ctxt.aer_pending_map = 0;
 	session->aer_req = req;
+	session->async_event_config.raw = SPDK_NVME_AER_NS_ATTR_NOTICES |
+					  SPDK_NVME_AER_ANA_CHANGE_NOTICES;
 	TAILQ_INIT(&subsystem->sessions);
 	TAILQ_INSERT_TAIL(&subsystem->sessions, session, link);
 
@@ -100,19 +102,38 @@ test_process_aer_rsp(void)
 	spdk_nvmf_queue_aer_rsp(subsystem, aer_type, aer_info);
 	/* Check aer_req is intact and not used to issue aer rsp */
 	CU_ASSERT_EQUAL(session->aer_req, req);
-	CU_ASSERT_EQUAL(session->aer_ctxt.is_aer_pending, false);
+	CU_ASSERT_EQUAL(session->aer_ctxt.aer_pending_map, 0);
 
 	/* Check for aer_req value after an aer_rsp is sent */
+	/* for NS_ATTR_CHANGED */
+	aer_info = AER_NOTICE_INFO_NS_ATTR_CHANGED;
 	aer_type = AER_TYPE_NOTICE;
 	spdk_nvmf_queue_aer_rsp(subsystem, aer_type, aer_info);
 	CU_ASSERT_EQUAL(session->aer_req, NULL);
-	CU_ASSERT_EQUAL(session->aer_ctxt.is_aer_pending, false);
+	CU_ASSERT_EQUAL(session->aer_ctxt.aer_pending_map, 0);
 
-	/* Check for is_aer_pending flag when aer_req is NULL */
-	session->aer_req = NULL;
+	/* for ANA CHANGED */
+	session->aer_req = req;
+	aer_info = AER_NOTICE_INFO_ANA_CHANGE;
 	spdk_nvmf_queue_aer_rsp(subsystem, aer_type, aer_info);
 	CU_ASSERT_EQUAL(session->aer_req, NULL);
-	CU_ASSERT_EQUAL(session->aer_ctxt.is_aer_pending, true);
+	CU_ASSERT_EQUAL(session->aer_ctxt.aer_pending_map, 0);
+
+	/* Check for aer_pending_map for NS_ATTR_CHANGED when aer_req is NULL */
+	session->aer_req = NULL;
+	aer_info = AER_NOTICE_INFO_NS_ATTR_CHANGED;
+	session->aer_ctxt.aer_pending_map = 0;
+	spdk_nvmf_queue_aer_rsp(subsystem, aer_type, aer_info);
+	CU_ASSERT_EQUAL(session->aer_req, NULL);
+	CU_ASSERT_EQUAL(session->aer_ctxt.aer_pending_map, SPDK_NVME_AER_NS_ATTR_NOTICES);
+
+	/* Check for aer_pending_map for ANA_CHANGE when aer_req is NULL */
+	session->aer_req = NULL;
+	aer_info = AER_NOTICE_INFO_ANA_CHANGE;
+	session->aer_ctxt.aer_pending_map = 0;
+	spdk_nvmf_queue_aer_rsp(subsystem, aer_type, aer_info);
+	CU_ASSERT_EQUAL(session->aer_req, NULL);
+	CU_ASSERT_EQUAL(session->aer_ctxt.aer_pending_map, SPDK_NVME_AER_ANA_CHANGE_NOTICES);
 
 	free(subsystem);
 	free(session);

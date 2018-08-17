@@ -37,10 +37,15 @@
 #include "lib/test_env.c"
 
 #include "virtual.c"
+#include "transport.h"
 
 struct spdk_nvmf_tgt g_nvmf_tgt;
 
 SPDK_LOG_REGISTER_TRACE_FLAG("nvmf", SPDK_TRACE_NVMF)
+
+const struct spdk_nvmf_ctrlr_ops spdk_nvmf_direct_ctrlr_ops;
+const struct spdk_nvmf_ctrlr_ops spdk_nvmf_virtual_ctrlr_ops;
+const struct spdk_nvmf_ctrlr_ops spdk_nvmf_discovery_ctrlr_ops;
 
 struct spdk_nvmf_tgt g_nvmf_tgt;
 
@@ -257,20 +262,15 @@ int spdk_bdev_free_io(struct spdk_bdev_io *bdev_io)
 	return -1;
 }
 
+int
+spdk_bdev_open(struct spdk_bdev *bdev, bool write, spdk_bdev_remove_cb_t remove_cb,
+	       void *remove_ctx, struct spdk_bdev_desc **desc)
+{
+	return 0;
+}
+
 void spdk_bdev_close(struct spdk_bdev_desc *desc)
 {
-}
-
-const char *spdk_nvmf_subsystem_get_nqn(struct spdk_nvmf_subsystem *subsystem)
-{
-	return NULL;
-}
-
-const char *
-spdk_nvmf_subsystem_get_sn(const struct spdk_nvmf_subsystem *subsystem)
-{
-	abort();
-	return NULL;
 }
 
 void spdk_bdev_io_get_nvme_status(const struct spdk_bdev_io *bdev_io, int *sct, int *sc, int *dnr)
@@ -324,10 +324,187 @@ spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io, void *abt_ctx)
 	return;
 }
 
+void
+spdk_nvmf_session_destruct(struct spdk_nvmf_session *session)
+{
+}
+
+int
+spdk_nvmf_session_poll(struct spdk_nvmf_session *session)
+{
+	return -1;
+}
+
+const struct spdk_nvmf_transport *
+spdk_nvmf_transport_get(const char *name)
+{
+	return NULL;
+}
+
+struct spdk_nvmf_listen_addr *
+spdk_nvmf_listen_addr_create(const char *trname, enum spdk_nvmf_adrfam adrfam, const char *traddr,
+			     const char *trsvcid)
+{
+	return NULL;
+}
+
+void
+spdk_nvmf_listen_addr_cleanup(struct spdk_nvmf_listen_addr *addr)
+{
+}
+
+bool
+spdk_nvmf_listen_addr_compare(struct spdk_nvmf_listen_addr *a, struct spdk_nvmf_listen_addr *b)
+{
+	return false;
+}
+
+uint8_t
+spdk_bdev_get_ana_state(struct spdk_bdev *bdev, uint16_t cntlid)
+{
+	return SPDK_NVME_ANA_OPTIMIZED;
+}
+
+bool
+spdk_nvmf_session_get_ana_status(struct spdk_nvmf_session *session)
+{
+	return false;
+}
+
+static void
+test_ana_log(void)
+{
+	struct spdk_nvmf_subsystem *subsystem;
+	struct spdk_nvmf_ana_log_page *hdr = NULL;
+	struct spdk_nvmf_ana_group_desc_format *group_desc = NULL;
+	struct spdk_nvmf_request req = {0};
+	struct	spdk_nvmf_conn req_conn = {};
+	struct	spdk_nvmf_session req_sess = {};
+	struct spdk_bdev bdev1 = {}, bdev2 = {};
+	uint8_t buffer[8192], lsp = 0x0;
+	/* rgo false */
+	uint64_t offset = 0x0;
+	uint32_t length = 8192, nsid = 0;
+	int ret = 0;
+
+	req.data = buffer;
+	snprintf(req_sess.hostnqn, 223, "nqn.2017-07.com.netapp:num1");
+	req.conn = &req_conn;
+	req.conn->sess = &req_sess;
+
+	TAILQ_INIT(&g_nvmf_tgt.subsystems);
+	subsystem = spdk_nvmf_create_subsystem("nqn.2016-06.io.spdk:subsystem1", SPDK_NVMF_SUBTYPE_NVME,
+					       NVMF_SUBSYSTEM_MODE_VIRTUAL, NULL, NULL, NULL);
+	SPDK_CU_ASSERT_FATAL(subsystem != NULL);
+
+	req.conn->sess->subsys = subsystem;
+
+	/* Get ANA log on a subsystem with no ANA groups */
+	memset(buffer, 0x0, sizeof(buffer));
+	ret = nvmf_virtual_ctrlr_get_ana_log_page(&req, lsp, offset, length);
+	CU_ASSERT(ret == 0);
+	hdr = (struct spdk_nvmf_ana_log_page *)req.data;
+	CU_ASSERT(hdr->change_count == 0);
+	CU_ASSERT(hdr->num_group_descs == 0);
+
+	/* Add an empty ANA group */
+	CU_ASSERT(subsystem->num_ana_groups == 0);
+	ret = spdk_nvmf_subsystem_add_ana_group(subsystem, 3, NULL);
+	CU_ASSERT(ret == 0);
+	CU_ASSERT(subsystem->num_ana_groups == 1);
+
+	/* Get ANA log on a subsystem containing 1 empty ANA group */
+	memset(buffer, 0x0, sizeof(buffer));
+	ret = nvmf_virtual_ctrlr_get_ana_log_page(&req, lsp, offset, length);
+	CU_ASSERT(ret == 0);
+	hdr = (struct spdk_nvmf_ana_log_page *)req.data;
+	/* Commenting line below as code to incr change_count not in yet */
+	/* CU_ASSERT(hdr->change_count == 1); */
+	CU_ASSERT(hdr->num_group_descs == 1);
+	group_desc = (struct spdk_nvmf_ana_group_desc_format *)(++hdr);
+	CU_ASSERT(group_desc->anagrpid == 3);
+	CU_ASSERT(group_desc->num_nsids == 0);
+	CU_ASSERT(group_desc->change_count == 0);
+	CU_ASSERT(group_desc->ana_state.state == SPDK_NVME_ANA_INACCESSIBLE);
+
+	/* Add 2 namespaces to subsystem for the above ANA group */
+	nsid = spdk_nvmf_subsystem_add_ns(subsystem, &bdev1, 0, 3);
+	CU_ASSERT(nsid == 1);
+	nsid = spdk_nvmf_subsystem_add_ns(subsystem, &bdev2, 0, 3);
+	CU_ASSERT(nsid == 2);
+
+	/* Get ANA log on a subsystem containing 1 ANA group with 2 namespaces */
+	memset(buffer, 0x0, sizeof(buffer));
+	ret = nvmf_virtual_ctrlr_get_ana_log_page(&req, lsp, offset, length);
+	CU_ASSERT(ret == 0);
+	hdr = (struct spdk_nvmf_ana_log_page *)req.data;
+	/* CU_ASSERT(hdr->change_count == 1); */
+	CU_ASSERT(hdr->num_group_descs == 1);
+	group_desc = (struct spdk_nvmf_ana_group_desc_format *)(++hdr);
+	CU_ASSERT(group_desc->anagrpid == 3);
+	CU_ASSERT(group_desc->num_nsids == 2);
+	CU_ASSERT(group_desc->change_count == 0);
+	CU_ASSERT(group_desc->ana_state.state == SPDK_NVME_ANA_OPTIMIZED);
+	CU_ASSERT(group_desc->nsid_list[0] == 1);
+	CU_ASSERT(group_desc->nsid_list[1] == 2);
+
+	/* Get ANA log on a subsystem containing 1 ANA group
+	   with 2 namespaces at an offset */
+	memset(buffer, 0x0, sizeof(buffer));
+	offset = sizeof(struct spdk_nvmf_ana_log_page);
+	ret = nvmf_virtual_ctrlr_get_ana_log_page(&req, lsp, offset, length);
+	CU_ASSERT(ret == 0);
+	/* We will not get header */
+	group_desc = (struct spdk_nvmf_ana_group_desc_format *)(req.data);
+	CU_ASSERT(group_desc->anagrpid == 3)
+	CU_ASSERT(group_desc->num_nsids == 2);
+	CU_ASSERT(group_desc->change_count == 0);
+	CU_ASSERT(group_desc->ana_state.state == SPDK_NVME_ANA_OPTIMIZED);
+	CU_ASSERT(group_desc->nsid_list[0] == 1);
+	CU_ASSERT(group_desc->nsid_list[1] == 2);
+
+	/* Get ANA log on a subsystem containing 1 ANA group
+	   with 2 namespaces at an offset with rgo bit set */
+	memset(buffer, 0x0, sizeof(buffer));
+	lsp = 0x1;
+	offset = sizeof(struct spdk_nvmf_ana_log_page);
+	ret = nvmf_virtual_ctrlr_get_ana_log_page(&req, lsp, offset, length);
+	CU_ASSERT(ret == 0);
+	/* We will not get header */
+	group_desc = (struct spdk_nvmf_ana_group_desc_format *)(req.data);
+	CU_ASSERT(group_desc->anagrpid == 3);
+	/* We should not get nsids */
+	CU_ASSERT(group_desc->num_nsids == 0);
+	CU_ASSERT(group_desc->change_count == 0);
+	CU_ASSERT(group_desc->ana_state.state == SPDK_NVME_ANA_OPTIMIZED);
+
+	/* Get ANA log on a subsystem containing 1 ANA group with 2
+	   namespaces and length less than the size of log page */
+	memset(buffer, 0x0, sizeof(buffer));
+	lsp = 0;
+	offset = 0;
+	/* Read only change count and number of ana descriptors */
+	length = 10;
+	ret = nvmf_virtual_ctrlr_get_ana_log_page(&req, lsp, offset, length);
+	CU_ASSERT(ret == 0);
+	hdr = (struct spdk_nvmf_ana_log_page *)req.data;
+	/* CU_ASSERT(hdr->change_count == 1); */
+	CU_ASSERT(hdr->num_group_descs == 1);
+	group_desc = (struct spdk_nvmf_ana_group_desc_format *)(++hdr);
+	CU_ASSERT(group_desc->anagrpid == 0);
+	CU_ASSERT(group_desc->num_nsids == 0);
+	CU_ASSERT(group_desc->change_count == 0);
+	CU_ASSERT(group_desc->ana_state.state == 0);
+
+	/* Delete the subsystem with ANA group */
+	spdk_nvmf_delete_subsystem(subsystem);
+}
 
 static void
 nvmf_test_nvmf_virtual_ctrlr_get_log_page(void)
 {
+	test_ana_log();
+	/* Test other log pages */
 }
 
 int main(int argc, char **argv)

@@ -225,6 +225,10 @@ spdk_bdev_io_set_buf(struct spdk_bdev_io *bdev_io, void *buf)
 	assert(buf != NULL);
 	assert(bdev_io->u.read.iovs != NULL);
 
+	if (buf == NULL || bdev_io->get_buf_cb == NULL || bdev_io->u.read.iovs == NULL) {
+		return;
+	}
+
 	bdev_io->buf = buf;
 	bdev_io->u.read.iovs[0].iov_base = (void *)((unsigned long)((char *)buf + 512) & ~511UL);
 	bdev_io->u.read.iovs[0].iov_len = bdev_io->u.read.len;
@@ -535,7 +539,7 @@ spdk_bdev_finish(void)
 static struct spdk_bdev_io *
 spdk_bdev_get_io(struct spdk_mempool *pool)
 {
-	struct spdk_bdev_io *bdev_io;
+	struct spdk_bdev_io *bdev_io = NULL;
 
 	if (pool == NULL) {
 		assert(spdk_bdev_g_use_global_pools);
@@ -723,6 +727,16 @@ struct spdk_io_channel *
 spdk_bdev_get_io_channel(struct spdk_bdev_desc *desc)
 {
 	return spdk_get_io_channel(desc->bdev);
+}
+
+uint8_t
+spdk_bdev_get_ana_state(struct spdk_bdev *bdev, uint16_t cntlid)
+{
+	if (bdev && bdev->fn_table && bdev->fn_table->get_ana_state) {
+		return bdev->fn_table->get_ana_state(bdev->ctxt, cntlid);
+	}
+	SPDK_ERRLOG("No callback registered returning ANA state optimized\n");
+	return SPDK_NVME_ANA_OPTIMIZED;
 }
 
 const char *
@@ -1354,6 +1368,10 @@ spdk_bdev_io_get_nvme_status(const struct spdk_bdev_io *bdev_io, int *sct, int *
 	assert(sct != NULL);
 	assert(sc != NULL);
 
+	if (sct == NULL || sc == NULL) {
+		return;
+	}
+
 	if (bdev_io->status == SPDK_BDEV_IO_STATUS_NVME_ERROR) {
 		*sct = bdev_io->error.nvme.sct;
 		*sc = bdev_io->error.nvme.sc;
@@ -1716,11 +1734,12 @@ spdk_bdev_read_init(struct spdk_bdev_desc *desc,
 
 	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb);
 
-
-	if (bdev->fn_table->init_read) {
-		rc = bdev->fn_table->init_read(length, iov, iovcnt, bdev_io);
-	} else {
-		rc = spdk_bdev_get_buff(iov, iovcnt, length);
+	if (!(*iovcnt)) {
+		if (bdev->fn_table->init_read) {
+			rc = bdev->fn_table->init_read(length, iov, iovcnt, bdev_io);
+		} else {
+			rc = spdk_bdev_get_buff(iov, iovcnt, length);
+		}
 	}
 
 	if (rc) {

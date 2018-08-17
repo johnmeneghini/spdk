@@ -167,7 +167,12 @@ nvmf_virtual_ctrlr_get_data(struct spdk_nvmf_session *session)
 	session->vcdata.cqes.min = 0x04;
 	session->vcdata.cqes.max = 0x04;
 	session->vcdata.maxcmd = g_nvmf_tgt.opts.max_io_queue_depth;
+	session->vcdata.anatt = g_nvmf_tgt.opts.anatt;
+	memcpy(&session->vcdata.anacap, &g_nvmf_tgt.opts.anacap, sizeof(uint8_t));
+	session->vcdata.anagrpmax = g_nvmf_tgt.opts.anagrpmax;
+	session->vcdata.nanagrpid = g_nvmf_tgt.opts.nanagrpid;
 	session->vcdata.nn = MAX_VIRTUAL_NAMESPACE;
+	session->vcdata.mnan = g_nvmf_tgt.opts.mnan;
 	/* TODO: Madhu - Check if the next two lines are Ok. in our env. */
 	session->vcdata.vwc.present = 1;
 	session->vcdata.sgls.supported = 1;
@@ -215,11 +220,157 @@ nvmf_virtual_ctrlr_complete_cmd(struct spdk_bdev_io *bdev_io, bool success,
 }
 
 static int
+nvmf_virtual_ctrlr_get_ana_log_page(struct spdk_nvmf_request *req, uint8_t lsp, uint64_t offset,
+				    uint32_t length)
+{
+	struct spdk_nvmf_subsystem *subsys = NULL;
+	uint32_t nsid, num_ns, copy_size;
+	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
+	uint8_t *curr_ptr = req->data;
+	struct spdk_nvmf_ana_log_page hdr = {0};
+	struct spdk_nvmf_ana_group_desc_format group_desc = {0};
+	struct spdk_nvmf_ana_group *ana_subsys_entry = NULL;
+	struct spdk_nvmf_ana_group *ana_subsys_entry_tmp = NULL;
+	uint8_t ana_state;
+	bool rgo = (lsp & 0x01);
+
+	if (!req) {
+		SPDK_ERRLOG("Get Log command with no request\n");
+		goto error;
+	}
+
+	if (!length) {
+		SPDK_ERRLOG("Get Log command with zero length\n");
+		goto error;
+	}
+
+	if (!req->conn) {
+		SPDK_ERRLOG("Get Log command with no connection\n");
+		goto error;
+	}
+
+	if (!req->conn->sess) {
+		SPDK_ERRLOG("Get Log command with no session\n");
+		goto error;
+	}
+
+	if (!req->conn->sess->subsys) {
+		SPDK_ERRLOG("Get Log command with no subsystem\n");
+		goto error;
+	}
+
+	subsys = req->conn->sess->subsys;
+	num_ns = subsys->dev.virt.max_nsid;
+
+	SPDK_TRACELOG(SPDK_TRACE_NVMF,
+		      "Subsystem: %s received ana log page request with rgo %u, length %u and offset %lu on controller %u\n",
+		      spdk_nvmf_subsystem_get_nqn(subsys), rgo, length, offset, req->conn->sess->cntlid);
+
+	if (offset >= sizeof(struct spdk_nvmf_ana_log_page)) {
+		/** Skip header */
+		offset -= sizeof(struct spdk_nvmf_ana_log_page);
+	} else {
+		/** Copy (part of) header */
+		hdr.change_count = req->conn->sess->ana_log_change_count;
+		hdr.num_group_descs = subsys->num_ana_groups;
+		copy_size = sizeof(hdr) - offset;
+		if (copy_size > length) {
+			copy_size = length;
+		}
+		length -= copy_size;
+		memcpy(curr_ptr, (char *)&hdr + offset, copy_size);
+		if (!length) {
+			goto done;
+		}
+		curr_ptr += copy_size;
+		offset = 0;
+	}
+
+	TAILQ_FOREACH_SAFE(ana_subsys_entry, &subsys->ana_groups, link, ana_subsys_entry_tmp) {
+		assert(ana_subsys_entry->anagrpid != 0);
+		if (offset >= sizeof(struct spdk_nvmf_ana_group_desc_format)) {
+			/** Skip log page entry for this group */
+			offset -= sizeof(struct spdk_nvmf_ana_group_desc_format);
+		} else {
+			/** Copy (part of) log page entry for this group */
+			group_desc.anagrpid = ana_subsys_entry->anagrpid;
+			group_desc.num_nsids = rgo ? 0 : ana_subsys_entry->num_nsids;
+			/* We do not support group level change count */
+			group_desc.change_count = 0;
+			ana_state = spdk_nvmf_subsystem_get_ana_group_state(subsys, ana_subsys_entry->anagrpid,
+					req->conn->sess->cntlid);
+			memcpy(&group_desc.ana_state, &ana_state, sizeof(group_desc.ana_state));
+			copy_size = sizeof(group_desc) - offset;
+			if (copy_size > length) {
+				copy_size = length;
+			}
+			length -= copy_size;
+			memcpy(curr_ptr, (char *)&group_desc + offset, copy_size);
+			if (!length) {
+				goto done;
+			}
+			curr_ptr += copy_size;
+			offset = 0;
+		}
+
+		if (!rgo) {
+			if (offset >= (ana_subsys_entry->num_nsids * sizeof(nsid))) {
+				/** Skip all nsids for this group */
+				offset -= (ana_subsys_entry->num_nsids * sizeof(nsid));
+			} else {
+				/** Copy (part of) nsids for this group */
+				for (nsid = 1; nsid <= num_ns; nsid++) {
+					if (subsys->dev.virt.ns_list[nsid - 1] == NULL) {
+						continue;
+					}
+
+					if (subsys->dev.virt.ns_list[nsid - 1]->anagrpid == ana_subsys_entry->anagrpid) {
+						if (offset >= sizeof(nsid)) {
+							/** Skip this nsid */
+							offset -= sizeof(nsid);
+						} else {
+							/** Copy (part of) this nsid */
+							copy_size = sizeof(nsid) - offset;
+							if (copy_size > length) {
+								copy_size = length;
+							}
+							length -= copy_size;
+							memcpy(curr_ptr, (char *)&nsid + offset, copy_size);
+							if (!length) {
+								goto done;
+							}
+							curr_ptr += copy_size;
+							offset = 0;
+						}
+					}
+				}
+				assert(offset == 0);
+			}
+		}
+	}
+	goto done;
+error:
+	response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+done:
+	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+}
+
+static inline uint32_t
+nvmf_get_log_page_len(struct spdk_nvme_cmd *cmd)
+{
+	uint32_t numdl = (cmd->cdw10 >> 16) & 0xFFFFu;
+	uint32_t numdu = (cmd->cdw11) & 0xFFFFu;
+	return ((numdu << 16) + numdl + 1) * sizeof(uint32_t);
+}
+
+static int
 nvmf_virtual_ctrlr_get_log_page(struct spdk_nvmf_request *req)
 {
 	uint8_t lid;
+	uint8_t lsp = 0;
 	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
 	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
+	uint32_t len;
 	uint64_t log_page_offset;
 
 	if (req->data == NULL) {
@@ -238,11 +389,22 @@ nvmf_virtual_ctrlr_get_log_page(struct spdk_nvmf_request *req)
 	}
 
 	lid = cmd->cdw10 & 0xFF;
+	lsp = (cmd->cdw10 >> 8) & 0xF;
 	switch (lid) {
 	case SPDK_NVME_LOG_ERROR:
 	case SPDK_NVME_LOG_HEALTH_INFORMATION:
 	case SPDK_NVME_LOG_FIRMWARE_SLOT:
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+	case SPDK_NVME_ANA_LOG:
+		len = nvmf_get_log_page_len(cmd);
+		if (len > req->length) {
+			SPDK_ERRLOG("Get log page: len (%u) > buf size (%u)\n",
+				    len, req->length);
+			response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+		}
+		return nvmf_virtual_ctrlr_get_ana_log_page(req, lsp, log_page_offset, len);
+		break;
 	default:
 		SPDK_ERRLOG("Unsupported Get Log Page 0x%02X\n", lid);
 		response->status.sct = SPDK_NVME_SCT_COMMAND_SPECIFIC;
@@ -255,10 +417,12 @@ static int
 identify_ns(struct spdk_nvmf_subsystem *subsystem,
 	    struct spdk_nvme_cmd *cmd,
 	    struct spdk_nvme_cpl *rsp,
-	    struct spdk_nvme_ns_data *nsdata)
+	    struct spdk_nvme_ns_data *nsdata,
+	    struct spdk_nvmf_session *session)
 {
 	struct spdk_bdev *bdev;
 	uint64_t num_blocks;
+	uint64_t len_in_bytes;
 
 	if (cmd->nsid > subsystem->dev.virt.max_nsid || cmd->nsid == 0) {
 		SPDK_ERRLOG("Identify Namespace for invalid NSID %u\n", cmd->nsid);
@@ -274,6 +438,24 @@ identify_ns(struct spdk_nvmf_subsystem *subsystem,
 	}
 
 	num_blocks = spdk_bdev_get_num_blocks(bdev);
+
+	if (spdk_nvmf_session_get_ana_status(session)) {
+		nsdata->anagrpid = bdev->anagrpid;
+		if ((spdk_bdev_get_ana_state(bdev, session->cntlid) ==
+		     SPDK_NVME_ANA_INACCESSIBLE) ||
+		    (spdk_bdev_get_ana_state(bdev, session->cntlid) ==
+		     SPDK_NVME_ANA_PERSISTENT_LOSS)) {
+			nsdata->nuse = 0;
+			memset(nsdata->nvmcap, 0, sizeof(nsdata->nvmcap));
+		} else {
+			nsdata->nuse = num_blocks;
+			len_in_bytes = num_blocks * bdev->blocklen;
+			memcpy(nsdata->nvmcap, &len_in_bytes, sizeof(nsdata->nvmcap));
+		}
+	} else {
+		nsdata->anagrpid = 0;
+		nsdata->nuse = num_blocks;
+	}
 
 	nsdata->nsze = num_blocks;
 	nsdata->ncap = num_blocks;
@@ -376,7 +558,7 @@ nvmf_virtual_ctrlr_identify(struct spdk_nvmf_request *req)
 	cns = cmd->cdw10 & 0xFF;
 	switch (cns) {
 	case SPDK_NVME_IDENTIFY_NS:
-		return identify_ns(subsystem, cmd, rsp, req->data);
+		return identify_ns(subsystem, cmd, rsp, req->data, session);
 	case SPDK_NVME_IDENTIFY_CTRLR:
 		return identify_ctrlr(session, req->data);
 	case SPDK_NVME_IDENTIFY_ACTIVE_NS_LIST:

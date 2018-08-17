@@ -48,6 +48,20 @@
 #define MIN_KEEP_ALIVE_TIMEOUT 10000
 #define SPDK_NVMF_BLOCK_SIZE 4096
 
+/* Controller ID information is a 16-bit information formed by
+ * 6 bits (least significant) of target instance information
+ * 10 bits (most significant) of controller instance information
+ */
+#define CNTL_ID_LEN 16
+#define NVMF_TGT_INSTANCE_LEN 6
+#define CNTL_INSTANCE_LEN (CNTL_ID_LEN - NVMF_TGT_INSTANCE_LEN)
+
+#define MAX_TGT_INSTANCE_ID (1 << NVMF_TGT_INSTANCE_LEN)
+
+/* Spec reserves controller IDs from FFF0 to FFFF */
+/* With 64 target instances, maximum allowed controller ID is FFBF */
+#define MAX_CNTL_INSTANCE ((1 << CNTL_INSTANCE_LEN) - 2)                /* Maximium controllers per subsystem : 3FE */
+
 static void
 nvmf_init_discovery_session_properties(struct spdk_nvmf_session *session)
 {
@@ -218,42 +232,64 @@ invalid_connect_response(struct spdk_nvmf_fabric_connect_rsp *rsp, uint8_t iattr
 	rsp->status_code_specific.invalid.ipo = ipo;
 }
 
-static uint16_t
-spdk_nvmf_session_gen_cntlid(void)
+bool
+spdk_nvmf_session_get_ana_status(struct spdk_nvmf_session *session)
 {
-	static uint16_t cntlid = 0; /* cntlid is static, so its value is preserved */
-	struct spdk_nvmf_subsystem *subsystem;
-	uint16_t count;
+	/* If Host starts using set-features to update its ANA status, necessary checks needed to be added here */
+	return (session->vcdata.cmic.ana_reporting & 1);
+}
 
-	count = UINT16_MAX - 1;
-	do {
-		/* cntlid is an unsigned 16-bit integer, so let it overflow
-		 * back to 0 if necessary.
-		 */
-		cntlid++;
-		if (cntlid == 0) {
-			/* 0 is not a valid cntlid because it is the reserved value in the RDMA
-			 * private data for cntlid. This is the value sent by pre-NVMe-oF 1.1
-			 * initiators.
-			 */
-			cntlid++;
+static void
+nvmf_init_aer_response(struct spdk_nvmf_session *session)
+{
+	/* Initialize cdw0 rsp for NS Attr changed AER */
+	session->aer_ctxt.ns_attr_aer_cdw0.raw = 0;
+	session->aer_ctxt.ns_attr_aer_cdw0.bits.event_type = 0x2;
+	session->aer_ctxt.ns_attr_aer_cdw0.bits.event_info = 0;
+	session->aer_ctxt.ns_attr_aer_cdw0.bits.log_page = 0;
+
+	/* Initialize cdw0 rsp for ANA change AER */
+	session->aer_ctxt.ana_change_aer_cdw0.raw = 0;
+	session->aer_ctxt.ana_change_aer_cdw0.bits.event_type = 0x2;
+	session->aer_ctxt.ana_change_aer_cdw0.bits.event_info = 0x3;
+	session->aer_ctxt.ana_change_aer_cdw0.bits.log_page = 0xC;
+}
+
+static uint16_t
+spdk_nvmf_session_gen_cntlid(struct spdk_nvmf_subsystem *subsystem)
+{
+	uint16_t count;
+	uint16_t cntlid = 0;
+	uint8_t lsb =
+		g_nvmf_tgt.opts.tgt_instance_id;        /* Controller ID can no longer be a static value to avoid collisions */
+
+	/* Connect call during discovery subsystem create will have a invalid target instance ID */
+	assert(lsb <= MAX_TGT_INSTANCE_ID);
+	if (lsb >= MAX_TGT_INSTANCE_ID) {
+		SPDK_TRACELOG(SPDK_TRACE_NVMF, "Failed to get a valid target instance id (%u)\n", lsb);
+	}
+
+	/* Identify a free controller ID within the range of available controller instances per subsystem */
+	for (count = 0; count < MAX_CNTL_INSTANCE; count++) {
+		subsystem->next_cntlid ++;
+		if (subsystem->next_cntlid == MAX_CNTL_INSTANCE) {
+			subsystem->next_cntlid = 1;
 		}
+
+		/* Controller instance and target instance information together makes up the controller ID information */
+		cntlid = (subsystem->next_cntlid << NVMF_TGT_INSTANCE_LEN) | lsb ;
 
 		/* Check if a subsystem with this cntlid currently exists. This could
 		 * happen for a very long-lived session on a target with many short-lived
 		 * sessions, where cntlid wraps around.
 		 */
-		subsystem = spdk_nvmf_find_subsystem_with_cntlid(cntlid);
-
-		count--;
-
-	} while (subsystem != NULL && count > 0);
-
-	if (count == 0) {
-		return 0;
+		if (spdk_nvmf_subsystem_get_ctrlr(subsystem, cntlid) == NULL) {
+			return cntlid;
+		}
 	}
 
-	return cntlid;
+	/* Failed to find a valid controller ID */
+	return 0;
 }
 
 bool
@@ -269,19 +305,13 @@ spdk_nvmf_validate_sqsize(struct spdk_nvmf_host *host,
 	 */
 
 	/*
-	 * TODO: Currently the sqsize check is spec FC-NVMe 1.17 compliant.
-	 * To make it 1.19 compliant we need to change the check below
-	 * to '>=' max_io_queue_depth, not '>= max_io_queue_depth + 1.
-	 *
-	 * Testing with the Linux initiator shows that we see this
-	 * off-by-one error only on the conection queues.  The admin
-	 * queue sqsize doesn't display this bug. However other FC-NVMe
-	 * intiators display this problem with both the admin and io queues.
+	 * Ensure that the sqsize specified in the connect command is supported
+	 * Note that sqsize is 0's based
 	 */
 	if (qid == 0) {
 		SPDK_TRACELOG(SPDK_TRACE_NVMF, "%s: Admin SQSIZE %u (max %u) qid %u\n", func, sqsize,
 			      (host->max_aq_depth - 1), qid);
-		if (sqsize == 0 || sqsize >= host->max_aq_depth + 1) {
+		if (sqsize == 0 || sqsize >= host->max_aq_depth) {
 			SPDK_ERRLOG("%s: Invalid Admin SQSIZE %u (min 1, max %u) qid %u\n", func,
 				    sqsize, (host->max_aq_depth - 1), qid);
 			return false;
@@ -289,13 +319,34 @@ spdk_nvmf_validate_sqsize(struct spdk_nvmf_host *host,
 	} else {
 		SPDK_TRACELOG(SPDK_TRACE_NVMF, "%s: IO SQSIZE %u (max %u) qid %u\n", func, sqsize,
 			      (host->max_io_queue_depth - 1), qid);
-		if (sqsize == 0 || sqsize >= (host->max_io_queue_depth + 1)) {
+		if (sqsize == 0 || sqsize >= (host->max_io_queue_depth)) {
 			SPDK_ERRLOG("%s: Invalid IO SQSIZE %u (min 1, max %u) qid %u\n", func,
 				    sqsize, (host->max_io_queue_depth - 1), qid);
 			return false;
 		}
 	}
 	return true;
+}
+
+void
+spdk_nvmf_update_ana_change_count(struct spdk_nvmf_subsystem *subsystem)
+{
+	struct spdk_nvmf_session *session, *session_tmp;
+
+	if (!subsystem) {
+		SPDK_ERRLOG("Invalid subsystem passed during update_ana_change_count\n");
+		assert(subsystem != NULL);
+		return;
+	}
+
+	TAILQ_FOREACH_SAFE(session, &subsystem->sessions, link, session_tmp) {
+		/* Increment change count on each session */
+		if (session->ana_log_change_count != UINT64_MAX) {
+			session->ana_log_change_count++;
+		} else {
+			session->ana_log_change_count = 0;
+		}
+	}
 }
 
 void
@@ -381,7 +432,7 @@ spdk_nvmf_session_connect(struct spdk_nvmf_conn *conn,
 
 		TAILQ_INIT(&session->connections);
 
-		session->cntlid = spdk_nvmf_session_gen_cntlid();
+		session->cntlid = spdk_nvmf_session_gen_cntlid(subsystem);
 		if (session->cntlid == 0) {
 			/* Unable to get a cntlid */
 			SPDK_ERRLOG("Reached max simultaneous sessions\n");
@@ -394,9 +445,11 @@ spdk_nvmf_session_connect(struct spdk_nvmf_conn *conn,
 		session->num_connections = 0;
 		session->subsys = subsystem;
 		session->max_connections_allowed = host->max_connections_allowed;
-		session->aer_ctxt.is_aer_pending = false;
-		session->aer_ctxt.aer_rsp_cdw0 = 0;
+		session->aer_ctxt.aer_pending_map = 0;
 		session->aer_req = NULL;
+		session->ana_log_change_count = 0;
+
+		nvmf_init_aer_response(session);
 
 		memcpy(session->hostid, data->hostid, sizeof(session->hostid));
 		memcpy(session->hostnqn, data->hostnqn, sizeof(session->hostnqn));
@@ -484,6 +537,10 @@ spdk_nvmf_session_disconnect(struct spdk_nvmf_conn *conn)
 	struct spdk_nvmf_session *session = conn->sess;
 
 	assert(session != NULL);
+	if (session == NULL) {
+		return;
+	}
+
 	session->num_connections--;
 	TAILQ_REMOVE(&session->connections, conn, link);
 
@@ -947,16 +1004,27 @@ spdk_nvmf_session_async_event_request(struct spdk_nvmf_request *req)
 
 	session->aer_req = req;
 
-	/* Check if an AER is pending and if so respond right away */
-	if (session->aer_ctxt.is_aer_pending) {
-		rsp->cdw0 = session->aer_ctxt.aer_rsp_cdw0;
+	/* Check if AER pending map is non-zero and if so respond right away */
+	if (session->aer_ctxt.aer_pending_map) {
+		/*
+		 * If multiple AENs are pending, the priority order is:
+		 * 1. NS Attr Changed
+		 * 2. ANA change
+		 */
+		if (session->aer_ctxt.aer_pending_map &
+		    SPDK_NVME_AER_NS_ATTR_NOTICES) {
+			rsp->cdw0 = session->aer_ctxt.ns_attr_aer_cdw0.raw;
+			session->aer_ctxt.aer_pending_map &= ~SPDK_NVME_AER_NS_ATTR_NOTICES;
+		} else if (session->aer_ctxt.aer_pending_map &
+			   SPDK_NVME_AER_ANA_CHANGE_NOTICES) {
+			rsp->cdw0 = session->aer_ctxt.ana_change_aer_cdw0.raw;
+			session->aer_ctxt.aer_pending_map &= ~SPDK_NVME_AER_ANA_CHANGE_NOTICES;
+		}
 		rsp->status.sct = SPDK_NVME_SCT_GENERIC;
 		rsp->status.sc = SPDK_NVME_SC_SUCCESS;
 
-		/* reset the flag & other fields */
+		/* reset other fields */
 		session->aer_req = NULL;
-		session->aer_ctxt.is_aer_pending = false;
-		session->aer_ctxt.aer_rsp_cdw0 = 0;
 
 		SPDK_TRACELOG(SPDK_TRACE_NVMF, "Responding for pending AER, cdw0 0x%08x\n",
 			      rsp->cdw0);
@@ -995,9 +1063,9 @@ spdk_nvmf_session_get_num_io_connections(struct spdk_nvmf_session *session)
 	uint16_t num_io_conns = 0;
 	struct spdk_nvmf_conn *conn = NULL, *tmp;
 
+	assert(session != NULL);
 	if (!session) {
 		SPDK_ERRLOG("Invalid session passed\n");
-		assert(session != NULL);
 		return 0;
 	}
 
@@ -1016,15 +1084,15 @@ spdk_nvmf_session_populate_io_queue_depths(struct spdk_nvmf_session *session,
 	struct spdk_nvmf_conn *conn = NULL, *tmp;
 	uint16_t curr_q_index = 0;
 
+	assert(session != NULL);
 	if (!session) {
 		SPDK_ERRLOG("Invalid session passed\n");
-		assert(session != NULL);
 		return;
 	}
 
+	assert(max_io_queue_depths != NULL);
 	if (!max_io_queue_depths) {
 		SPDK_ERRLOG("NULL container passed to populate queue depths\n");
-		assert(max_io_queue_depths != NULL);
 		return;
 	}
 
@@ -1055,47 +1123,67 @@ spdk_nvmf_queue_aer_rsp(struct spdk_nvmf_subsystem *subsystem,
 			uint8_t aer_info)
 {
 	struct spdk_nvmf_session *session, *session_tmp;
-	uint32_t aer_rsp_cdw0 = aer_info;
 
 	if (!subsystem) {
 		return ;
 	}
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "AER RSP for Subsystem NQN %s, AER type = 0x%x\n",
-		      subsystem->subnqn, aer_type);
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "AER RSP for Subsystem NQN %s, AER type = 0x%x AER info = 0x%x\n",
+		      subsystem->subnqn, aer_type, aer_info);
 
-	/* Check if the aer_type is supported */
-	if (aer_type == AER_TYPE_NOTICE) {
-		/* set the AER info as appropriate
-		 * set the log page when supported
-		 */
-		aer_rsp_cdw0 = (aer_rsp_cdw0 << 8) | aer_type;
-	} else {
+	/*
+	 * Currently only aer_type Notice is supported
+	 * this check can be removed when other types are also supported
+	 */
+	if (aer_type != AER_TYPE_NOTICE) {
 		/* unsupported AER type */
-		SPDK_ERRLOG("Unsupported AER type: %d\n", aer_type);
+		SPDK_ERRLOG("Unsupported AER type: 0x%x\n", aer_type);
 		return;
 	}
 
 	TAILQ_FOREACH_SAFE(session, &subsystem->sessions, link, session_tmp) {
+		/* Validate if the host supports receiving this AER Event info */
+		if (!(((aer_info == AER_NOTICE_INFO_NS_ATTR_CHANGED) &&
+		       (session->async_event_config.bits.ns_attr_notice)) ||
+		      ((aer_info == AER_NOTICE_INFO_ANA_CHANGE) &&
+		       (session->async_event_config.bits.ana_change_notice)))) {
+			/*
+			 * log an error if an unsupported AER event is received
+			 * skip logging an error if the host has disabled receiving this AER event
+			 */
+			if ((aer_info != AER_NOTICE_INFO_NS_ATTR_CHANGED) &&
+			    (aer_info != AER_NOTICE_INFO_ANA_CHANGE)) {
+				SPDK_ERRLOG("Unsupported AER Event:0x%x; AER type:0x%x AER Event Config:0x%x\n",
+					    aer_info, aer_type, session->async_event_config.raw);
+			}
+			return;
+		}
+
 		/* Issue AER if available for each session */
 		if (session->aer_req) {
 			struct spdk_nvmf_request *aer = session->aer_req;
 			struct spdk_nvme_cpl *rsp = &aer->rsp->nvme_cpl;
-			rsp->cdw0 = aer_rsp_cdw0;
+
+			/* set the cdw0 based on the aer event info */
+			if (aer_info == AER_NOTICE_INFO_NS_ATTR_CHANGED) {
+				rsp->cdw0 = session->aer_ctxt.ns_attr_aer_cdw0.raw;
+			} else if (aer_info == AER_NOTICE_INFO_ANA_CHANGE) {
+				rsp->cdw0 = session->aer_ctxt.ana_change_aer_cdw0.raw;
+			}
+
 			rsp->status.sct = SPDK_NVME_SCT_GENERIC;
 			rsp->status.sc  = SPDK_NVME_SC_SUCCESS;
 			(void)spdk_nvmf_request_complete(aer);
 			session->aer_req = NULL;
-		} else if (!session->aer_ctxt.is_aer_pending) {
+		} else {
 			/*
-			 * Set the pending flag if unset
-			 * Currently only NS attributes changed AER is
-			 * supported ;
-			 * coagulating different AER types will come in
-			 * when other AER types are supported
+			 * Set the pending bitmap if aer_req is unavailable
 			 */
-			session->aer_ctxt.is_aer_pending = true;
-			session->aer_ctxt.aer_rsp_cdw0 = aer_rsp_cdw0;
+			if (aer_info == AER_NOTICE_INFO_NS_ATTR_CHANGED) {
+				session->aer_ctxt.aer_pending_map |= SPDK_NVME_AER_NS_ATTR_NOTICES;
+			} else if (aer_info == AER_NOTICE_INFO_ANA_CHANGE) {
+				session->aer_ctxt.aer_pending_map |= SPDK_NVME_AER_ANA_CHANGE_NOTICES;
+			}
 		}
 	}
 }

@@ -85,6 +85,30 @@ spdk_nvmf_tgt_opts_init(struct spdk_nvmf_tgt_opts *opts)
 }
 
 int
+spdk_nvmf_tgt_opts_update(struct spdk_nvmf_tgt_opts *opts)
+{
+	struct spdk_nvmf_subsystem	*subsystem;
+
+	if (!opts) {
+		SPDK_ERRLOG("Invalid config passed during NVMF target opts update\n");
+		return -1;
+	}
+
+	/* Ensure that config is updated only when there are no subsystems
+	 * other than a discovery subsystem
+	 */
+	TAILQ_FOREACH(subsystem, &g_nvmf_tgt.subsystems, entries) {
+		if (subsystem->subtype != SPDK_NVMF_SUBTYPE_DISCOVERY) {
+			SPDK_ERRLOG("NVMF config cannot be updated while there are subsystems\n");
+			return -1;
+		}
+	}
+
+	g_nvmf_tgt.opts = *opts;
+	return 0;
+}
+
+int
 spdk_nvmf_tgt_fini(void)
 {
 	struct spdk_nvmf_listen_addr *listen_addr, *listen_addr_tmp;
@@ -182,6 +206,9 @@ spdk_nvmf_listen_addr_destroy(struct spdk_nvmf_listen_addr *addr)
 
 	transport = spdk_nvmf_transport_get(addr->trname);
 	assert(transport != NULL);
+	if (transport == NULL) {
+		return;
+	}
 	transport->listen_addr_remove(addr);
 
 	spdk_nvmf_listen_addr_cleanup(addr);

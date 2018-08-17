@@ -131,6 +131,26 @@
   # Per-Subsystem setting can be used to override global
   AllowAnyHost Yes 
 
+  # ANA Transition Time : Indicates Asymmetric Namespace Access Transition Time
+  # Refer Identify Controller Data Structure in NVM Express ANA spec
+  #ANATransitionTime 0
+
+  # ANA Capabilities: Indicates Asymmetric Namespace Access Capabilities
+  # Refer Identify Controller Data Structure in NVM Express ANA spec
+  #ANACapability 0
+
+  # ANA Group Identifier Max: Indicates Maximum value of a Asymmetric Namespace Access Group identifier
+  # Refer Identify Controller Data Structure in NVM Express ANA spec
+  #ANAGroupIDMax 0
+
+  # Number of ANA Group Identifiers: Indicates Number of Asymmetric Namespace Access Groups supported
+  # Refer Identify Controller Data Structure in NVM Express ANA spec
+  #NumANAGroupID 0
+
+  # Maximum Number of Allocated NS: Maximum Number of Allocated Namespaces
+  # Refer Identify Controller Data Structure in NVM Express ANA spec
+  #MaxNumAllocedNS 0
+
 #[Nvme]
   # NVMe Device Whitelist
   # Users may specify which NVMe devices to claim by their transport id.
@@ -212,6 +232,7 @@
   Mode Virtual
   SN SPDK00000000000001
 # Any Host is allowed to connect based upon global setting
+# Namespace bdev_name namespace_id_type(NIDT) NID ANA_GROUP_ID
   Namespace Malloc0
   Namespace Malloc1
 
@@ -224,9 +245,10 @@
  # Host nqn.2016-06.io.spdk1:init 24 2 
  # Host nqn.2016-06.io.spdk2:init 128 4
  # Host nqn.2016-06.io.spdk3:init 1024 8
+# Namespace bdev_name namespace_id_type(NIDT) NID ANA_GROUP_ID
   Namespace Malloc2
   Namespace Malloc3
-#Namespace Malloc4 UUID cfb11df2e43a49779293f41319de4fbb
+#Namespace Malloc4 UUID cfb11df2e43a49779293f41319de4fbb 2
 
 # Group of FC initiators WWN.
 [InitiatorGroup0]

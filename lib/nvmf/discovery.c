@@ -65,7 +65,12 @@ spdk_nvmf_fill_discovery_log_entry(struct spdk_nvmf_discovery_log_page_entry *en
 	snprintf((char *)entry->subnqn, sizeof(entry->subnqn), "%s", subsystem->subnqn);
 	transport = spdk_nvmf_transport_get(listen_addr->trname);
 	assert(transport != NULL);
-	transport->listen_addr_discover(listen_addr, entry);
+	if (transport != NULL) {
+		transport->listen_addr_discover(listen_addr, entry);
+	} else {
+		SPDK_ERRLOG("Transport not found for transport name: %s\n",
+			    listen_addr->trname);
+	}
 }
 
 void

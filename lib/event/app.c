@@ -106,7 +106,7 @@ int
 spdk_app_start(struct spdk_app_opts *opts, spdk_event_fn start_fn,
 	       void *arg1, void *arg2)
 {
-	struct spdk_conf		*config;
+	struct spdk_conf		*config = NULL;
 	struct spdk_conf_section	*sp;
 	struct sigaction	sigact;
 	sigset_t		signew;
@@ -133,6 +133,7 @@ spdk_app_start(struct spdk_app_opts *opts, spdk_event_fn start_fn,
 
 	config = spdk_conf_allocate();
 	assert(config != NULL);
+
 	if (opts->config_file) {
 		rc = spdk_conf_read(config, opts->config_file);
 		if (rc != 0) {

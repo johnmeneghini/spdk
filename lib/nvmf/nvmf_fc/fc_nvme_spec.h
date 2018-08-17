@@ -2,7 +2,7 @@
  *   BSD LICENSE
  *
  *   Copyright (c) 2018 Broadcom.  All Rights Reserved.
- *   The term "Broadcom" refers to Broadcom Limited and/or its subsidiaries.
+ *   The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -42,6 +42,8 @@
 
 #define NVME_FC_R_CTL_CMD_REQ            0x06
 #define NVME_FC_R_CTL_DATA_OUT           0x01
+#define NVME_FC_R_CTL_STATUS		 0x07
+#define NVME_FC_R_CTL_ERSP_STATUS	 0x08
 #define NVME_FC_R_CTL_CONFIRM            0x03
 #define NVME_FC_R_CTL_LS_REQUEST         0x32
 #define NVME_FC_R_CTL_LS_RESPONSE        0x33
@@ -49,6 +51,9 @@
 
 #define NVME_FC_F_CTL_END_SEQ            0x080000
 #define NVME_FC_F_CTL_SEQ_INIT           0x010000
+
+/* END_SEQ | LAST_SEQ | Exchange Responder | SEQ init */
+#define NVME_FC_F_CTL_RSP		 0x990000
 
 #define NVME_FC_TYPE_BLS                 0x0
 #define NVME_FC_TYPE_FC_EXCHANGE         0x08
@@ -61,6 +66,7 @@
 #define NVME_CMND_IU_READ                0x10
 #define NVME_CMND_IU_WRITE               0x01
 
+#define NVME_FC_GOOD_RSP_LEN 		 12
 #define SPDK_NVMF_FC_HOST_ID_LEN         16
 #define SPDK_NVMF_FC_NQN_MAX_LEN         256
 

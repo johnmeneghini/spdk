@@ -152,6 +152,12 @@ nvmf_fc_poller_api_quiesce_queue(void *arg1, void *arg2)
 		}
 	}
 
+	/*
+	 * Reset the pending XRI list associated with the HWQP.
+	 * NOTE: The XRIs will be freed and reallocated in the subsequent HW port init.
+	 */
+	TAILQ_INIT(&q_args->hwqp->pending_xri_list);
+
 	/* perform callback */
 	nvmf_fc_poller_api_perform_cb(&q_args->cb_info, 0);
 }

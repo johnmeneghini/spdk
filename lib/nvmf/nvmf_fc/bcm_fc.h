@@ -1,8 +1,8 @@
 /*
  *   BSD LICENSE
  *
- *   Copyright (c) 2017 Broadcom.  All Rights Reserved.
- *   The term "Broadcom" refers to Broadcom Limited and/or its subsidiaries.
+ *   Copyright (c) 2018 Broadcom.  All Rights Reserved.
+ *   The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -361,6 +361,8 @@ struct spdk_nvmf_bcm_fc_request {
 	uint32_t transfered_len;
 	bool is_aborted;
 	uint32_t magic;
+	uint32_t s_id;
+	uint32_t d_id;
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_request) link;
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_request) pending_link;
 	TAILQ_HEAD(, fc_caller_ctx) abort_cbs;

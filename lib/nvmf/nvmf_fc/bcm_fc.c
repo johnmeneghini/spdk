@@ -125,6 +125,10 @@ spdk_nvmf_bcm_fc_add_poller(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 			    uint64_t period_microseconds)
 {
 	assert(hwqp);
+	if (hwqp == NULL) {
+		SPDK_ERRLOG("Error: hwqp is NULL\n");
+		return;
+	}
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
 		      "Starting Poller function on lcore_id: %d for port: %d, hwqp: %d\n",
@@ -228,8 +232,10 @@ nvmf_fc_handle_abts_notfound(fc_abts_ctx_t *ctx)
 		return -1;
 	}
 
+	assert(ctx);
 	if (!ctx) {
-		goto fail;
+		SPDK_ERRLOG("NULL ctx pointer");
+		return -1;
 	}
 
 	/* Reset the ctx values */
@@ -786,8 +792,14 @@ inline uint32_t
 spdk_nvmf_bcm_fc_get_hwqp_id(struct spdk_nvmf_request *req)
 {
 	struct spdk_nvmf_bcm_fc_request *fc_req = spdk_nvmf_bcm_fc_get_fc_req(req);
+
 	assert(fc_req->hwqp);
-	return fc_req->hwqp->hwqp_id;
+	if (fc_req->hwqp == NULL) {
+		SPDK_ERRLOG("Error: fc_req->hwqp is NULL\n");
+		return 0;
+	} else {
+		return fc_req->hwqp->hwqp_id;
+	}
 }
 
 

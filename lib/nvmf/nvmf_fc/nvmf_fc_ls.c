@@ -363,8 +363,8 @@ nvmf_fc_ls_new_association(uint32_t s_id,
 static inline void
 nvmf_fc_ls_free_association(struct spdk_nvmf_bcm_fc_association *assoc)
 {
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Freeing association, assoc_id 0x%lx\n",
-		      assoc->assoc_id);
+	SPDK_NOTICELOG("Freeing association, assoc_id 0x%lx\n",
+		       assoc->assoc_id);
 	assoc->assoc_state = SPDK_NVMF_BCM_FC_OBJECT_ZOMBIE;
 	TAILQ_INSERT_TAIL(&assoc->tgtport->fc_port->ls_rsrc_pool.assoc_free_list,
 			  assoc, port_free_assoc_list_link);
@@ -472,10 +472,40 @@ nvmf_fc_ls_find_assoc(struct spdk_nvmf_bcm_fc_nport *tgtport, uint64_t assoc_id)
 static inline uint64_t
 nvmf_fc_gen_conn_id(uint32_t qnum, struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 {
-	if (hwqp->cid_cnt == 0) /* make sure cid_cnt is never 0 */
+	uint64_t conn_id;
+	struct spdk_nvmf_bcm_fc_association *assoc = NULL;
+	struct spdk_nvmf_bcm_fc_conn *fc_conn = NULL;
+	struct spdk_nvmf_bcm_fc_nport *fc_nport = NULL;
+	struct spdk_nvmf_bcm_fc_port *fc_port = hwqp->fc_port;
+	bool repeat;
+
+	do {
+		repeat = false;
+
+		if (hwqp->cid_cnt == 0) /* make sure cid_cnt is never 0 */
+			hwqp->cid_cnt++;
+
+		conn_id = ((uint64_t) qnum |
+			   (hwqp->cid_cnt << SPDK_NVMF_FC_BCM_MRQ_CONNID_UV_SHIFT));
+		/*
+		 * Make sure the conn-id is unique across a HW port.
+		 */
+		TAILQ_FOREACH(fc_nport, &fc_port->nport_list, link) {
+			TAILQ_FOREACH(assoc, &fc_nport->fc_associations, link) {
+				TAILQ_FOREACH(fc_conn, &assoc->fc_conns, link) {
+					if (fc_conn->conn_id == conn_id) {
+						repeat = true;
+						goto outer_loop;
+					}
+				}
+			}
+		}
+
+outer_loop:
 		hwqp->cid_cnt++;
-	return ((uint64_t) qnum |
-		(hwqp->cid_cnt++ << SPDK_NVMF_FC_BCM_MRQ_CONNID_UV_SHIFT));
+	} while (repeat);
+
+	return conn_id;
 }
 
 static inline struct spdk_nvmf_bcm_fc_hwqp *
@@ -486,9 +516,9 @@ nvmf_fc_ls_assign_conn_to_q(struct spdk_nvmf_bcm_fc_association *assoc,
 	struct spdk_nvmf_bcm_fc_port *fc_port = tgtport->fc_port;
 	uint32_t sel_qind = 0;
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Assign Connection to IO queue "
-		      "for port %d nport %d assoc_id 0x%lx\n", fc_port->port_hdl,
-		      tgtport->nport_hdl, assoc->assoc_id);
+	SPDK_NOTICELOG("Assign Connection to IO queue "
+		       "for port %d nport %d assoc_id 0x%lx\n", fc_port->port_hdl,
+		       tgtport->nport_hdl, assoc->assoc_id);
 
 	if (!for_aq) {
 		/* find queue with max amount of space available */
@@ -506,7 +536,6 @@ nvmf_fc_ls_assign_conn_to_q(struct spdk_nvmf_bcm_fc_association *assoc,
 		}
 	}
 
-
 	/* decrease the free slots now in case another connect request comes
 	 * in while adding this connection in the poller thread */
 	fc_port->io_queues[sel_qind].free_q_slots -= sq_size;
@@ -517,10 +546,9 @@ nvmf_fc_ls_assign_conn_to_q(struct spdk_nvmf_bcm_fc_association *assoc,
 	*conn_id = nvmf_fc_gen_conn_id(sel_qind,
 				       &fc_port->io_queues[sel_qind]);
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-		      "q_num %d (free now %d), conn_id 0x%lx\n", sel_qind,
-		      fc_port->io_queues[sel_qind].free_q_slots,
-		      *conn_id);
+	SPDK_NOTICELOG("q_num %d (free now %d), conn_id 0x%lx\n", sel_qind,
+		       fc_port->io_queues[sel_qind].free_q_slots,
+		       *conn_id);
 
 	return &fc_port->io_queues[sel_qind];
 }
@@ -541,10 +569,10 @@ nvmf_fc_ls_rsp_fail_del_conn_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t
 			(union nvmf_fc_ls_op_ctx *)cb_data;
 	struct nvmf_fc_ls_del_conn_api_data *dp = &opd->del_conn;
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Transmit LS response failure callback"
-		      "for %s conn_id 0x%lx on Port %d\n",
-		      (dp->assoc_conn) ? "Association" : "Connection",
-		      dp->args.fc_conn->conn_id, dp->args.hwqp->fc_port->port_hdl);
+	SPDK_NOTICELOG("Transmit LS response failure callback"
+		       "for %s conn_id 0x%lx on Port %d\n",
+		       (dp->assoc_conn) ? "Association" : "Connection",
+		       dp->args.fc_conn->conn_id, dp->args.hwqp->fc_port->port_hdl);
 
 	nvmf_fc_ls_free_connection(dp->args.hwqp->fc_port, dp->args.fc_conn);
 	dp->args.hwqp->num_conns--;
@@ -560,9 +588,9 @@ nvmf_fc_handle_xmt_ls_rsp_failure(struct spdk_nvmf_bcm_fc_association *assoc,
 	struct nvmf_fc_ls_del_conn_api_data *api_data;
 	union nvmf_fc_ls_op_ctx *opd = NULL;
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Transmit LS response failure "
-		      "for assoc_id 0x%lx conn_id 0x%lx\n", assoc->assoc_id,
-		      fc_conn->conn_id);
+	SPDK_NOTICELOG("Transmit LS response failure "
+		       "for assoc_id 0x%lx conn_id 0x%lx\n", assoc->assoc_id,
+		       fc_conn->conn_id);
 
 	if (assoc_conn) {
 		/* delete association */
@@ -609,9 +637,8 @@ nvmf_fc_ls_add_conn_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
 	struct spdk_nvmf_bcm_fc_conn *fc_conn = dp->args.fc_conn;
 	struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst = dp->ls_rqst;
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-		      "add_conn_cb: assoc_id = 0x%lx, conn_id = 0x%lx\n",
-		      assoc->assoc_id, fc_conn->conn_id);
+	SPDK_NOTICELOG("add_conn_cb: assoc_id = 0x%lx, conn_id = 0x%lx\n",
+		       assoc->assoc_id, fc_conn->conn_id);
 
 	if (assoc->assoc_state == SPDK_NVMF_BCM_FC_OBJECT_TO_BE_DELETED) {
 		/* association is already being deleted - don't continue */
@@ -639,8 +666,7 @@ nvmf_fc_ls_add_conn_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
 		nvmf_fc_handle_xmt_ls_rsp_failure(assoc, fc_conn,
 						  dp->assoc_conn);
 	} else {
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-			      "LS response (conn_id 0x%lx) sent\n", fc_conn->conn_id);
+		SPDK_NOTICELOG("LS response (conn_id 0x%lx) sent\n", fc_conn->conn_id);
 	}
 
 	nvmf_fc_ls_free_op_ctx(opd);
@@ -657,9 +683,9 @@ nvmf_fc_ls_add_conn_to_poller(
 	union nvmf_fc_ls_op_ctx *opd = nvmf_fc_ls_new_op_ctx();
 	struct spdk_nvmf_bcm_fc_nport *tgtport = assoc->tgtport;
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Add Connection to poller for "
-		      "assoc_id 0x%lx conn_id 0x%lx\n", assoc->assoc_id,
-		      fc_conn->conn_id);
+	SPDK_NOTICELOG("Add Connection to poller for "
+		       "assoc_id 0x%lx conn_id 0x%lx\n", assoc->assoc_id,
+		       fc_conn->conn_id);
 
 	if (opd) {
 		struct nvmf_fc_ls_add_conn_api_data *api_data =
@@ -686,14 +712,13 @@ nvmf_fc_ls_add_conn_to_poller(
 			api_data->assoc = assoc;
 			api_data->ls_rqst = ls_rqst;
 			api_data->assoc_conn = assoc_conn;
-			SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-				      "Add connection API called for conn_id = 0x%lx\n",
-				      fc_conn->conn_id);
+			SPDK_NOTICELOG("Add connection API called for conn_id = 0x%lx\n",
+				       fc_conn->conn_id);
 			spdk_nvmf_bcm_fc_poller_api(api_data->args.fc_conn->hwqp,
 						    SPDK_NVMF_BCM_FC_POLLER_API_ADD_CONNECTION,
 						    &api_data->args);
-			SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Add connection API returned "
-				      "for conn_id = 0x%lx\n", fc_conn->conn_id);
+			SPDK_NOTICELOG("Add connection API returned "
+				       "for conn_id = 0x%lx\n", fc_conn->conn_id);
 			return;
 		}
 	}
@@ -771,7 +796,7 @@ nvmf_fc_send_ls_disconnect(struct spdk_nvmf_bcm_fc_association *assoc)
 			(2 * sizeof(uint32_t)));
 	to_be64(&dc_rqst->assoc_id.association_id, assoc->assoc_id);
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Send LS disconnect\n");
+	SPDK_NOTICELOG("Send LS disconnect\n");
 	if (spdk_nvmf_bcm_fc_xmt_srsr_req(&assoc->tgtport->fc_port->ls_queue,
 					  &assoc->snd_disconn_bufs, 0, 0)) {
 		SPDK_ERRLOG("Error sending LS disconnect\n");
@@ -793,8 +818,8 @@ nvmf_fc_del_all_conns_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
 	 * done anyway if there is an error because we need to complete
 	 * all connection deletes and callback to caller */
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Delete all connections for "
-		      "assoc_id 0x%lx\n", assoc->assoc_id);
+	SPDK_NOTICELOG("Delete all connections for "
+		       "assoc_id 0x%lx\n", assoc->assoc_id);
 	if (assoc->subsystem) {
 		assoc->subsystem->disconnect_cb(assoc->subsystem->cb_ctx,
 						&fc_conn->conn);
@@ -821,8 +846,7 @@ nvmf_fc_del_all_conns_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
 		union nvmf_fc_ls_op_ctx *opd =
 				(union nvmf_fc_ls_op_ctx *) assoc->ls_del_op_ctx;
 
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-			      "remove assoc. %lx\n", assoc->assoc_id);
+		SPDK_NOTICELOG("remove assoc. %lx\n", assoc->assoc_id);
 		nvmf_fc_del_assoc_from_tgt_port(assoc);
 
 		if (assoc->tgtport->fc_port->hw_port_status == SPDK_FC_PORT_ONLINE) {
@@ -872,8 +896,8 @@ nvmf_fc_delete_association(struct spdk_nvmf_bcm_fc_nport *tgtport,
 	struct spdk_nvmf_bcm_fc_port *fc_port = tgtport->fc_port;
 	spdk_nvmf_bcm_fc_object_state_t assoc_state;
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Delete association, "
-		      "assoc_id 0x%lx\n", assoc_id);
+	SPDK_NOTICELOG("Delete association, "
+		       "assoc_id 0x%lx\n", assoc_id);
 
 	if (!assoc) {
 		SPDK_ERRLOG("Delete association failed: %s\n",
@@ -936,8 +960,7 @@ nvmf_fc_delete_association(struct spdk_nvmf_bcm_fc_nport *tgtport,
 		} else {
 			api_data->args.cb_info.cb_func = nvmf_fc_del_all_conns_cb;
 		}
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-			      "conn_id = %lx\n", fc_conn->conn_id);
+		SPDK_NOTICELOG("delete conn_id = %lx\n", fc_conn->conn_id);
 		spdk_nvmf_bcm_fc_poller_api(api_data->args.hwqp,
 					    SPDK_NVMF_BCM_FC_POLLER_API_DEL_CONNECTION,
 					    &api_data->args);
@@ -1053,19 +1076,16 @@ nvmf_fc_ls_process_cass(uint32_t s_id,
 	char traddr[NVMF_TGT_FC_TR_ADDR_LENGTH + 1];
 	struct spdk_nvmf_listen_addr *listen_addr, *listener;
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-		      "LS_CASS: ls_rqst_len=%d, desc_list_len=%d, cmd_len=%d, sq_size=%d\n",
-		      ls_rqst->rqst_len, be32_to_cpu(&rqst->desc_list_len),
-		      be32_to_cpu(&rqst->assoc_cmd.desc_len),
-		      be16_to_cpu(&rqst->assoc_cmd.sqsize));
+	SPDK_NOTICELOG("LS_CASS: ls_rqst_len=%d, desc_list_len=%d, cmd_len=%d, sq_size=%d\n",
+		       ls_rqst->rqst_len, be32_to_cpu(&rqst->desc_list_len),
+		       be32_to_cpu(&rqst->assoc_cmd.desc_len),
+		       be16_to_cpu(&rqst->assoc_cmd.sqsize));
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-		      "LS_CASS: Subnqn: %s\n",
-		      rqst->assoc_cmd.subnqn);
+	SPDK_NOTICELOG("LS_CASS: Subnqn: %s\n",
+		       rqst->assoc_cmd.subnqn);
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-		      "LS_CASS: Hostnqn: %s\n",
-		      rqst->assoc_cmd.hostnqn);
+	SPDK_NOTICELOG("LS_CASS: Hostnqn: %s\n",
+		       rqst->assoc_cmd.hostnqn);
 
 	/* Construct the listen addr */
 	snprintf(traddr, NVMF_TGT_FC_TR_ADDR_LENGTH, "nn-0x%lx:pn-0x%lx",
@@ -1197,14 +1217,13 @@ nvmf_fc_ls_process_cioc(struct spdk_nvmf_bcm_fc_nport *tgtport,
 	uint8_t rc = FCNVME_RJT_RC_NONE;
 	uint8_t ec = FCNVME_RJT_EXP_NONE;
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-		      "LS_CIOC: ls_rqst_len=%d, desc_list_len=%d, cmd_len=%d, "
-		      "assoc_id=0x%lx, sq_size=%d, esrp=%d\n",
-		      ls_rqst->rqst_len, be32_to_cpu(&rqst->desc_list_len),
-		      be32_to_cpu(&rqst->connect_cmd.desc_len),
-		      be64_to_cpu(&rqst->assoc_id.association_id),
-		      be16_to_cpu(&rqst->connect_cmd.sqsize),
-		      be16_to_cpu(&rqst->connect_cmd.ersp_ratio));
+	SPDK_NOTICELOG("LS_CIOC: ls_rqst_len=%d, desc_list_len=%d, cmd_len=%d, "
+		       "assoc_id=0x%lx, sq_size=%d, esrp=%d\n",
+		       ls_rqst->rqst_len, be32_to_cpu(&rqst->desc_list_len),
+		       be32_to_cpu(&rqst->connect_cmd.desc_len),
+		       be64_to_cpu(&rqst->assoc_id.association_id),
+		       be16_to_cpu(&rqst->connect_cmd.sqsize),
+		       be16_to_cpu(&rqst->connect_cmd.ersp_ratio));
 
 	if (ls_rqst->rqst_len < sizeof(struct nvmf_fc_ls_cr_conn_rqst)) {
 		errmsg_ind = VERR_CR_CONN_LEN;
@@ -1324,12 +1343,11 @@ nvmf_fc_ls_process_disc(struct spdk_nvmf_bcm_fc_nport *tgtport,
 	uint8_t rc = FCNVME_RJT_RC_NONE;
 	uint8_t ec = FCNVME_RJT_EXP_NONE;
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-		      "LS_DISC: ls_rqst_len=%d, desc_list_len=%d, cmd_len=%d,"
-		      "assoc_id=0x%lx\n",
-		      ls_rqst->rqst_len, be32_to_cpu(&rqst->desc_list_len),
-		      be32_to_cpu(&rqst->disconn_cmd.desc_len),
-		      be64_to_cpu(&rqst->assoc_id.association_id));
+	SPDK_NOTICELOG("LS_DISC: ls_rqst_len=%d, desc_list_len=%d, cmd_len=%d,"
+		       "assoc_id=0x%lx\n",
+		       ls_rqst->rqst_len, be32_to_cpu(&rqst->desc_list_len),
+		       be32_to_cpu(&rqst->disconn_cmd.desc_len),
+		       be64_to_cpu(&rqst->assoc_id.association_id));
 
 	if (ls_rqst->rqst_len < sizeof(struct nvmf_fc_ls_disconnect_rqst)) {
 		errmsg_ind = VERR_DISCONN_LEN;

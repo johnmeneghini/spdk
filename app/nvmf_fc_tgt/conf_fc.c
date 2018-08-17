@@ -138,8 +138,6 @@ nvmf_fc_add_discovery_subsystem(void)
 	return 0;
 }
 
-static struct spdk_nvmf_tgt_opts opts;
-
 static int
 nvmf_fc_parse_nvmf_tgt(void)
 {
@@ -159,7 +157,7 @@ nvmf_fc_parse_nvmf_tgt(void)
 	if (intval < 0) {
 		intval = SPDK_NVMF_CONFIG_NVME_VERSION_DEFAULT;
 	}
-	opts.nvmever = intval;
+	tgt_opts.nvmever = intval;
 
 	intval = spdk_conf_section_get_intval(sp, "MaxIOQueueDepth");
 	if (intval < 0) {
@@ -227,7 +225,7 @@ nvmf_fc_parse_nvmf_tgt(void)
 	if (intval < 0) {
 		intval = 0;
 	}
-	opts.nmic = intval;
+	tgt_opts.nmic = intval;
 
 	intval = spdk_conf_section_get_intval(sp, "OptAerSupport");
 	if (intval < 0) {
@@ -299,13 +297,13 @@ nvmf_fc_parse_nvmf_tgt(void)
 	if (model_number == NULL) {
 		model_number = SPDK_NVMF_CONFIG_MODEL_NUMBER_DEFAULT;
 	}
-	strncpy(opts.mn, model_number, sizeof(opts.mn));
+	strncpy(tgt_opts.mn, model_number, sizeof(tgt_opts.mn));
 
-	opts.allow_any_host = spdk_conf_section_get_boolval(sp, "AllowAnyHost",
-			      SPDK_NVMF_CONFIG_ALLOW_ANY_HOST_DEFAULT);
+	tgt_opts.allow_any_host = spdk_conf_section_get_boolval(sp, "AllowAnyHost",
+				  SPDK_NVMF_CONFIG_ALLOW_ANY_HOST_DEFAULT);
 
-	opts.allow_any_listener = spdk_conf_section_get_boolval(sp, "AllowAnyListener",
-				  SPDK_NVMF_CONFIG_ALLOW_ANY_LISTENER_DEFAULT);
+	tgt_opts.allow_any_listener = spdk_conf_section_get_boolval(sp, "AllowAnyListener",
+				      SPDK_NVMF_CONFIG_ALLOW_ANY_LISTENER_DEFAULT);
 
 	lcore_mask_str = spdk_conf_section_get_val(sp, "NvmfReactorMask");
 	if (!lcore_mask_str) {
@@ -318,6 +316,36 @@ nvmf_fc_parse_nvmf_tgt(void)
 		SPDK_ERRLOG("NvmfReactorMask value invalid. \n");
 		return -1;
 	}
+
+	intval = spdk_conf_section_get_intval(sp, "ANATransitionTime");
+	if (intval < 0) {
+		intval = 0;
+	}
+	tgt_opts.anatt = intval;
+
+	intval = spdk_conf_section_get_intval(sp, "ANACapability");
+	if (intval < 0) {
+		intval = 0;
+	}
+	tgt_opts.anacap = intval;
+
+	intval = spdk_conf_section_get_intval(sp, "ANAGroupIDMax");
+	if (intval < 0) {
+		intval = 0;
+	}
+	tgt_opts.anagrpmax = intval;
+
+	intval = spdk_conf_section_get_intval(sp, "NumANAGroupID");
+	if (intval < 0) {
+		intval = 0;
+	}
+	tgt_opts.nanagrpid = intval;
+
+	intval = spdk_conf_section_get_intval(sp, "MaxNumAllocedNS");
+	if (intval < 0) {
+		intval = 0;
+	}
+	tgt_opts.mnan = intval;
 
 	rc = spdk_nvmf_tgt_opts_init(&tgt_opts);
 	if (rc != 0) {
@@ -434,7 +462,7 @@ nvmf_fc_allocate_lcore(uint64_t mask, uint32_t lcore)
 static int
 nvmf_fc_parse_subsystem(struct spdk_conf_section *sp)
 {
-	const char *nqn, *mode_str, *queue_str;
+	const char *nqn, *mode_str, *queue_str, *ana_group_str;
 	int i, ret;
 	int lcore;
 	int num_listen_addrs = 0;
@@ -449,6 +477,7 @@ nvmf_fc_parse_subsystem(struct spdk_conf_section *sp)
 	char *devs[MAX_VIRTUAL_NAMESPACE];
 	char *devs_nidt[MAX_VIRTUAL_NAMESPACE];
 	char *devs_nid[MAX_VIRTUAL_NAMESPACE];
+	uint32_t anagrpids[MAX_VIRTUAL_NAMESPACE];
 
 	nqn = spdk_conf_section_get_val(sp, "NQN");
 	mode_str = spdk_conf_section_get_val(sp, "Mode");
@@ -478,9 +507,10 @@ nvmf_fc_parse_subsystem(struct spdk_conf_section *sp)
 	}
 	num_hosts = i;
 
-	allow_any_host = spdk_conf_section_get_boolval(sp, "AllowAnyHost", opts.allow_any_host);
+	allow_any_host = spdk_conf_section_get_boolval(sp, "AllowAnyHost", tgt_opts.allow_any_host);
 
-	allow_any_listener = spdk_conf_section_get_boolval(sp, "AllowAnyListener", opts.allow_any_listener);
+	allow_any_listener = spdk_conf_section_get_boolval(sp, "AllowAnyListener",
+			     tgt_opts.allow_any_listener);
 
 	bdf = spdk_conf_section_get_val(sp, "NVMe");
 
@@ -495,6 +525,13 @@ nvmf_fc_parse_subsystem(struct spdk_conf_section *sp)
 		devs_nidt[i] = spdk_conf_section_get_nmval(sp, "Namespace", i, 1);
 		devs_nid[i] = spdk_conf_section_get_nmval(sp, "Namespace", i, 2);
 
+		if ((ana_group_str = spdk_conf_section_get_nmval(sp, "Namespace", i, 3))) {
+			anagrpids[i] = (uint32_t) atoi(ana_group_str);
+		} else {
+			SPDK_NOTICELOG("ANA group id not defined for namespace %s\n", devs[i]);
+			anagrpids[i] = 0;
+		}
+
 		num_devs++;
 	}
 
@@ -502,7 +539,7 @@ nvmf_fc_parse_subsystem(struct spdk_conf_section *sp)
 			num_listen_addrs,
 			listen_addrs, allow_any_listener, num_hosts,
 			hosts, allow_any_host, bdf, sn, num_devs,
-			devs, devs_nidt, devs_nid);
+			devs, devs_nidt, devs_nid, anagrpids);
 
 	return ret;
 }
@@ -555,7 +592,8 @@ spdk_nvmf_bcm_fc_construct_subsystem(const char *name,
 				     int num_hosts, struct spdk_host_conf *hosts,
 				     bool allow_any_host, const char *bdf, const char *sn,
 				     int num_devs, char *dev_list[],
-				     char *dev_nidt[], char *dev_nid[])
+				     char *dev_nidt[], char *dev_nid[],
+				     uint32_t *anagrpids)
 {
 	struct spdk_nvmf_subsystem *subsystem;
 	struct nvmf_tgt_subsystem *app_subsys;
@@ -563,6 +601,7 @@ spdk_nvmf_bcm_fc_construct_subsystem(const char *name,
 	int i;
 	uint64_t mask;
 	uint8_t nidt, nid[16];
+	uint32_t anagrpid;
 
 	if (name == NULL) {
 		SPDK_ERRLOG("No NQN specified for subsystem\n");
@@ -723,7 +762,9 @@ spdk_nvmf_bcm_fc_construct_subsystem(const char *name,
 				bdev->id_desc = spdk_nvmf_get_ns_id_desc(nidt, nid);
 			}
 
-			if (spdk_nvmf_subsystem_add_ns(subsystem, bdev, 0) <= 0) {
+			anagrpid = anagrpids ? anagrpids[i] : 0;
+
+			if (spdk_nvmf_subsystem_add_ns(subsystem, bdev, 0, anagrpid) <= 0) {
 				goto error;
 			}
 

@@ -61,6 +61,8 @@ struct spdk_nvmf_tgt_opts;
 
 int spdk_nvmf_tgt_opts_init(struct spdk_nvmf_tgt_opts *opts);
 
+int spdk_nvmf_tgt_opts_update(struct spdk_nvmf_tgt_opts *opts);
+
 int spdk_nvmf_tgt_fini(void);
 
 int spdk_nvmf_check_pools(void);
@@ -144,6 +146,18 @@ struct spdk_nvmf_subsystem_allowed_listener {
 	TAILQ_ENTRY(spdk_nvmf_subsystem_allowed_listener)	link;
 };
 
+struct spdk_nvmf_ana_group {
+	uint32_t    anagrpid;
+	uint32_t    num_nsids;
+	void        *app_ctxt;
+	/*
+	 * Intentionally not adding state here
+	 * as state is associated with
+	 * <ana_group, session> tuple
+	 */
+	TAILQ_ENTRY(spdk_nvmf_ana_group)    link;
+};
+
 /*
  * The NVMf subsystem, as indicated in the specification, is a collection
  * of virtual controller sessions.  Any individual controller session has
@@ -175,6 +189,13 @@ struct spdk_nvmf_subsystem {
 			struct spdk_pci_id sub_pci_id;
 		} virt;
 	} dev;
+	uint16_t next_cntlid;
+	/*
+	 * ana_groups should be present in the increasing order
+	 * of ana group id
+	 */
+	TAILQ_HEAD(, spdk_nvmf_ana_group)       ana_groups;
+	uint16_t                                num_ana_groups;
 
 	const struct spdk_nvmf_ctrlr_ops *ops;
 
@@ -226,6 +247,12 @@ struct spdk_nvmf_tgt_opts {
 	uint8_t                                 mn[SPDK_NVME_SPEC_MPDEL_NUMBER_SIZE];
 	bool                                    allow_any_host;
 	bool                                    allow_any_listener;
+	uint8_t					anatt;
+	uint8_t					anacap;
+	uint32_t				anagrpmax;
+	uint32_t				nanagrpid;
+	uint32_t				mnan;
+	uint8_t                                 tgt_instance_id;
 };
 
 struct spdk_nvmf_subsystem *spdk_nvmf_create_subsystem(const char *nqn,
@@ -339,13 +366,71 @@ struct spdk_nvme_ns_id_desc *spdk_nvmf_get_ns_id_desc(uint8_t nidt, uint8_t nid[
  *
  * \param subsystem Subsystem to add namespace to.
  * \param bdev Block device to add as a namespace.
- * \param nsid Namespace ID to assign to the new namespace, or 0 to automatically use an available
- *             NSID.
+ * \param nsid Namespace ID to assign to the new namespace, or 0 to automatically use an available NSID.
+ * \param anagrpid  ID of the ANA group that this namespace belongs to, or 0 if the namespace does not belong to any ANA group
  *
  * \return Newly added NSID on success or 0 on failure.
  */
 uint32_t spdk_nvmf_subsystem_add_ns(struct spdk_nvmf_subsystem *subsystem, struct spdk_bdev *bdev,
-				    uint32_t nsid);
+				    uint32_t nsid, uint32_t anagrpid);
+
+/**
+ * Remove a namespace from a subsytem.
+ *
+ * \param subsystem Subsystem to remove namespace from.
+ * \param nsid Namespace ID to assign to the new namespace, or 0 to automatically use an available NSID.
+ *
+ * \return A status <0 on failure and 0 on success
+ */
+int spdk_nvmf_subsystem_remove_ns(struct spdk_nvmf_subsystem *subsystem, uint32_t nsid);
+
+/**
+ * Find an ANA group in a subsystem with a specified group id
+ *
+ * \param subsystem Subsystem to find ANA group in
+ * \param anagrpid ID of the ANA group to look for
+ *
+ * \return A pointer to the ANA group if one is found, or NULL if no ANA group is found
+ */
+struct spdk_nvmf_ana_group *spdk_nvmf_subsystem_find_ana_group(struct spdk_nvmf_subsystem
+		*subsystem,
+		uint32_t anagrpid);
+
+/**
+ * Add an ANA group to a subsystem with a specified group id
+ *
+ * \param subsystem Subsystem to add ANA group to
+ * \param anagrpid ID of the ANA group to add
+ * \param app_ctxt An application specific context for this ANA group
+ *
+ * \return A status <0 on failure and 0 on success
+ */
+int spdk_nvmf_subsystem_add_ana_group(struct spdk_nvmf_subsystem *subsystem, uint32_t anagrpid,
+				      void *app_ctxt);
+
+/**
+ * Remove ANA group corresponding to group id specified from the subsystem
+ *
+ * \param subsystem Subsystem to remove ANA group from
+ * \param anagrpid ID of the ANA group to remove
+ *
+ * \return A status <0 on failure and 0 on success
+ */
+int spdk_nvmf_subsystem_remove_ana_group(struct spdk_nvmf_subsystem *subsystem,
+		uint32_t anagrpid);
+
+/**
+ * Get the ANA state, on the specified controller, for the group corresponding
+ * to the specified group id
+ *
+ * \param subsystem Subsystem to which the ANA group belongs
+ * \param anagrpid ID of the ANA group
+ * \param cntlid Controller ID for which ANA group state has to be obtained
+ *
+ * \return ANA state of the group over the specified controller
+ */
+uint8_t spdk_nvmf_subsystem_get_ana_group_state(struct spdk_nvmf_subsystem *subsystem,
+		uint32_t anagrpid, uint16_t cntlid);
 
 
 int spdk_nvmf_subsystem_set_pci_id(struct spdk_nvmf_subsystem *subsystem,
@@ -369,5 +454,4 @@ void spdk_nvmf_session_disconnect(struct spdk_nvmf_conn *conn);
 void spdk_nvmf_queue_aer_rsp(struct spdk_nvmf_subsystem *subsystem,
 			     enum aer_type aer_type,
 			     uint8_t aer_info);
-
 #endif

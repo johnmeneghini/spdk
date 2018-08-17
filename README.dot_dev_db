@@ -1,0 +1,12 @@
+This is the main NetApp SPDK integration branch for DOT:dev/Dayblazer.
+
+  - All modifications made to SPDK by NetApp should be made in a sub-branch off
+    of this branch.
+  - All modifcations made to SPDK code will be BSD licensed, open source
+    software and will be donated back to the SPDK project.
+  - All modifications made to this branch should be pushed to Gitlab
+    and reviewed by Broadcom before committed here.
+  - All modifications made to this branch are subject to the NetApp
+    OSRB code review process.
+
+Contact: johnm@netapp.com for more information.

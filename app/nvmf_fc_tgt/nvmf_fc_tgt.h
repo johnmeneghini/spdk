@@ -93,7 +93,8 @@ spdk_nvmf_bcm_fc_construct_subsystem(const char *name,
 				     int num_hosts, struct spdk_host_conf *hosts,
 				     bool allow_any_host, const char *bdf, const char *sn,
 				     int num_devs, char *dev_list[],
-				     char *dev_nidt[], char *dev_nid[]);
+				     char *dev_nidt[], char *dev_nid[],
+				     uint32_t *anagrpids);
 
 int
 spdk_nvmf_bcm_fc_tgt_shutdown_subsystem_by_nqn(const char *nqn);

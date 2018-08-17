@@ -35,5 +35,6 @@ SPDK_ROOT_DIR := $(abspath $(CURDIR)/../../../../..)
 CFLAGS += -I$(SPDK_ROOT_DIR)/lib
 
 TEST_FILE = virtual_ut.c
+OTHER_FILES = subsystem.c
 
 include $(SPDK_ROOT_DIR)/mk/nvmf.unittest.mk

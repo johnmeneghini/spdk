@@ -63,9 +63,13 @@ struct spdk_nvmf_conn {
 	TAILQ_ENTRY(spdk_nvmf_conn) 		link;
 };
 
+/*
+ * This structure contains all context info for AER handling
+ */
 struct spdk_nvmf_aer_ctxt {
-	bool is_aer_pending;
-	uint32_t aer_rsp_cdw0;
+	uint32_t 				aer_pending_map;
+	union spdk_nvme_aer_cq_entry		ns_attr_aer_cdw0;
+	union spdk_nvme_aer_cq_entry		ana_change_aer_cdw0;
 };
 
 /*
@@ -96,6 +100,8 @@ struct spdk_nvmf_session {
 			union spdk_nvme_critical_warning_state crit_warn;
 			uint8_t ns_attr_notice : 1;
 			uint8_t fw_activation_notice : 1;
+			uint8_t telemetry_log_notice : 1;
+			uint8_t ana_change_notice : 1;
 		} bits;
 	} async_event_config;
 	struct spdk_nvmf_request *aer_req;
@@ -103,6 +109,7 @@ struct spdk_nvmf_session {
 	uint8_t hostid[16];
 	char hostnqn[SPDK_NVMF_NQN_MAX_LEN];
 	const struct spdk_nvmf_transport	*transport;
+	uint64_t ana_log_change_count;
 
 	TAILQ_ENTRY(spdk_nvmf_session) 		link;
 };
@@ -131,6 +138,9 @@ spdk_nvmf_property_set(struct spdk_nvmf_session *session,
 		       struct spdk_nvmf_fabric_prop_set_cmd *cmd,
 		       struct spdk_nvme_cpl *rsp);
 
+bool
+spdk_nvmf_session_get_ana_status(struct spdk_nvmf_session *session);
+
 int spdk_nvmf_session_poll(struct spdk_nvmf_session *session);
 
 void spdk_nvmf_session_destruct(struct spdk_nvmf_session *session);
@@ -154,5 +164,7 @@ uint16_t spdk_nvmf_session_get_num_io_connections(struct spdk_nvmf_session *sess
 
 void spdk_nvmf_session_populate_io_queue_depths(struct spdk_nvmf_session *session,
 		uint16_t *max_io_queue_depths, uint16_t num_io_queues);
+
+void spdk_nvmf_update_ana_change_count(struct spdk_nvmf_subsystem *subsystem);
 
 #endif

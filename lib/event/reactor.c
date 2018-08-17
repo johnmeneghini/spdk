@@ -162,6 +162,10 @@ spdk_event_call(struct spdk_event *event)
 	reactor = spdk_reactor_get(event->lcore);
 
 	assert(reactor->events != NULL);
+	if (reactor->events == NULL) {
+		return;
+	}
+
 	rc = spdk_ring_enqueue(reactor->events, (void **)&event, 1);
 	if (rc != 1) {
 		assert(false);
@@ -192,6 +196,9 @@ _spdk_event_queue_run_batch(struct spdk_reactor *reactor)
 		struct spdk_event *event = events[i];
 
 		assert(event != NULL);
+		if (!event) {
+			continue;
+		}
 		event->fn(event->arg1, event->arg2);
 	}
 
