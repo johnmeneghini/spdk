@@ -52,8 +52,6 @@
  */
 #include "../nvmf/nvmf_fc/bcm_fc.h"
 
-
-
 typedef TAILQ_HEAD(, spdk_bdev_io) need_buf_tailq_t;
 
 struct spdk_bdev_mgr {
@@ -61,6 +59,8 @@ struct spdk_bdev_mgr {
 	TAILQ_HEAD(, spdk_bdev_module_if) bdev_modules;
 
 	TAILQ_HEAD(, spdk_bdev) bdevs;
+
+	struct spdk_mempool *buf_small_pool;
 
 	spdk_bdev_poller_start_cb start_poller_fn;
 	spdk_bdev_poller_stop_cb stop_poller_fn;
@@ -179,6 +179,50 @@ spdk_bdev_config_text(FILE *fp)
 	}
 }
 
+static int
+spdk_bdev_get_buff(struct iovec *iov, int32_t *iovcnt, int32_t length)
+{
+	struct spdk_mempool *pool;
+	void *buf = NULL;
+	int32_t i = 0, max_buff_len;
+
+	if (!iov) {
+		goto error;
+	}
+
+	*iovcnt = 0;
+
+	while (length) {
+		/* Always use from small buff to be in sync with netapp wafl */
+		pool = g_bdev_mgr.buf_small_pool;
+		max_buff_len = SPDK_BDEV_SMALL_BUF_MAX_SIZE;
+
+		buf = spdk_mempool_get(pool);
+		if (buf) {
+			iov[i].iov_base = buf;
+			iov[i].iov_len  = spdk_min(length, max_buff_len);
+			++ *iovcnt;
+		} else {
+			while (i) {
+				i --;
+				spdk_mempool_put(pool, iov[i].iov_base);
+				iov[i].iov_base = NULL;
+				iov[i].iov_len = 0;
+			}
+			*iovcnt = 0;
+			goto error;
+		}
+
+		length -= iov[i].iov_len;
+		i ++;
+	}
+
+	return 0;
+error:
+	SPDK_TRACELOG(SPDK_TRACE_DEBUG, "Bdev buffer allocation failed\n");
+	return -1;
+}
+
 static void
 spdk_bdev_init_complete(int rc)
 {
@@ -233,14 +277,30 @@ spdk_bdev_modules_init(void)
 	return 0;
 }
 
+#define BUF_SMALL_POOL_SIZE     8192
+
 void
 spdk_bdev_initialize(spdk_bdev_init_cb cb_fn, void *cb_arg,
 		     spdk_bdev_poller_start_cb start_poller_fn,
 		     spdk_bdev_poller_stop_cb stop_poller_fn)
 {
 	int rc = 0;
+	int cache_size;
 
 	assert(cb_fn != NULL);
+
+	cache_size = BUF_SMALL_POOL_SIZE / (2 * spdk_env_get_core_count());
+	g_bdev_mgr.buf_small_pool = spdk_mempool_create("buf_small_pool",
+				    BUF_SMALL_POOL_SIZE,
+				    SPDK_BDEV_SMALL_BUF_MAX_SIZE + 512,
+				    cache_size,
+				    SPDK_ENV_SOCKET_ID_ANY);
+
+	if (!g_bdev_mgr.buf_small_pool) {
+		SPDK_ERRLOG("create buf small pool failed\n");
+		spdk_bdev_module_init_complete(-1);
+		return;
+	}
 
 	g_cb_fn = cb_fn;
 	g_cb_arg = cb_arg;
@@ -263,13 +323,15 @@ spdk_bdev_finish(void)
 		}
 	}
 
+	spdk_mempool_free(g_bdev_mgr.buf_small_pool);
+
 	return 0;
 }
 
 static struct spdk_bdev_io *
 spdk_bdev_get_io(struct spdk_mempool *pool)
 {
-	struct spdk_bdev_io *bdev_io;
+	struct spdk_bdev_io *bdev_io = NULL;
 
 	if (pool == NULL) {
 		assert(0);
@@ -336,6 +398,16 @@ bool
 spdk_bdev_io_type_supported(struct spdk_bdev *bdev, enum spdk_bdev_io_type io_type)
 {
 	return bdev->fn_table->io_type_supported(bdev->ctxt, io_type);
+}
+
+uint8_t
+spdk_bdev_get_ana_state(struct spdk_bdev *bdev, uint16_t cntlid)
+{
+	if (bdev && bdev->fn_table && bdev->fn_table->get_ana_state) {
+		return bdev->fn_table->get_ana_state(bdev->ctxt, cntlid);
+	}
+	SPDK_ERRLOG("No callback registered returning ANA state optimized\n");
+	return SPDK_NVME_ANA_OPTIMIZED;
 }
 
 const char *
@@ -620,6 +692,17 @@ spdk_bdev_free_io(struct spdk_bdev_io *bdev_io)
 	return 0;
 }
 
+void
+bdev_io_deferred_completion(void *arg1, void *arg2)
+{
+	struct spdk_bdev_io *bdev_io = arg1;
+	enum spdk_bdev_io_status status = (enum spdk_bdev_io_status)arg2;
+
+	assert(bdev_io->in_submit_request == false);
+
+	spdk_bdev_io_complete(bdev_io, status);
+}
+
 static void
 _spdk_bdev_io_complete(void *ctx, void *arg2)
 {
@@ -684,6 +767,10 @@ spdk_bdev_io_get_nvme_status(const struct spdk_bdev_io *bdev_io, int *sct, int *
 {
 	assert(sct != NULL);
 	assert(sc != NULL);
+
+	if (sct == NULL || sc == NULL) {
+		return;
+	}
 
 	if (bdev_io->status == SPDK_BDEV_IO_STATUS_NVME_ERROR) {
 		*sct = bdev_io->error.nvme.sct;
@@ -876,8 +963,12 @@ spdk_bdev_read_init(struct spdk_bdev_desc *desc,
 	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb);
 
 
-	if (bdev->fn_table->init_read) {
-		rc = bdev->fn_table->init_read(length, iov, iovcnt, bdev_io);
+	if (!(*iovcnt)) {
+		if (bdev->fn_table->init_read) {
+			rc = bdev->fn_table->init_read(length, iov, iovcnt, bdev_io);
+		} else {
+			rc = spdk_bdev_get_buff(iov, iovcnt, length);
+		}
 	}
 
 	if (rc) {
