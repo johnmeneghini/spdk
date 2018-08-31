@@ -272,7 +272,7 @@ spdk_nvmf_session_gen_cntlid(struct spdk_nvmf_subsystem *subsystem)
 	/* Identify a free controller ID within the range of available controller instances per subsystem */
 	for (count = 0; count < MAX_CNTL_INSTANCE; count++) {
 		subsystem->next_cntlid ++;
-		if (subsystem->next_cntlid == MAX_CNTL_INSTANCE) {
+		if (subsystem->next_cntlid == MAX_CNTL_INSTANCE + 1) {
 			subsystem->next_cntlid = 1;
 		}
 
