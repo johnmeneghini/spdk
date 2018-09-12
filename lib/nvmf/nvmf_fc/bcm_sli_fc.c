@@ -1179,7 +1179,9 @@ nvmf_fc_rqpair_buffer_release(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint16_t buff_
 
 	/* Repost the freebuffer to head of queue. */
 	hwqp->queues.rq_hdr.rq_map[hwqp->queues.rq_hdr.q.head] = buff_idx;
-	nvmf_fc_rqpair_buffer_post(hwqp, buff_idx, true);
+	if (hwqp->state != SPDK_FC_HWQP_OFFLINE) {
+		nvmf_fc_rqpair_buffer_post(hwqp, buff_idx, true);
+	}
 }
 
 int
