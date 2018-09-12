@@ -269,8 +269,10 @@ spdk_bdev_open(struct spdk_bdev *bdev, bool write, spdk_bdev_remove_cb_t remove_
 	return 0;
 }
 
-void spdk_bdev_close(struct spdk_bdev_desc *desc)
+void
+spdk_bdev_close(struct spdk_bdev_desc *desc)
 {
+	return;
 }
 
 void spdk_bdev_io_get_nvme_status(const struct spdk_bdev_io *bdev_io, int *sct, int *sc, int *dnr)

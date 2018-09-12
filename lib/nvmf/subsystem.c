@@ -561,13 +561,6 @@ nvmf_subsystem_add_ctrlr(struct spdk_nvmf_subsystem *subsystem,
 	return 0;
 }
 
-static void spdk_nvmf_ctrlr_hot_remove(void *remove_ctx)
-{
-	struct spdk_nvmf_subsystem *subsystem = (struct spdk_nvmf_subsystem *)remove_ctx;
-
-	subsystem->is_removed = true;
-}
-
 struct spdk_nvme_ns_id_desc *
 spdk_nvmf_get_ns_id_desc(uint8_t nidt, uint8_t nid[])
 {
@@ -797,6 +790,7 @@ spdk_nvmf_subsystem_remove_ns(struct spdk_nvmf_subsystem *subsystem, uint32_t ns
 
 	subsystem->dev.virt.ch[nsid - 1]      = NULL;
 	subsystem->dev.virt.ns_list[nsid - 1] = NULL;
+	spdk_bdev_close(subsystem->dev.virt.desc[nsid - 1]);
 
 	if (nsid == subsystem->dev.virt.max_nsid) {
 		spdk_nvmf_subsystem_adjust_max_nsid(subsystem);
@@ -851,8 +845,7 @@ spdk_nvmf_subsystem_add_ns(struct spdk_nvmf_subsystem *subsystem, struct spdk_bd
 		}
 	}
 
-	/* TODO: Madhu - check if this works okay for NS unmap w/ hot_remove cb. */
-	rc = spdk_bdev_open(bdev, true, spdk_nvmf_ctrlr_hot_remove, subsystem,
+	rc = spdk_bdev_open(bdev, true, NULL, NULL,
 			    &subsystem->dev.virt.desc[i]);
 	if (rc != 0) {
 		SPDK_ERRLOG("Subsystem %s: bdev %s cannot be opened, error=%d\n",
