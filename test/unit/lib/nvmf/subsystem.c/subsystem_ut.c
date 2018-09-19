@@ -168,6 +168,11 @@ spdk_nvmf_session_poll(struct spdk_nvmf_session *session)
 	return -1;
 }
 
+void
+spdk_nvmf_session_set_ns_changed(struct spdk_nvmf_session *session, uint32_t nsid)
+{
+}
+
 int
 spdk_bdev_open(struct spdk_bdev *bdev, bool write, spdk_bdev_remove_cb_t remove_cb,
 	       void *remove_ctx, struct spdk_bdev_desc **desc)

@@ -148,6 +148,42 @@ spdk_nvmf_session_async_event_request(struct spdk_nvmf_request *req)
 	return -1;
 }
 
+void spdk_nvmf_session_set_ns_changed(struct spdk_nvmf_session *session, uint32_t nsid)
+{
+	uint8_t byte;
+	uint8_t bit;
+
+	byte = (nsid - 1) / 8;
+	bit = (nsid - 1) % 8;
+
+	if (!(session->ns_changed_map.bitmap[byte] & (1 << bit))) {
+		session->ns_changed_map.ns_changed_count++;
+		session->ns_changed_map.bitmap[byte]  |= (1 << bit);
+	}
+}
+
+bool spdk_nvmf_session_has_ns_changed(struct spdk_nvmf_session *session, uint32_t nsid)
+{
+	uint8_t byte;
+	uint8_t bit;
+
+	byte = (nsid - 1) / 8;
+	bit = (nsid - 1) % 8;
+
+	return (session->ns_changed_map.bitmap[byte] & (1 << bit));
+}
+
+void spdk_nvmf_session_reset_ns_changed_map(struct spdk_nvmf_session *session)
+{
+	memset(session->ns_changed_map.bitmap, 0, CHANGED_NS_BITMAP_SIZE_BYTES);
+	session->ns_changed_map.ns_changed_count = 0;
+}
+
+uint16_t spdk_nvmf_session_get_num_ns_changed(struct spdk_nvmf_session *session)
+{
+	return session->ns_changed_map.ns_changed_count;
+}
+
 int
 spdk_nvmf_request_complete(struct spdk_nvmf_request *req)
 {
@@ -374,6 +410,103 @@ spdk_nvmf_session_get_ana_status(struct spdk_nvmf_session *session)
 }
 
 static void
+test_changed_ns_log(void)
+{
+	struct spdk_nvmf_subsystem *subsystem;
+	struct spdk_nvmf_request req = {0};
+	struct spdk_nvmf_conn req_conn = {};
+	struct	spdk_nvmf_session req_sess = {};
+	struct spdk_bdev bdev1 = {}, bdev2 = {}, bdev3 = {};
+	uint8_t buffer[4096];
+	uint64_t offset = 0x0;
+	uint32_t length = 4096, nsid = 0, i;
+	uint32_t *returned_nsids = NULL;
+	int ret = 0;
+
+	req.data = buffer;
+	snprintf(req_sess.hostnqn, 223, "nqn.2017-07.com.netapp:num2");
+	req.conn = &req_conn;
+	req.conn->sess = &req_sess;
+
+	TAILQ_INIT(&g_nvmf_tgt.subsystems);
+	subsystem = spdk_nvmf_create_subsystem("nqn.2016-06.io.spdk:subsystem2", SPDK_NVMF_SUBTYPE_NVME,
+					       NVMF_SUBSYSTEM_MODE_VIRTUAL, NULL, NULL, NULL);
+	SPDK_CU_ASSERT_FATAL(subsystem != NULL);
+
+	req.conn->sess->subsys = subsystem;
+	TAILQ_INSERT_TAIL(&subsystem->sessions, &req_sess, link);
+
+	/* Get changed ns log on a subsystem with no mapped NSs */
+	memset(buffer, 0x0, sizeof(buffer));
+	ret = nvmf_virtual_ctrlr_get_changed_ns_log_page(&req, offset, length);
+	returned_nsids = (uint32_t *)req.data;
+	for (i = 0; i < 4096 / sizeof(uint32_t); ++i) {
+		CU_ASSERT(returned_nsids[i] == 0);
+	}
+	CU_ASSERT(ret == 0);
+
+	/* Add a namespace to subsystem and verify changed ns log */
+	nsid = spdk_nvmf_subsystem_add_ns(subsystem, &bdev1, 0, 0);
+	CU_ASSERT(nsid == 1);
+	memset(buffer, 0x0, sizeof(buffer));
+	ret = nvmf_virtual_ctrlr_get_changed_ns_log_page(&req, offset, length);
+	CU_ASSERT(ret == 0);
+	returned_nsids = (uint32_t *)req.data;
+	CU_ASSERT(returned_nsids[0] == 1);
+	for (i = 1; i < 4096 / sizeof(uint32_t); ++i) {
+		CU_ASSERT(returned_nsids[i] == 0);
+	}
+
+
+	/* Add two more namespaces to subsystem and verify
+	   only the new NSs are returned in changed ns log */
+	nsid = spdk_nvmf_subsystem_add_ns(subsystem, &bdev2, 0, 0);
+	CU_ASSERT(nsid == 2);
+	nsid = spdk_nvmf_subsystem_add_ns(subsystem, &bdev3, 0, 0);
+	CU_ASSERT(nsid == 3);
+	memset(buffer, 0x0, sizeof(buffer));
+	ret = nvmf_virtual_ctrlr_get_changed_ns_log_page(&req, offset, length);
+	CU_ASSERT(ret == 0);
+	returned_nsids = (uint32_t *)req.data;
+	CU_ASSERT(returned_nsids[0] == 2);
+	CU_ASSERT(returned_nsids[1] == 3);
+	for (i = 2; i < 4096 / sizeof(uint32_t); ++i) {
+		CU_ASSERT(returned_nsids[i] == 0);
+	}
+
+	/* Unmap an NS and veirfy changed ns log */
+	ret = spdk_nvmf_subsystem_remove_ns(subsystem, 2);
+	CU_ASSERT(ret == 0);
+	memset(buffer, 0x0, sizeof(buffer));
+	ret = nvmf_virtual_ctrlr_get_changed_ns_log_page(&req, offset, length);
+	CU_ASSERT(ret == 0);
+	returned_nsids = (uint32_t *)req.data;
+	CU_ASSERT(returned_nsids[0] == 2);
+	for (i = 1; i < 4096 / sizeof(uint32_t); ++i) {
+		CU_ASSERT(returned_nsids[i] == 0);
+	}
+
+	/* Changed ns log with offset */
+	ret = spdk_nvmf_subsystem_remove_ns(subsystem, 1);
+	CU_ASSERT(ret == 0);
+	ret = spdk_nvmf_subsystem_remove_ns(subsystem, 3);
+	CU_ASSERT(ret == 0);
+	memset(buffer, 0x0, sizeof(buffer));
+	/* skip one ns */
+	offset = sizeof(nsid);
+	ret = nvmf_virtual_ctrlr_get_changed_ns_log_page(&req, offset, length);
+	CU_ASSERT(ret == 0);
+	returned_nsids = (uint32_t *)req.data;
+	CU_ASSERT(returned_nsids[0] == 3);
+	for (i = 1; i < 4096 / sizeof(uint32_t); ++i) {
+		CU_ASSERT(returned_nsids[i] == 0);
+	}
+
+	/* Delete the subsystem with ANA group */
+	spdk_nvmf_delete_subsystem(subsystem);
+}
+
+static void
 test_ana_log(void)
 {
 	struct spdk_nvmf_subsystem *subsystem;
@@ -506,6 +639,7 @@ static void
 nvmf_test_nvmf_virtual_ctrlr_get_log_page(void)
 {
 	test_ana_log();
+	test_changed_ns_log();
 	/* Test other log pages */
 }
 

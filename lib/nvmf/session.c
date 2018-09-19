@@ -1187,3 +1187,49 @@ spdk_nvmf_queue_aer_rsp(struct spdk_nvmf_subsystem *subsystem,
 		}
 	}
 }
+
+void spdk_nvmf_session_set_ns_changed(struct spdk_nvmf_session *session, uint32_t nsid)
+{
+	uint8_t byte;
+	uint8_t bit;
+
+	if (nsid == 0 || nsid > MAX_VIRTUAL_NAMESPACE) {
+		SPDK_ERRLOG("Invalid nsid %d passed for setting ns change mask on session\n", nsid);
+		return;
+	}
+
+	byte = (nsid - 1) / 8;
+	bit = (nsid - 1) % 8;
+
+	if (!(session->ns_changed_map.bitmap[byte] & (1 << bit))) {
+		session->ns_changed_map.ns_changed_count++;
+		session->ns_changed_map.bitmap[byte]  |= (1 << bit);
+	}
+}
+
+bool spdk_nvmf_session_has_ns_changed(struct spdk_nvmf_session *session, uint32_t nsid)
+{
+	uint8_t byte;
+	uint8_t bit;
+
+	if (nsid == 0 || nsid > MAX_VIRTUAL_NAMESPACE) {
+		SPDK_ERRLOG("Invalid nsid %d passed for getting ns change mask on session\n", nsid);
+		return false;
+	}
+
+	byte = (nsid - 1) / 8;
+	bit = (nsid - 1) % 8;
+
+	return (session->ns_changed_map.bitmap[byte] & (1 << bit));
+}
+
+void spdk_nvmf_session_reset_ns_changed_map(struct spdk_nvmf_session *session)
+{
+	memset(session->ns_changed_map.bitmap, 0, CHANGED_NS_BITMAP_SIZE_BYTES);
+	session->ns_changed_map.ns_changed_count = 0;
+}
+
+uint16_t spdk_nvmf_session_get_num_ns_changed(struct spdk_nvmf_session *session)
+{
+	return session->ns_changed_map.ns_changed_count;
+}

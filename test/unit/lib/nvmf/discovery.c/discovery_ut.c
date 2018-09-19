@@ -164,6 +164,11 @@ spdk_nvmf_session_poll(struct spdk_nvmf_session *session)
 	return -1;
 }
 
+void
+spdk_nvmf_session_set_ns_changed(struct spdk_nvmf_session *session, uint32_t nsid)
+{
+}
+
 static void
 test_process_discovery_cmd(void)
 {

@@ -204,6 +204,27 @@ spdk_nvmf_find_subsystem_host(struct spdk_nvmf_subsystem *subsystem, const char 
 	return NULL;
 }
 
+static void
+test_handle_ns_change_mask(void)
+{
+	struct spdk_nvmf_session *session = malloc(sizeof(struct spdk_nvmf_session));
+	memset(session, 0, sizeof(struct spdk_nvmf_session));
+	spdk_nvmf_session_set_ns_changed(session, 1);
+	spdk_nvmf_session_set_ns_changed(session, 2);
+	spdk_nvmf_session_set_ns_changed(session, 17);
+	CU_ASSERT(spdk_nvmf_session_has_ns_changed(session, 1));
+	CU_ASSERT(spdk_nvmf_session_has_ns_changed(session, 2));
+	CU_ASSERT(spdk_nvmf_session_has_ns_changed(session, 17));
+	CU_ASSERT_FALSE(spdk_nvmf_session_has_ns_changed(session, 3));
+	CU_ASSERT_EQUAL(spdk_nvmf_session_get_num_ns_changed(session), 3);
+
+	spdk_nvmf_session_reset_ns_changed_map(session);
+	CU_ASSERT_FALSE(spdk_nvmf_session_has_ns_changed(session, 1));
+	CU_ASSERT_FALSE(spdk_nvmf_session_has_ns_changed(session, 2));
+	CU_ASSERT_FALSE(spdk_nvmf_session_has_ns_changed(session, 17));
+	CU_ASSERT_EQUAL(spdk_nvmf_session_get_num_ns_changed(session), 0);
+	free(session);
+}
 
 int main(int argc, char **argv)
 {
@@ -222,7 +243,8 @@ int main(int argc, char **argv)
 
 	if (
 		CU_add_test(suite, "foobar", test_foobar) == NULL ||
-		CU_add_test(suite, "process_aer_rsp", test_process_aer_rsp)  == NULL) {
+		CU_add_test(suite, "process_aer_rsp", test_process_aer_rsp)  == NULL ||
+		CU_add_test(suite, "handle_ns_change_mask", test_handle_ns_change_mask)  == NULL) {
 		CU_cleanup_registry();
 		return CU_get_error();
 	}

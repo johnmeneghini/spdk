@@ -64,6 +64,21 @@ spdk_nvmf_find_subsystem(const char *subnqn)
 	return NULL;
 }
 
+void
+spdk_nvmf_subsystem_set_ns_changed(struct spdk_nvmf_subsystem *subsystem, uint32_t nsid)
+{
+	struct spdk_nvmf_session 	*session;
+
+	if (nsid == 0 || nsid > MAX_VIRTUAL_NAMESPACE) {
+		SPDK_ERRLOG("Invalid nsid %d passed for setting ns change mask on subsystem\n", nsid);
+		return;
+	}
+
+	TAILQ_FOREACH(session, &subsystem->sessions, link) {
+		spdk_nvmf_session_set_ns_changed(session, nsid);
+	}
+}
+
 struct spdk_nvmf_session *
 spdk_nvmf_subsystem_get_ctrlr(struct spdk_nvmf_subsystem *subsystem, uint16_t cntlid)
 {
@@ -787,6 +802,7 @@ spdk_nvmf_subsystem_remove_ns(struct spdk_nvmf_subsystem *subsystem, uint32_t ns
 
 	subsystem->dev.virt.ns_list[nsid - 1] = NULL;
 	spdk_bdev_close(subsystem->dev.virt.desc[nsid - 1]);
+	spdk_nvmf_subsystem_set_ns_changed(subsystem, nsid);
 
 	if (nsid == subsystem->dev.virt.max_nsid) {
 		spdk_nvmf_subsystem_adjust_max_nsid(subsystem);
@@ -857,6 +873,7 @@ spdk_nvmf_subsystem_add_ns(struct spdk_nvmf_subsystem *subsystem, struct spdk_bd
 
 	subsystem->dev.virt.ns_list[i] = bdev;
 	subsystem->dev.virt.max_nsid =  spdk_max(subsystem->dev.virt.max_nsid, nsid);
+	spdk_nvmf_subsystem_set_ns_changed(subsystem, nsid);
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Subsystem %s: bdev %s assigned nsid %" PRIu32 " anagrpid %u\n",
 		      spdk_nvmf_subsystem_get_nqn(subsystem),

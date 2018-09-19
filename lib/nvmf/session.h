@@ -43,6 +43,10 @@
 /* define a virtual controller limit to the number of QPs supported */
 #define MAX_SESSION_IO_QUEUES 64
 
+#define CHANGED_NS_MAX_NS_TO_REPORT 1024
+#define CHANGED_NS_BITMAP_SIZE_BYTES (MAX_VIRTUAL_NAMESPACE/8)
+#define CHANGED_NS_LOG_TOO_MANY_NAME_SPACES 0xffffffff
+
 struct spdk_nvmf_transport;
 struct spdk_nvmf_request;
 
@@ -110,6 +114,10 @@ struct spdk_nvmf_session {
 	char hostnqn[SPDK_NVMF_NQN_MAX_LEN];
 	const struct spdk_nvmf_transport	*transport;
 	uint64_t ana_log_change_count;
+	struct {
+		uint8_t bitmap[CHANGED_NS_BITMAP_SIZE_BYTES];
+		uint16_t ns_changed_count;
+	} ns_changed_map;
 
 	TAILQ_ENTRY(spdk_nvmf_session) 		link;
 };
@@ -166,5 +174,10 @@ void spdk_nvmf_session_populate_io_queue_depths(struct spdk_nvmf_session *sessio
 		uint16_t *max_io_queue_depths, uint16_t num_io_queues);
 
 void spdk_nvmf_update_ana_change_count(struct spdk_nvmf_subsystem *subsystem);
+
+void spdk_nvmf_session_set_ns_changed(struct spdk_nvmf_session *session, uint32_t nsid);
+bool spdk_nvmf_session_has_ns_changed(struct spdk_nvmf_session *session, uint32_t nsid);
+void spdk_nvmf_session_reset_ns_changed_map(struct spdk_nvmf_session *session);
+uint16_t spdk_nvmf_session_get_num_ns_changed(struct spdk_nvmf_session *session);
 
 #endif

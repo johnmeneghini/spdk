@@ -57,4 +57,8 @@ struct spdk_nvmf_listen_addr *
 spdk_nvmf_find_subsystem_listener(struct spdk_nvmf_subsystem *subsystem,
 				  struct spdk_nvmf_listen_addr *listen_addr);
 
+void
+spdk_nvmf_subsystem_set_ns_changed(struct spdk_nvmf_subsystem *subsystem,
+				   uint32_t nsid);
+
 #endif /* SPDK_NVMF_SUBSYSTEM_H */
