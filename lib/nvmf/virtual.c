@@ -1002,7 +1002,6 @@ nvmf_virtual_ctrlr_detach(struct spdk_nvmf_subsystem *subsystem)
 	for (i = 0; i < subsystem->dev.virt.max_nsid; i++) {
 		if (subsystem->dev.virt.ns_list[i]) {
 			spdk_bdev_close(subsystem->dev.virt.desc[i]);
-			subsystem->dev.virt.ch[i] = NULL;
 			subsystem->dev.virt.ns_list[i] = NULL;
 		}
 	}

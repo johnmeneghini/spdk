@@ -788,7 +788,6 @@ spdk_nvmf_subsystem_remove_ns(struct spdk_nvmf_subsystem *subsystem, uint32_t ns
 		 */
 	}
 
-	subsystem->dev.virt.ch[nsid - 1]      = NULL;
 	subsystem->dev.virt.ns_list[nsid - 1] = NULL;
 	spdk_bdev_close(subsystem->dev.virt.desc[nsid - 1]);
 
