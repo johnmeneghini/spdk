@@ -234,11 +234,6 @@ nvmf_virtual_ctrlr_get_ana_log_page(struct spdk_nvmf_request *req, uint8_t lsp, 
 	uint8_t ana_state;
 	bool rgo = (lsp & 0x01);
 
-	if (!req) {
-		SPDK_ERRLOG("Get Log command with no request\n");
-		goto error;
-	}
-
 	if (!length) {
 		SPDK_ERRLOG("Get Log command with zero length\n");
 		goto error;

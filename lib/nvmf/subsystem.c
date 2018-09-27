@@ -565,7 +565,7 @@ struct spdk_nvme_ns_id_desc *
 spdk_nvmf_get_ns_id_desc(uint8_t nidt, uint8_t nid[])
 {
 	struct spdk_nvme_ns_id_desc *desc;
-	uint8_t nidl;
+	uint8_t nidl = SPDK_NVME_NIDT_EUI64;
 
 	assert((nidt >= SPDK_NVME_NIDT_EUI64) && (nidt <= SPDK_NVME_NIDT_UUID));
 	if ((nidt < SPDK_NVME_NIDT_EUI64) || (nidt > SPDK_NVME_NIDT_UUID)) {
@@ -577,10 +577,8 @@ spdk_nvmf_get_ns_id_desc(uint8_t nidt, uint8_t nid[])
 		nidl = SPDK_NVME_NIDL_EUI64;
 	} else if (nidt == SPDK_NVME_NIDT_NGUID) {
 		nidl = SPDK_NVME_NIDL_NGUID;
-	} else if (nidt == SPDK_NVME_NIDT_UUID) {
-		nidl = SPDK_NVME_NIDL_UUID;
 	} else {
-		return NULL;
+		nidl = SPDK_NVME_NIDL_UUID;
 	}
 
 	desc = calloc(1, sizeof(struct spdk_nvme_ns_id_desc) + nidl);
@@ -599,7 +597,7 @@ spdk_nvmf_subsystem_get_ana_group_state(struct spdk_nvmf_subsystem *subsystem,
 
 	if (!subsystem) {
 		SPDK_ERRLOG("Invalid subsystem passed during get_ana_group_state\n");
-		assert(subsystem != NULL);
+		assert(false);
 		return SPDK_NVME_ANA_INACCESSIBLE;
 	}
 
@@ -626,7 +624,7 @@ spdk_nvmf_subsystem_find_ana_group(struct spdk_nvmf_subsystem *subsystem, uint32
 
 	if (!subsystem) {
 		SPDK_ERRLOG("Invalid subsystem passed during find_ana_group\n");
-		assert(subsystem != NULL);
+		assert(false);
 		return NULL;
 	}
 
@@ -645,7 +643,7 @@ spdk_nvmf_subsystem_remove_ana_group(struct spdk_nvmf_subsystem *subsystem, uint
 
 	if (!subsystem) {
 		SPDK_ERRLOG("Invalid subsystem passed during remove_ana_group\n");
-		assert(subsystem != NULL);
+		assert(false);
 		return -1;
 	}
 
@@ -683,7 +681,7 @@ spdk_nvmf_subsystem_add_ana_group(struct spdk_nvmf_subsystem *subsystem, uint32_
 
 	if (!subsystem) {
 		SPDK_ERRLOG("Invalid subsystem passed during add_ana_group\n");
-		assert(subsystem != NULL);
+		assert(false);
 		return -1;
 	}
 
@@ -713,7 +711,6 @@ spdk_nvmf_subsystem_add_ana_group(struct spdk_nvmf_subsystem *subsystem, uint32_
 	}
 
 	if (found_successor) {
-		assert(ana_group_tmp != NULL);
 		TAILQ_INSERT_BEFORE(ana_group_tmp, ana_group, link);
 	} else {
 		TAILQ_INSERT_TAIL(&subsystem->ana_groups, ana_group, link);
@@ -734,7 +731,7 @@ spdk_nvmf_subsystem_adjust_max_nsid(struct spdk_nvmf_subsystem *subsystem)
 
 	if (!subsystem) {
 		SPDK_ERRLOG("Invalid subsystem passed during adjust_max_nsid\n");
-		assert(subsystem != NULL);
+		assert(false);
 		return;
 	}
 
@@ -755,7 +752,7 @@ spdk_nvmf_subsystem_remove_ns(struct spdk_nvmf_subsystem *subsystem, uint32_t ns
 
 	if (!subsystem) {
 		SPDK_ERRLOG("Invalid subsystem passed during remove_ns\n");
-		assert(subsystem != NULL);
+		assert(false);
 		return -1;
 	}
 
