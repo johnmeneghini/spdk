@@ -1188,7 +1188,6 @@ int
 spdk_nvmf_bcm_fc_init_rqpair_buffers(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 {
 	int rc = 0;
-	uint16_t i;
 	struct fc_rcvq *hdr = &hwqp->queues.rq_hdr;
 	struct fc_rcvq *payload = &hwqp->queues.rq_payload;
 
@@ -1218,23 +1217,6 @@ spdk_nvmf_bcm_fc_init_rqpair_buffers(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	}
 	if (hdr->q.max_entries > MAX_RQ_ENTRIES) {
 		assert(0);
-	}
-
-	for (i = 0; i < hdr->q.max_entries; i++) {
-		rc = nvmf_fc_rqpair_buffer_post(hwqp, i, false);
-		if (rc) {
-			break;
-		}
-		hdr->rq_map[i] = i;
-	}
-
-	/* Make sure CQs are in armed state */
-	nvmf_fc_bcm_notify_queue(&hwqp->queues.cq_wq.q, true, 0);
-	nvmf_fc_bcm_notify_queue(&hwqp->queues.cq_rq.q, true, 0);
-
-	if (!rc) {
-		/* Ring doorbell for one less */
-		nvmf_fc_bcm_notify_queue(&hdr->q, false, (hdr->q.max_entries - 1));
 	}
 
 	return rc;
