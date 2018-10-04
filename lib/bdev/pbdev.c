@@ -340,7 +340,8 @@ spdk_bdev_get_io(struct spdk_mempool *pool)
 
 	if (!bdev_io) {
 		SPDK_ERRLOG("Unable to get spdk_bdev_io\n");
-		assert("Unable to get spdk_bdev_io" == 0);
+		/* Unable to get spdk_bdev_io */
+		assert(0);
 		goto out;
 	}
 	memset(bdev_io, 0, sizeof(*bdev_io));
@@ -485,7 +486,8 @@ spdk_bdev_read(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
 	       void *buf, uint64_t offset, uint64_t nbytes,
 	       spdk_bdev_io_completion_cb cb, void *cb_arg, struct spdk_bdev_io **result_bdev_io)
 {
-	assert("Netapp uses readv" == 0);
+	/* Netapp uses Readv */
+	assert(0);
 	return 0;
 }
 
@@ -505,7 +507,8 @@ spdk_bdev_write(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
 		void *buf, uint64_t offset, uint64_t nbytes,
 		spdk_bdev_io_completion_cb cb, void *cb_arg, struct spdk_bdev_io **result_bdev_io)
 {
-	assert("Netapp uses writev" == 0);
+	/* Netapp uses Writev */
+	assert(0);
 	return 0;
 }
 
@@ -709,7 +712,9 @@ _spdk_bdev_io_complete(void *ctx, void *arg2)
 	struct spdk_bdev_io *bdev_io = ctx;
 
 	assert(bdev_io->cb != NULL);
-	bdev_io->cb(bdev_io, bdev_io->status == SPDK_BDEV_IO_STATUS_SUCCESS, bdev_io->caller_ctx);
+	if (bdev_io->cb != NULL) {
+		bdev_io->cb(bdev_io, bdev_io->status == SPDK_BDEV_IO_STATUS_SUCCESS, bdev_io->caller_ctx);
+	}
 }
 
 void
