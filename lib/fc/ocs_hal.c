@@ -9586,6 +9586,8 @@ ocs_hal_init_io(ocs_hal_t *hal)
 	uint32_t	sgls_per_request = 256;
 	ocs_dma_t	**sgls = NULL;
 	ocs_dma_t	reqbuf = { 0 };
+	uint16_t        reqbuf_length = sizeof(sli4_req_fcoe_post_sgl_pages_t) +
+					sizeof(sli4_fcoe_post_sgl_page_desc_t)*sgls_per_request;
 
 	prereg = sli_get_sgl_preregister(&hal->sli);
 
@@ -9596,7 +9598,8 @@ ocs_hal_init_io(ocs_hal_t *hal)
 			return OCS_HAL_RTN_NO_MEMORY;
 		}
 
-		rc = ocs_dma_alloc(hal->os, &reqbuf, 32 + sgls_per_request*16, OCS_MIN_DMA_ALIGNMENT);
+		/* Create a buffer that can hold sgls for 256 SGLs at a time */
+		rc = ocs_dma_alloc(hal->os, &reqbuf, reqbuf_length, OCS_MIN_DMA_ALIGNMENT);
 		if (rc) {
 			ocs_log_err(hal->os, "%s: ocs_dma_alloc reqbuf failed\n", __func__);
 			ocs_free(hal->os, sgls, sizeof(*sgls) * sgls_per_request);

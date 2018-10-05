@@ -281,7 +281,8 @@ sli_cmd_fcoe_post_sgl_pages(sli4_t *sli4, void *buf, size_t size,
 		uint32_t payload_size;
 
 		/* Payload length must accomodate both request and response */
-		payload_size = max(sizeof(sli4_req_fcoe_post_sgl_pages_t),
+		payload_size = max(sizeof(sli4_req_fcoe_post_sgl_pages_t) +
+				xri_count*sizeof(sli4_fcoe_post_sgl_page_desc_t),
 				sizeof(sli4_res_hdr_t));
 
 		sli_config_off = sli_cmd_sli_config(sli4, buf, size, payload_size,
@@ -307,14 +308,14 @@ sli_cmd_fcoe_post_sgl_pages(sli4_t *sli4, void *buf, size_t size,
 	post->xri_count = xri_count;
 
 	for (i = 0; i < xri_count; i++) {
-		post->page_set[i].page0_low  = ocs_addr32_lo(page0[i]->phys);
-		post->page_set[i].page0_high = ocs_addr32_hi(page0[i]->phys);
+		post->page_desc[i].page0_low  = ocs_addr32_lo(page0[i]->phys);
+		post->page_desc[i].page0_high = ocs_addr32_hi(page0[i]->phys);
 	}
 
 	if (page1) {
 		for (i = 0; i < xri_count; i++) {
-			post->page_set[i].page1_low  = ocs_addr32_lo(page1[i]->phys);
-			post->page_set[i].page1_high = ocs_addr32_hi(page1[i]->phys);
+			post->page_desc[i].page1_low  = ocs_addr32_lo(page1[i]->phys);
+			post->page_desc[i].page1_high = ocs_addr32_hi(page1[i]->phys);
 		}
 	}
 

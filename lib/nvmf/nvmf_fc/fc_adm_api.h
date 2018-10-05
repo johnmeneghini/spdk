@@ -76,6 +76,14 @@ typedef enum {
 	SPDK_FC_EVENT_MAX,
 } spdk_fc_event_t;
 
+struct spdk_nvmf_bcm_sgl {
+	void *virt;
+	uint64_t phys;
+};
+
+typedef struct spdk_nvmf_bcm_sgl spdk_nvmf_bcm_sgl_t;
+
+
 /**
  * \struct spdk_nvmf_bcm_fc_dump_assoc_id_args
  *
@@ -98,6 +106,8 @@ struct spdk_nvmf_bcm_fc_hw_port_init_args {
 	uint8_t                           port_handle;
 	uint32_t                          xri_base;
 	uint32_t                          xri_count;
+	bool                              is_sgl_preregistered;
+	spdk_nvmf_bcm_sgl_t               *sgl_list;
 	struct spdk_nvmf_bcm_fc_hw_queues ls_queue;
 	uint32_t                          io_queue_cnt;
 	struct spdk_nvmf_bcm_fc_hw_queues io_queues[NVMF_FC_MAX_IO_QUEUES];

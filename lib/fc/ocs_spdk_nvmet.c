@@ -205,6 +205,104 @@ ocs_cb_hw_port_create(uint8_t port_handle, spdk_fc_event_t event_type,
 	}
 }
 
+static spdk_nvmf_bcm_sgl_t*
+ocs_nvme_alloc_sgls(ocs_t *ocs, uint32_t xri_base, uint32_t xri_count, bool prereg)
+{
+	ocs_hal_t *hal = &ocs->hal;
+	int rc = 0;
+	uint16_t i;
+	uint8_t cmd[SLI4_BMBX_SIZE];
+	uint32_t sgls_per_request = 256;
+	uint32_t posted_idx = 0;
+	spdk_nvmf_bcm_sgl_t *nvme_sgl_list = NULL;
+	ocs_dma_t **sgls = NULL;
+	ocs_dma_t reqbuf = { 0 };
+	uint32_t nremaining = 0, n = 0;
+	uint32_t req_buf_length = sizeof(sli4_req_fcoe_post_sgl_pages_t) +
+		sizeof(sli4_fcoe_post_sgl_page_desc_t)*sgls_per_request;
+
+	/* allocate space to store reference to pre-regsitered sgls */
+	hal->nvmet_sgls = ocs_malloc(NULL, sizeof(ocs_dma_t)*xri_count, OCS_M_ZERO);
+	if (!hal->nvmet_sgls)
+		return NULL;
+
+	/* Only needed since the post_sgl_pages apis, needs an array of pointers to ocs_dma_t **/
+	sgls = ocs_malloc(hal->os, sizeof(*sgls)*xri_count, OCS_M_NOWAIT | OCS_M_NOWAIT);
+	if (!sgls) {
+		rc = -1;
+		ocs_log_err(hal->os, " alloc failure failed\n");
+		goto err;
+	}
+
+	for (i = 0; i < xri_count; i++) {
+		rc = ocs_dma_alloc(hal->os, &hal->nvmet_sgls[i],
+				BCM_MAX_IOVECS * sizeof(sli4_sge_t), 64);
+		if (rc) {
+			ocs_log_err(hal->os, "ocs_dma_alloc nvmet_sgls failed\n");
+			goto err;
+		}
+		sgls[i] = &hal->nvmet_sgls[i];
+	}
+
+	if (prereg) {
+		/* The reqbuf contains space to issue registration of sgls for 256 xris at a time */
+		rc = ocs_dma_alloc(hal->os, &reqbuf, req_buf_length, OCS_MIN_DMA_ALIGNMENT);
+		if (rc) {
+			ocs_log_err(hal->os, "ocs_dma_alloc reqbuf failed\n");
+			goto err;
+		}
+
+		for (nremaining = xri_count; nremaining; nremaining -= n) {
+
+			n = MIN(sgls_per_request, nremaining);
+
+			if (sli_cmd_fcoe_post_sgl_pages(&hal->sli, cmd, sizeof(cmd),
+						xri_base + posted_idx, n,
+						sgls + posted_idx, NULL, &reqbuf)) {
+				rc = ocs_hal_command(hal, cmd, OCS_CMD_POLL, NULL, NULL);
+				if (rc) {
+					ocs_log_err(hal->os, "SGL post failed\n");
+					goto err;
+				}
+			}
+			posted_idx += n;
+		}
+	}
+
+	/* This will be stored in args and handed off into the spdk-nvmf driver code */
+	nvme_sgl_list = ocs_malloc(NULL, sizeof(spdk_nvmf_bcm_sgl_t)*xri_count, OCS_M_ZERO);
+	if (!nvme_sgl_list) {
+		rc = -1;
+		goto err;
+	}
+	for (i = 0; i < xri_count; i++) {
+		nvme_sgl_list[i].virt = hal->nvmet_sgls[i].virt;
+		nvme_sgl_list[i].phys = (uint64_t) hal->nvmet_sgls[i].phys;
+	}
+
+err:
+	ocs_dma_free(ocs, &reqbuf);
+
+	if (sgls) {
+		ocs_free(ocs, sgls, sizeof(*sgls)*xri_count);
+	}
+
+	if (!rc) {
+		return nvme_sgl_list;
+	}
+	
+	if (hal->nvmet_sgls) {
+		for (i = 0; i < xri_count; i++) {
+			ocs_dma_free(ocs, &hal->nvmet_sgls[i]);
+		}
+		ocs_free(ocs, hal->nvmet_sgls, sizeof(ocs_dma_t)*xri_count);
+		hal->nvmet_sgls = NULL;
+	}
+	return NULL;
+
+}
+
+#define OCS_NVME_PREREG_SGL false 
 /* 
  * This is code is based on netapp queue topology assumptions
  * RQ0 = SCSI + ELS
@@ -236,7 +334,19 @@ ocs_nvme_hw_port_create(ocs_t *ocs)
 		ocs->hal.sli.config.extent[SLI_RSRC_FCOE_XRI].size;
 	args->xri_count = ocs->hal.sli.config.extent[SLI_RSRC_FCOE_XRI].size;
 	args->cb_ctx = args;
-	args->fcp_rq_id = hal->hal_rq[0]->hdr->id; 
+	args->fcp_rq_id = hal->hal_rq[0]->hdr->id;
+
+	if (!hal->sli.config.sgl_pre_registered) {
+		ocs_log_err(ocs, "sgl pre-registration disabled. hw_port_create failed\n");
+		goto error;
+	}
+
+	args->sgl_list = ocs_nvme_alloc_sgls(ocs, args->xri_base,
+			args->xri_count, OCS_NVME_PREREG_SGL);
+	if (!args->sgl_list) {
+		goto error;
+	}
+	args->is_sgl_preregistered = OCS_NVME_PREREG_SGL;
 
 	/* Fill NVME LS event queues. */
 	ocs_fill_nvme_sli_queue(ocs, hal->hal_eq[1]->queue,

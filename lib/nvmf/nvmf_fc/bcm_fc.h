@@ -172,6 +172,9 @@ struct spdk_nvmf_bcm_fc_reg_counters {
  */
 struct spdk_nvmf_bcm_fc_xri {
 	uint32_t xri;   /* The actual xri value */
+	void *sgl_virt;
+	uint64_t sgl_phys;
+
 	/* Internal */
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_xri) link;
 	bool is_active;
@@ -272,6 +275,7 @@ struct spdk_nvmf_bcm_fc_port {
 	uint32_t xri_base;
 	uint32_t xri_count;
 	uint16_t fcp_rq_id;
+	bool is_sgl_preregistered;
 	struct spdk_ring *xri_ring;
 	struct spdk_nvmf_bcm_fc_xri *xri_elem_pool;
 	struct spdk_nvmf_bcm_fc_hwqp ls_queue;

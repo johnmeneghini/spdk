@@ -1002,6 +1002,7 @@ struct ocs_hal_s {
 	uint16_t	fcf_indicator;
 
 	ocs_hal_io_t	*io;		/**< array of IO objects */
+	ocs_dma_t       *nvmet_sgls;     /**< pointer to array of sgls used by nvmet backend */
 	uint8_t         *wqe_buffs;     /**< array of WQE buffs mapped to IO objects */
 
 	ocs_lock_t	io_lock;		/**< IO lock to synchronize list access */

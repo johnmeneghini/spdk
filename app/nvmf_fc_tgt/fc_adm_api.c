@@ -265,6 +265,12 @@ nvmf_fc_tgt_hw_port_data_init(struct spdk_nvmf_bcm_fc_port *fc_port,
 	 */
 	fc_port->port_ctx = args->port_ctx;
 
+	if (!args->sgl_list) {
+		SPDK_ERRLOG("SGLs not available. Init failure.\n");
+		err = SPDK_ERR_NOMEM;
+		goto err;
+	}
+
 	/*
 	 * Create a ring for the XRI's and store the XRI's in there.
 	 * The ring size is set to count, which must be a power of two.
@@ -295,6 +301,9 @@ nvmf_fc_tgt_hw_port_data_init(struct spdk_nvmf_bcm_fc_port *fc_port,
 	     fc_port->xri_count; count++) {
 		ring_xri_ptr->xri = fc_port->xri_base + count;
 
+		ring_xri_ptr->sgl_virt = args->sgl_list[count].virt;
+		ring_xri_ptr->sgl_phys = args->sgl_list[count].phys;
+
 		/* Since we created the ring with NO flags, this means it is mp-mc safe */
 		rc = spdk_ring_enqueue(fc_port->xri_ring, (void *)ring_xri_ptr);
 		if (rc == 0) {
@@ -305,6 +314,7 @@ nvmf_fc_tgt_hw_port_data_init(struct spdk_nvmf_bcm_fc_port *fc_port,
 		}
 		ring_xri_ptr++;
 	}
+	fc_port->is_sgl_preregistered = args->is_sgl_preregistered;
 
 	/*
 	 * Initialize the LS queue wherever needed.

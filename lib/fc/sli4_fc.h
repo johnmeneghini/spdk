@@ -151,17 +151,19 @@ typedef struct sli4_req_fcoe_wq_destroy_s {
  *
  * Register the scatter gather list (SGL) memory and associate it with an XRI.
  */
+typedef struct sli4_fcoe_post_sgl_page_desc_s {
+	uint32_t        page0_low;
+	uint32_t        page0_high;
+	uint32_t        page1_low;
+	uint32_t        page1_high;
+} sli4_fcoe_post_sgl_page_desc_t;
+
 typedef struct sli4_req_fcoe_post_sgl_pages_s {
 	sli4_req_hdr_t	hdr;
 #if BYTE_ORDER == LITTLE_ENDIAN
 	uint32_t	xri_start:16,
 			xri_count:16;
-	struct {
-		uint32_t	page0_low;
-		uint32_t	page0_high;
-		uint32_t	page1_low;
-		uint32_t	page1_high;
-	} page_set[10];
+	sli4_fcoe_post_sgl_page_desc_t page_desc[0];
 #else
 #error big endian version not defined
 #endif

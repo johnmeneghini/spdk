@@ -1618,8 +1618,8 @@ nvmf_fc_fill_sgl(struct spdk_nvmf_bcm_fc_request *fc_req)
 	uint32_t offset = 0;
 	uint64_t iov_phys;
 	bcm_sge_t *sge = NULL;
-	struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd *req_buf = NULL;
 	struct spdk_nvmf_bcm_fc_hwqp *hwqp = fc_req->hwqp;
+	void *prereg_sgl = fc_req->xri->sgl_prereg_virt;
 
 	assert((fc_req->req.iovcnt) <= MAX_NUM_OF_IOVECTORS);
 	if ((fc_req->req.iovcnt) > MAX_NUM_OF_IOVECTORS) {
@@ -1632,9 +1632,11 @@ nvmf_fc_fill_sgl(struct spdk_nvmf_bcm_fc_request *fc_req)
 		return 0;
 	}
 
-	/* Use RQ buffer for SGL */
-	req_buf = hwqp->queues.rq_payload.buffer[fc_req->buf_index].virt;
-	sge = &req_buf->sge[0];
+	if (!prereg_sgl) {
+		SPDK_ERRLOG("Error: no prereg SGL\n");
+		return 0;
+	}
+	sge = (bcm_sge_t *) prereg_sgl;
 
 	memset(sge, 0, (sizeof(bcm_sge_t) * BCM_MAX_IOVECS));
 
@@ -1696,35 +1698,42 @@ nvmf_fc_recv_data(struct spdk_nvmf_bcm_fc_request *fc_req)
 	bcm_fcp_treceive64_wqe_t *trecv = (bcm_fcp_treceive64_wqe_t *)wqe;
 	struct spdk_nvmf_bcm_fc_hwqp *hwqp = fc_req->hwqp;
 
+	assert(fc_req->xri->sgl_virt != NULL);
+
 	if (!fc_req->req.iovcnt) {
 		return -1;
 	}
 
-	trecv->xbl = true;
-	if (fc_req->req.iovcnt == 1) {
-		/* Data is a single physical address, use a BDE */
-		uint64_t bde_phys;
+	if (!nvmf_fc_fill_sgl(fc_req)) {
+		return -1;
+	}
 
-		bde_phys = spdk_vtophys(fc_req->req.iov[0].iov_base);
+	bcm_sge_t *sge = (bcm_sge_t *) fc_req->xri->sgl_virt;
+
+	if (hwqp->fc_port->is_sgl_preregistered) {
 		trecv->dbde = true;
+
 		trecv->bde.bde_type = BCM_BDE_TYPE_BDE_64;
-		trecv->bde.buffer_length = fc_req->req.length;
-		trecv->bde.u.data.buffer_address_low = PTR_TO_ADDR32_LO(bde_phys);
-		trecv->bde.u.data.buffer_address_high = PTR_TO_ADDR32_HI(bde_phys);
+		trecv->bde.buffer_length = sge[0].buffer_length;
+		trecv->bde.u.data.buffer_address_low = sge[0].buffer_address_low;
+		trecv->bde.u.data.buffer_address_high = sge[0].buffer_address_high;
+	} else if (fc_req->req.iovcnt == 1) {
+		trecv->xbl  = true;
+		trecv->dbde = true;
+
+		trecv->bde.bde_type = BCM_BDE_TYPE_BDE_64;
+		trecv->bde.buffer_length = sge[2].buffer_length;
+		trecv->bde.u.data.buffer_address_low  = sge[2].buffer_address_low;
+		trecv->bde.u.data.buffer_address_high = sge[2].buffer_address_high;
 	} else {
-		uint64_t sgl_phys;
-
-		if (!nvmf_fc_fill_sgl(fc_req)) {
-			return -1;
-		}
-
-		sgl_phys = hwqp->queues.rq_payload.buffer[fc_req->buf_index].phys +
-			   offsetof(struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd, sge);
+		trecv->xbl  = true;
 
 		trecv->bde.bde_type = BCM_BDE_TYPE_BLP;
 		trecv->bde.buffer_length = fc_req->req.length;
-		trecv->bde.u.blp.sgl_segment_address_low = PTR_TO_ADDR32_LO(sgl_phys);
-		trecv->bde.u.blp.sgl_segment_address_high = PTR_TO_ADDR32_HI(sgl_phys);
+		trecv->bde.u.blp.sgl_segment_address_low =
+			PTR_TO_ADDR32_LO(fc_req->xri->sgl_phys);
+		trecv->bde.u.blp.sgl_segment_address_high =
+			PTR_TO_ADDR32_HI(fc_req->xri->sgl_phys);
 	}
 
 	trecv->relative_offset = 0;
@@ -1754,6 +1763,7 @@ nvmf_fc_recv_data(struct spdk_nvmf_bcm_fc_request *fc_req)
 
 	return rc;
 }
+
 
 static bool
 nvmf_fc_use_send_frame(struct spdk_nvmf_request *req)
@@ -2475,38 +2485,39 @@ spdk_nvmf_bcm_fc_send_data(struct spdk_nvmf_bcm_fc_request *fc_req)
 	struct spdk_nvmf_conn *conn = fc_req->req.conn;
 	struct spdk_nvmf_bcm_fc_conn *fc_conn = nvmf_fc_get_conn(conn);
 
+	assert(fc_req->xri->sgl_virt != NULL);
+
 	if (!fc_req->req.iovcnt) {
 		return -1;
 	}
 
-	tsend->xbl = true;
-	if (fc_req->req.iovcnt == 1) {
-		/* Data is a single physical address, use a BDE */
-		uint64_t bde_phys;
+	xfer_len = nvmf_fc_fill_sgl(fc_req);
+	if (!xfer_len) {
+		return -1;
+	}
 
-		bde_phys = spdk_vtophys(fc_req->req.iov[0].iov_base);
-		tsend->dbde = true;
-		tsend->bde.bde_type = BCM_BDE_TYPE_BDE_64;
-		tsend->bde.buffer_length = fc_req->req.length;
-		tsend->bde.u.data.buffer_address_low = PTR_TO_ADDR32_LO(bde_phys);
-		tsend->bde.u.data.buffer_address_high = PTR_TO_ADDR32_HI(bde_phys);
+	bcm_sge_t *sge = (bcm_sge_t *) fc_req->xri->sgl_virt;
 
-		xfer_len = fc_req->req.iov[0].iov_len;
-	} else {
-		uint64_t sgl_phys;
-
-		xfer_len = nvmf_fc_fill_sgl(fc_req);
-		if (!xfer_len) {
-			return -1;
+	if (hwqp->fc_port->is_sgl_preregistered || fc_req->req.iovcnt == 1) {
+		if (!hwqp->fc_port->is_sgl_preregistered) {
+			tsend->xbl  = true;
 		}
 
-		sgl_phys = hwqp->queues.rq_payload.buffer[fc_req->buf_index].phys +
-			   offsetof(struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd, sge);
+		tsend->dbde = true;
+
+		tsend->bde.bde_type = BCM_BDE_TYPE_BDE_64;
+		tsend->bde.buffer_length = sge[2].buffer_length;
+		tsend->bde.u.data.buffer_address_low = sge[2].buffer_address_low;
+		tsend->bde.u.data.buffer_address_high = sge[2].buffer_address_high;
+	} else {
+		tsend->xbl  = true;
 
 		tsend->bde.bde_type = BCM_BDE_TYPE_BLP;
 		tsend->bde.buffer_length = fc_req->req.length;
-		tsend->bde.u.blp.sgl_segment_address_low = PTR_TO_ADDR32_LO(sgl_phys);
-		tsend->bde.u.blp.sgl_segment_address_high = PTR_TO_ADDR32_HI(sgl_phys);
+		tsend->bde.u.blp.sgl_segment_address_low =
+			PTR_TO_ADDR32_LO(fc_req->xri->sgl_phys);
+		tsend->bde.u.blp.sgl_segment_address_high =
+			PTR_TO_ADDR32_HI(fc_req->xri->sgl_phys);
 	}
 
 	tsend->relative_offset = 0;
