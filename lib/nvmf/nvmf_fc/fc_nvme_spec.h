@@ -77,7 +77,7 @@ struct spdk_nvmf_fc_cmnd_iu {
 	uint32_t scsi_id: 8, fc_id: 8, cmnd_iu_len: 16;
 	uint32_t rsvd0: 24, flags: 8;
 	uint64_t conn_id;
-	uint32_t cmnd_seq_num;
+	uint32_t csn;
 	uint32_t data_len;
 	union nvmf_h2c_msg cmd;
 	uint32_t rsvd1[2];

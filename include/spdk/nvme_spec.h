@@ -63,6 +63,9 @@ extern "C" {
 
 #define SPDK_NVME_KAS_GRANULARITY_IN_MSECS	100
 
+#define SPDK_NVME_FUSED_CMD1			0x1
+#define SPDK_NVME_FUSED_CMD2			0x2
+
 /**
  * Indicates the maximum number of range sets that may be specified
  *  in the dataset mangement command.

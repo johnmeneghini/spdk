@@ -51,6 +51,7 @@
 
 char *fc_req_state_strs[] = {
 	"SPDK_NVMF_BCM_FC_REQ_INIT",
+	"SPDK_NVMF_BCM_FC_REQ_FUSED_WAITING",
 	"SPDK_NVMF_BCM_FC_REQ_READ_BDEV",
 	"SPDK_NVMF_BCM_FC_REQ_READ_XFER",
 	"SPDK_NVMF_BCM_FC_REQ_READ_RSP",
@@ -125,6 +126,59 @@ nvmf_fc_get_conn(struct spdk_nvmf_conn *conn)
 	       ((uintptr_t)conn - offsetof(struct spdk_nvmf_bcm_fc_conn, conn));
 }
 
+static void
+nvmf_fc_process_fused_command(struct spdk_nvmf_bcm_fc_request *fc_req)
+{
+	struct spdk_nvmf_bcm_fc_request *n = NULL, *tmp, *command_1 = NULL, *command_2 = NULL;
+	struct spdk_nvme_cmd *cmd = &fc_req->req.cmd->nvme_cmd;
+	struct spdk_nvmf_bcm_fc_conn *fc_conn = fc_req->fc_conn;
+	uint32_t exp_csn = 0;
+
+	if (cmd->fuse == SPDK_NVME_FUSED_CMD1) {
+		exp_csn = fc_req->csn + 1;
+		command_1 = fc_req;
+	} else {
+		exp_csn = fc_req->csn - 1;
+		command_2 = fc_req;
+	}
+
+	TAILQ_INSERT_TAIL(&fc_conn->fused_waiting_queue, fc_req, fused_link);
+	spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_FUSED_WAITING);
+
+	/* Search if we have the other command of fuse operation already */
+	TAILQ_FOREACH_SAFE(n, &fc_conn->fused_waiting_queue, fused_link, tmp) {
+		if (n->csn == exp_csn) {
+			/* Got both commands, command_1 and command_2 */
+			if (!command_1) {
+				command_1 = n;
+			} else {
+				command_2 = n;
+			}
+
+			goto process_fused;
+		}
+	}
+
+	/* Wait for the other fused command */
+	return;
+
+process_fused:
+
+	/* Link the fused commands */
+	command_1->req.fused_partner = &command_2->req;
+	command_2->req.fused_partner = &command_1->req;
+
+	/* Add these commands to pending queue in order */
+	TAILQ_INSERT_TAIL(&fc_conn->pending_queue, command_1, pending_link);
+	TAILQ_INSERT_TAIL(&fc_conn->pending_queue, command_2, pending_link);
+
+	/* Remove the commands from fused_waiting_queue */
+	TAILQ_REMOVE(&fc_conn->fused_waiting_queue, command_1, fused_link);
+	TAILQ_REMOVE(&fc_conn->fused_waiting_queue, command_2, fused_link);
+
+	/* After this its just like any other io */
+}
+
 static inline bool
 nvmf_fc_send_ersp_required(struct spdk_nvmf_bcm_fc_request *fc_req,
 			   uint32_t rsp_cnt, uint32_t xfer_len)
@@ -149,6 +203,7 @@ nvmf_fc_send_ersp_required(struct spdk_nvmf_bcm_fc_request *fc_req,
 	if (!(rsp_cnt % fc_conn->esrp_ratio) ||
 	    nvmf_fc_sq_90percent_full(conn) ||
 	    (cmd->opc == SPDK_NVME_OPC_FABRIC) ||
+	    spdk_nvmf_is_fused_command(cmd) ||
 	    (status & 0xFFFE) || rsp->cdw0 || rsp->rsvd1 ||
 	    (req->length != xfer_len)) {
 		rc = true;
@@ -242,6 +297,9 @@ nvmf_fc_record_req_trace_point(struct spdk_nvmf_bcm_fc_request *fc_req,
 		spdk_trace_record(TRACE_NVMF_IO_START, fc_req->poller_lcore,
 				  0, (uint64_t)(&fc_req->req), 0);
 		tpoint_id = TRACE_FC_REQ_INIT;
+		break;
+	case SPDK_NVMF_BCM_FC_REQ_FUSED_WAITING:
+		tpoint_id = TRACE_FC_REQ_FUSED_WAITING;
 		break;
 	case SPDK_NVMF_BCM_FC_REQ_READ_BDEV:
 		tpoint_id = TRACE_FC_REQ_READ_BDEV;
@@ -495,11 +553,23 @@ static inline void
 nvmf_fc_process_pending_req(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 {
 	struct spdk_nvmf_bcm_fc_conn *fc_conn = NULL;
-	struct spdk_nvmf_bcm_fc_request *fc_req = NULL, *tmp;
+	struct spdk_nvmf_bcm_fc_request *fc_req = NULL, *tmp, *command_1;
+	struct spdk_nvme_cmd *cmd = NULL;
 	int budget = 64;
 
 	TAILQ_FOREACH(fc_conn, &hwqp->connection_list, link) {
 		TAILQ_FOREACH_SAFE(fc_req, &fc_conn->pending_queue, pending_link, tmp) {
+			cmd = &fc_req->req.cmd->nvme_cmd;
+
+			/* Process fused command_2 only if command_1's data xfer is done */
+			if (cmd->fuse == SPDK_NVME_FUSED_CMD2) {
+				command_1 = spdk_nvmf_bcm_fc_get_fc_req(fc_req->req.fused_partner);
+				/* Note: command_1 ptr is only valid if is_fused_partner_failed is not set */
+				if (!fc_req->req.is_fused_partner_failed && !command_1->transfered_len) {
+					continue;
+				}
+			}
+
 			if (!nvmf_fc_execute_nvme_rqst(fc_req)) {
 				/* Succesfuly posted, Delete from pending. */
 				TAILQ_REMOVE(&fc_conn->pending_queue, fc_req, pending_link);
@@ -524,6 +594,22 @@ nvmf_fc_req_in_pending(struct spdk_nvmf_bcm_fc_request *fc_req)
 			return true;
 		}
 	}
+	return false;
+}
+
+static inline bool
+nvmf_fc_req_in_fused_waiting(struct spdk_nvmf_bcm_fc_request *fc_req)
+{
+	struct spdk_nvmf_bcm_fc_request *n = NULL, *tmp;
+	struct spdk_nvmf_bcm_fc_conn *fc_conn = fc_req->fc_conn;
+
+	/* Search if we have the command in fused waiting */
+	TAILQ_FOREACH_SAFE(n, &fc_conn->fused_waiting_queue, fused_link, tmp) {
+		if (n == fc_req) {
+			return true;
+		}
+	}
+
 	return false;
 }
 
@@ -649,6 +735,9 @@ spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 	} else if (nvmf_fc_req_in_pending(fc_req)) {
 		/* Remove from pending */
 		TAILQ_REMOVE(&fc_req->fc_conn->pending_queue, fc_req, pending_link);
+		goto complete;
+	} else if (nvmf_fc_req_in_fused_waiting(fc_req)) {
+		TAILQ_REMOVE(&fc_req->fc_conn->fused_waiting_queue, fc_req, fused_link);
 		goto complete;
 	} else {
 		/* Should never happen */
@@ -1318,6 +1407,13 @@ spdk_nvmf_bcm_fc_free_req(struct spdk_nvmf_bcm_fc_request *fc_req)
 		fc_req->xri = NULL;
 	}
 
+	/* Check if this is fused command_1 and if it failed */
+	if (fc_req->req.cmd->nvme_cmd.fuse == SPDK_NVME_FUSED_CMD1
+	    && fc_req->req.rsp->nvme_cpl.status.sc) {
+		/* Let the fused write partner req know this */
+		fc_req->req.fused_partner->is_fused_partner_failed = true;
+	}
+
 	/* Release IO buffers */
 	nvmf_fc_release_io_buff(fc_req);
 
@@ -1699,7 +1795,7 @@ nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req)
 
 		/* For IOQ Writes, alloc bdev buffers */
 		else if (fc_conn->conn.type == CONN_TYPE_IOQ &&
-			 cmd->opc == SPDK_NVME_OPC_WRITE) {
+			 ((cmd->opc == SPDK_NVME_OPC_WRITE) || (cmd->opc == SPDK_NVME_OPC_COMPARE))) {
 
 			spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_WRITE_BUFFS);
 
@@ -1854,6 +1950,7 @@ nvmf_fc_handle_nvme_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_frame_hdr
 	fc_req->oxid = frame->ox_id;
 	fc_req->oxid = from_be16(&fc_req->oxid);
 	fc_req->rpi = fc_conn->rpi;
+	fc_req->csn = from_be32(&cmd_iu->csn);
 	fc_req->buf_index = buf_idx;
 	fc_req->poller_lcore = hwqp->lcore_id;
 	fc_req->hwqp = hwqp;
@@ -1865,8 +1962,12 @@ nvmf_fc_handle_nvme_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_frame_hdr
 	fc_req->d_id = from_be32(&fc_req->d_id) >> 8;
 
 	nvmf_fc_record_req_trace_point(fc_req, SPDK_NVMF_BCM_FC_REQ_INIT);
-	if (nvmf_fc_execute_nvme_rqst(fc_req)) {
-		TAILQ_INSERT_TAIL(&fc_conn->pending_queue, fc_req, pending_link);
+	if (spdk_nvmf_is_fused_command(&fc_req->req.cmd->nvme_cmd)) {
+		nvmf_fc_process_fused_command(fc_req);
+	} else {
+		if (nvmf_fc_execute_nvme_rqst(fc_req)) {
+			TAILQ_INSERT_TAIL(&fc_conn->pending_queue, fc_req, pending_link);
+		}
 	}
 
 	return 0;

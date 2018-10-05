@@ -66,6 +66,19 @@ bool spdk_nvmf_listen_addr_compare(struct spdk_nvmf_listen_addr *a,
 void spdk_nvmf_listen_addr_destroy(struct spdk_nvmf_listen_addr *addr);
 void spdk_nvmf_listen_addr_cleanup(struct spdk_nvmf_listen_addr *addr);
 
+static inline int
+spdk_nvmf_is_fused_command(struct spdk_nvme_cmd *cmd)
+{
+	bool fused = false;
+
+	if ((cmd->fuse == SPDK_NVME_FUSED_CMD1) || (cmd->fuse == SPDK_NVME_FUSED_CMD2)) {
+		fused = true;
+	}
+
+	return fused;
+}
+
+
 #define OBJECT_NVMF_IO				0x30
 
 #define TRACE_GROUP_NVMF			0x3
@@ -92,5 +105,6 @@ void spdk_nvmf_listen_addr_cleanup(struct spdk_nvmf_listen_addr *addr);
 #define TRACE_FC_REQ_FAILED                     SPDK_TPOINT_ID(TRACE_GROUP_NVMF, 0x14)
 #define TRACE_FC_REQ_ABORTED                    SPDK_TPOINT_ID(TRACE_GROUP_NVMF, 0x15)
 #define TRACE_FC_REQ_PENDING                    SPDK_TPOINT_ID(TRACE_GROUP_NVMF, 0x16)
+#define TRACE_FC_REQ_FUSED_WAITING              SPDK_TPOINT_ID(TRACE_GROUP_NVMF, 0x17)
 
 #endif /* __NVMF_INTERNAL_H__ */

@@ -407,6 +407,7 @@ nvmf_fc_ls_new_connection(struct spdk_nvmf_bcm_fc_association *assoc,
 		fc_conn->max_queue_depth = sq_size;
 
 		TAILQ_INIT(&fc_conn->pending_queue);
+		TAILQ_INIT(&fc_conn->fused_waiting_queue);
 		SPDK_NOTICELOG("New Connection %p for Association %p created:\n", fc_conn,
 			       assoc);
 		SPDK_NOTICELOG("\tQueue id:%u\n", fc_conn->conn.qid);

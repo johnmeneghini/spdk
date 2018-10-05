@@ -77,6 +77,8 @@ struct spdk_nvmf_request {
 	struct spdk_bdev_io 		*bdev_io;
 	uint64_t req_state_trace[MAX_REQ_STATES];
 	struct spdk_mempool *io_rsrc_pool;
+	struct spdk_nvmf_request *fused_partner;
+	bool is_fused_partner_failed;
 };
 
 int

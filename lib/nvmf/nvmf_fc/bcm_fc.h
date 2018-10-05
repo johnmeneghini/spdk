@@ -326,6 +326,7 @@ struct spdk_nvmf_bcm_fc_nport {
  */
 typedef enum {
 	SPDK_NVMF_BCM_FC_REQ_INIT = 0,
+	SPDK_NVMF_BCM_FC_REQ_FUSED_WAITING,
 	SPDK_NVMF_BCM_FC_REQ_READ_BDEV,
 	SPDK_NVMF_BCM_FC_REQ_READ_XFER,
 	SPDK_NVMF_BCM_FC_REQ_READ_RSP,
@@ -363,8 +364,12 @@ struct spdk_nvmf_bcm_fc_request {
 	uint32_t magic;
 	uint32_t s_id;
 	uint32_t d_id;
+	uint32_t csn;
+
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_request) link;
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_request) pending_link;
+	TAILQ_ENTRY(spdk_nvmf_bcm_fc_request) fused_link;
+
 	TAILQ_HEAD(, fc_caller_ctx) abort_cbs;
 };
 
@@ -405,6 +410,9 @@ struct spdk_nvmf_bcm_fc_conn {
 
 	/* requests that are waiting to obtain xri/buffer */
 	TAILQ_HEAD(, spdk_nvmf_bcm_fc_request) pending_queue;
+
+	/* Fused commands sit here until both compare/write are received */
+	TAILQ_HEAD(, spdk_nvmf_bcm_fc_request) fused_waiting_queue;
 
 	struct spdk_nvmf_bcm_fc_association *fc_assoc;
 
