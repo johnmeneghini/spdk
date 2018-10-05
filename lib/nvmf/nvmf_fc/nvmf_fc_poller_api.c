@@ -199,6 +199,7 @@ nvmf_fc_poller_conn_abort_done(void *hwqp, int32_t status, void *cb_args)
 			 */
 			SPDK_TRACELOG(SPDK_NVMF_BCM_FC_POLLER_API, "Duplicate conn delete.");
 		}
+
 		/* perform callback */
 		nvmf_fc_poller_api_perform_cb(&conn_args->cb_info, ret);
 	}

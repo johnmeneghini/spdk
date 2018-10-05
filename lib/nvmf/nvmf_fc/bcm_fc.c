@@ -84,7 +84,6 @@ static bool nvmf_fc_conn_is_idle(struct spdk_nvmf_conn *conn);
 /* externs */
 extern uint32_t spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
 extern int spdk_nvmf_bcm_fc_init_rqpair_buffers(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
-extern int spdk_nvmf_bcm_fc_create_req_mempool(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
 extern int spdk_nvmf_bcm_fc_create_reqtag_pool(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
 
 struct spdk_nvmf_fc_buf {
@@ -115,8 +114,9 @@ spdk_nvmf_bcm_fc_init_poller(struct spdk_nvmf_bcm_fc_port *fc_port,
 	memset(&hwqp->reg_counters, 0, sizeof(struct spdk_nvmf_bcm_fc_reg_counters));
 
 	spdk_nvmf_bcm_fc_init_poller_queues(hwqp);
-	(void)spdk_nvmf_bcm_fc_create_req_mempool(hwqp);
 	(void)spdk_nvmf_bcm_fc_create_reqtag_pool(hwqp);
+
+	TAILQ_INIT(&hwqp->in_use_reqs);
 	TAILQ_INIT(&hwqp->sync_cbs);
 	TAILQ_INIT(&hwqp->ls_pending_queue);
 }

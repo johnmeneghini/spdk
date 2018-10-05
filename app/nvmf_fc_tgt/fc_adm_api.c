@@ -2345,6 +2345,7 @@ spdk_nvmf_bcm_fc_tgt_print_port(void *arg1, void *arg2)
 	struct spdk_nvmf_bcm_fc_hwqp *io;
 	struct spdk_nvmf_bcm_fc_nport *nport;
 	struct spdk_nvmf_bcm_fc_ls_rsrc_pool lspool;
+	struct spdk_nvmf_bcm_fc_conn *fc_conn = NULL;
 	int i;
 
 	SPDK_NOTICELOG("\nDump port details\n");
@@ -2367,12 +2368,6 @@ spdk_nvmf_bcm_fc_tgt_print_port(void *arg1, void *arg2)
 	SPDK_NOTICELOG("LS Queue:\n");
 	SPDK_NOTICELOG("\tLcore ID: %d, HWQP ID: %d\n", ls->lcore_id, ls->hwqp_id);
 	SPDK_NOTICELOG("\tNum of Conns: %d, State: %d\n", ls->num_conns, ls->state);
-	if (ls->fc_request_pool) {
-		SPDK_NOTICELOG("\tRequest Pool Max Count: %d Avail Count: %d\n",
-			       ls->queues.rq_hdr.num_buffers, spdk_mempool_avail_count(ls->fc_request_pool));
-	} else {
-		SPDK_NOTICELOG("\tLS Queue Request Pool not present\n");
-	}
 	SPDK_NOTICELOG("Max IO Queues: %d\n", port->max_io_queues);
 	SPDK_NOTICELOG("HWQP IO Queues:\n");
 	SPDK_NOTICELOG("\n");
@@ -2380,11 +2375,13 @@ spdk_nvmf_bcm_fc_tgt_print_port(void *arg1, void *arg2)
 		io = &(port->io_queues[i]);
 		SPDK_NOTICELOG("\tLcore ID: %d, HWQP ID: %d\n", io->lcore_id, io->hwqp_id);
 		SPDK_NOTICELOG("\tNum of Conns: %d, State: %d\n", io->num_conns, io->state);
-		if (io->fc_request_pool) {
-			SPDK_NOTICELOG("\tRequest Pool Max Count: %d Avail Count: %d\n",
-				       io->queues.rq_hdr.num_buffers, spdk_mempool_avail_count(io->fc_request_pool));
-		} else {
-			SPDK_NOTICELOG("\tIO Queue %d Request Pool not present\n", i);
+		TAILQ_FOREACH(fc_conn, &io->connection_list, link) {
+			if (fc_conn->fc_request_pool) {
+				SPDK_NOTICELOG("\t\tRequest Pool Max Count: %d Avail Count: %d\n",
+					       fc_conn->fc_req_count, spdk_mempool_avail_count(fc_conn->fc_request_pool));
+			} else {
+				SPDK_NOTICELOG("\t\tIO Queue %d Request Pool not present\n", i);
+			}
 		}
 		SPDK_NOTICELOG("\n");
 	}
@@ -2504,8 +2501,6 @@ spdk_nvmf_bcm_fc_tgt_print_hwqp(void *arg1, void *arg2)
 	SPDK_NOTICELOG("Lcore ID: %d, Num of Conns: %d, Cid Cnt: %d\n", hwqp->lcore_id,
 		       hwqp->num_conns, hwqp->cid_cnt);
 	SPDK_NOTICELOG("Free Q slots: %d, State: %d,\n", hwqp->free_q_slots, hwqp->state);
-	SPDK_NOTICELOG("Request Pool Max Count: %d Avail Count: %d\n",
-		       hwqp->queues.rq_hdr.num_buffers, spdk_mempool_avail_count(hwqp->fc_request_pool));
 	SPDK_NOTICELOG("Request Tag Pool Avail Count: %d Used Count: %d\n",
 		       spdk_ring_count(hwqp->queues.wq.reqtag_ring), spdk_ring_free_count(hwqp->queues.wq.reqtag_ring));
 	SPDK_NOTICELOG("Send Frame XRI: %d Send Frame SeqID: %d\n", hwqp->send_frame_xri,
@@ -2513,6 +2508,8 @@ spdk_nvmf_bcm_fc_tgt_print_hwqp(void *arg1, void *arg2)
 	TAILQ_FOREACH(conn, &hwqp->connection_list, link) {
 		SPDK_NOTICELOG("\tConn ID: 0x%lx, HWQP ID: %d, Outstanding IO Count: %d\n", conn->conn_id,
 			       conn->hwqp->hwqp_id, conn->cur_queue_depth);
+		SPDK_NOTICELOG("\tConn Request Pool Max Count: %d Avail Count: %d\n",
+			       conn->fc_req_count, spdk_mempool_avail_count(conn->fc_request_pool));
 	}
 
 out:

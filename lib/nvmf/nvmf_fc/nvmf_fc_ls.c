@@ -434,6 +434,9 @@ nvmf_fc_ls_free_connection(struct spdk_nvmf_bcm_fc_port *fc_port,
 				&fc_conn->conn);
 	}
 
+	/* Free connection fc_req pool */
+	spdk_nvmf_bcm_fc_free_conn_req_mempool(fc_conn);
+
 	TAILQ_INSERT_TAIL(&fc_port->ls_rsrc_pool.fc_conn_free_list,
 			  fc_conn, port_free_conn_list_link);
 }
@@ -683,55 +686,66 @@ nvmf_fc_ls_add_conn_to_poller(
 {
 	union nvmf_fc_ls_op_ctx *opd = nvmf_fc_ls_new_op_ctx();
 	struct spdk_nvmf_bcm_fc_nport *tgtport = assoc->tgtport;
+	struct nvmf_fc_ls_add_conn_api_data *api_data = NULL;
+	struct nvmf_fc_ls_cr_assoc_rqst *rqst =
+		(struct nvmf_fc_ls_cr_assoc_rqst *)ls_rqst->rqstbuf.virt;
+	struct nvmf_fc_ls_cr_assoc_acc *acc =
+		(struct nvmf_fc_ls_cr_assoc_acc *)ls_rqst->rspbuf.virt;
 
 	SPDK_NOTICELOG("Add Connection to poller for "
 		       "assoc_id 0x%lx conn_id 0x%lx\n", assoc->assoc_id,
 		       fc_conn->conn_id);
 
-	if (opd) {
-		struct nvmf_fc_ls_add_conn_api_data *api_data =
-				&opd->add_conn;
-		/* assign connection to (poller) queue */
-		fc_conn->hwqp = nvmf_fc_ls_assign_conn_to_q(assoc,
-				&fc_conn->conn_id,
-				sq_size,
-				assoc_conn);
-
-		if (fc_conn->hwqp) {
-			/* insert conn in association's connection list */
-			TAILQ_INSERT_TAIL(&assoc->fc_conns, fc_conn, assoc_link);
-			assoc->conn_count++;
-
-			if (assoc_conn) {
-				/* assign association ID to aq's connection id */
-				assoc->assoc_id = fc_conn->conn_id;
-			}
-
-			api_data->args.fc_conn = fc_conn;
-			api_data->args.cb_info.cb_func = nvmf_fc_ls_add_conn_cb;
-			api_data->args.cb_info.cb_data = (void *)opd;
-			api_data->assoc = assoc;
-			api_data->ls_rqst = ls_rqst;
-			api_data->assoc_conn = assoc_conn;
-			SPDK_NOTICELOG("Add connection API called for conn_id = 0x%lx\n",
-				       fc_conn->conn_id);
-			spdk_nvmf_bcm_fc_poller_api(api_data->args.fc_conn->hwqp,
-						    SPDK_NVMF_BCM_FC_POLLER_API_ADD_CONNECTION,
-						    &api_data->args);
-			SPDK_NOTICELOG("Add connection API returned "
-				       "for conn_id = 0x%lx\n", fc_conn->conn_id);
-			return;
-		}
+	if (!opd) {
+		SPDK_ERRLOG("allocate api data for add conn op failed\n");
+		goto failure;
 	}
 
+	api_data = &opd->add_conn;
+
+	/* assign connection to (poller) queue */
+	fc_conn->hwqp = nvmf_fc_ls_assign_conn_to_q(assoc,
+			&fc_conn->conn_id,
+			sq_size,
+			assoc_conn);
+	if (!fc_conn->hwqp) {
+		SPDK_ERRLOG("failed to find hwqp that could fit requested sq size\n");
+		goto failure;
+	}
+
+	/* alloc fc req objects for this connection */
+	if (spdk_nvmf_bcm_fc_create_conn_req_mempool(fc_conn)) {
+		SPDK_ERRLOG("Alloc fc_req pool for connection failed.");
+		goto failure;
+	}
+
+	/* insert conn in association's connection list */
+	TAILQ_INSERT_TAIL(&assoc->fc_conns, fc_conn, assoc_link);
+	assoc->conn_count++;
+
+	if (assoc_conn) {
+		/* assign association ID to aq's connection id */
+		assoc->assoc_id = fc_conn->conn_id;
+	}
+
+
+	api_data->args.fc_conn = fc_conn;
+	api_data->args.cb_info.cb_func = nvmf_fc_ls_add_conn_cb;
+	api_data->args.cb_info.cb_data = (void *)opd;
+	api_data->assoc = assoc;
+	api_data->ls_rqst = ls_rqst;
+	api_data->assoc_conn = assoc_conn;
+
+	SPDK_NOTICELOG("Add connection API called for conn_id = 0x%lx\n",
+		       fc_conn->conn_id);
+	spdk_nvmf_bcm_fc_poller_api(api_data->args.fc_conn->hwqp,
+				    SPDK_NVMF_BCM_FC_POLLER_API_ADD_CONNECTION,
+				    &api_data->args);
+	SPDK_NOTICELOG("Add connection API returned "
+		       "for conn_id = 0x%lx\n", fc_conn->conn_id);
+	return;
+failure:
 	/* send failure response */
-	struct nvmf_fc_ls_cr_assoc_rqst *rqst =
-		(struct nvmf_fc_ls_cr_assoc_rqst *)ls_rqst->rqstbuf.virt;
-	struct nvmf_fc_ls_cr_assoc_acc *acc =
-		(struct nvmf_fc_ls_cr_assoc_acc *)ls_rqst->rspbuf.virt;
-	SPDK_ERRLOG(opd ?
-		    "failed to find hwqp that could fit requested sq size\n" :
-		    "allocate api data for add conn op failed\n");
 	ls_rqst->rsp_len = nvmf_fc_ls_format_rjt(acc,
 			   NVME_FC_MAX_LS_BUFFER_SIZE, rqst->w0.ls_cmd,
 			   FCNVME_RJT_RC_INSUFF_RES,

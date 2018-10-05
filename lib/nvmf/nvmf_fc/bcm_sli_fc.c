@@ -72,7 +72,6 @@ extern void nvmf_fc_poller_queue_sync_done(void *arg1, void *arg2);
 uint32_t spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
 void spdk_nvmf_bcm_fc_free_req(struct spdk_nvmf_bcm_fc_request *fc_req);
 int spdk_nvmf_bcm_fc_init_rqpair_buffers(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
-int spdk_nvmf_bcm_fc_create_req_mempool(struct spdk_nvmf_bcm_fc_hwqp *hwqp);
 int spdk_nvmf_bcm_fc_xmt_ls_rsp(struct spdk_nvmf_bcm_fc_nport *tgtport,
 				struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst);
 int spdk_nvmf_bcm_fc_handle_rsp(struct spdk_nvmf_bcm_fc_request *req);
@@ -270,25 +269,39 @@ nvmf_fc_rqpair_get_frame_buffer(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint16_t rqi
 }
 
 int
-spdk_nvmf_bcm_fc_create_req_mempool(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
+spdk_nvmf_bcm_fc_free_conn_req_mempool(struct spdk_nvmf_bcm_fc_conn *fc_conn)
 {
-	char name[48];
-	static int unique_number = 0;
+	if (fc_conn->fc_request_pool) {
+		spdk_mempool_free(fc_conn->fc_request_pool);
+		fc_conn->fc_request_pool = NULL;
+		fc_conn->fc_req_count = 0;
+	}
+	return 0;
+}
 
-	unique_number++;
+int
+spdk_nvmf_bcm_fc_create_conn_req_mempool(struct spdk_nvmf_bcm_fc_conn *fc_conn)
+{
+	char name[64];
+	uint32_t poweroftwo = 1;
 
-	/* Name should be unique, otherwise API fails. */
-	snprintf(name, sizeof(name), "NVMF_FC_REQ_POOL:%d", unique_number);
-	hwqp->fc_request_pool = spdk_mempool_create(name,
-				hwqp->queues.rq_hdr.num_buffers,
-				sizeof(struct spdk_nvmf_bcm_fc_request),
-				0, SPDK_ENV_SOCKET_ID_ANY);
+	while (poweroftwo <= fc_conn->max_queue_depth) {
+		poweroftwo *= 2;
+	}
 
-	if (hwqp->fc_request_pool == NULL) {
-		SPDK_ERRLOG("create fc request pool failed\n");
+	snprintf(name, sizeof(name), "NVMF_FC_REQ_POOL:%ld:%d", fc_conn->conn_id,
+		 fc_conn->hwqp->fc_port->port_hdl);
+
+	fc_conn->fc_request_pool = spdk_mempool_create(name,
+				   poweroftwo - 1,
+				   sizeof(struct spdk_nvmf_bcm_fc_request),
+				   0, SPDK_ENV_SOCKET_ID_ANY);
+
+	if (fc_conn->fc_request_pool == NULL) {
+		SPDK_ERRLOG("create fc conn request pool failed\n");
 		return -1;
 	}
-	TAILQ_INIT(&hwqp->in_use_reqs);
+	fc_conn->fc_req_count = (poweroftwo - 1);
 	return 0;
 }
 
@@ -456,11 +469,12 @@ nvmf_fc_release_reqtag(struct spdk_nvmf_bcm_fc_hwqp *hwqp, fc_reqtag_t *tag)
 }
 
 static inline struct spdk_nvmf_bcm_fc_request *
-nvmf_fc_alloc_req_buf(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
+nvmf_fc_alloc_req_buf(struct spdk_nvmf_bcm_fc_conn *fc_conn)
 {
+	struct spdk_nvmf_bcm_fc_hwqp *hwqp = fc_conn->hwqp;
 	struct spdk_nvmf_bcm_fc_request *fc_req;
 
-	fc_req = (struct spdk_nvmf_bcm_fc_request *)spdk_mempool_get(hwqp->fc_request_pool);
+	fc_req = (struct spdk_nvmf_bcm_fc_request *)spdk_mempool_get(fc_conn->fc_request_pool);
 	if (!fc_req) {
 		SPDK_ERRLOG("Alloc request buffer failed\n");
 		return NULL;
@@ -473,8 +487,10 @@ nvmf_fc_alloc_req_buf(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 }
 
 static inline void
-nvmf_fc_free_req_buf(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct spdk_nvmf_bcm_fc_request *fc_req)
+nvmf_fc_free_req_buf(struct spdk_nvmf_bcm_fc_conn *fc_conn, struct spdk_nvmf_bcm_fc_request *fc_req)
 {
+	struct spdk_nvmf_bcm_fc_hwqp *hwqp = fc_conn->hwqp;
+
 	if (fc_req->state != SPDK_NVMF_BCM_FC_REQ_SUCCESS) {
 		/* Log an error for debug purpose. */
 		spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_FAILED);
@@ -484,7 +500,7 @@ nvmf_fc_free_req_buf(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct spdk_nvmf_bcm_fc
 	fc_req->magic = 0xDEADBEEF;
 
 	TAILQ_REMOVE(&hwqp->in_use_reqs, fc_req, link);
-	spdk_mempool_put(hwqp->fc_request_pool, (void *)fc_req);
+	spdk_mempool_put(fc_conn->fc_request_pool, (void *)fc_req);
 }
 
 static void
@@ -662,29 +678,27 @@ spdk_nvmf_bcm_fc_req_abort_complete(void *arg1, void *arg2)
 {
 	struct spdk_nvmf_bcm_fc_request *fc_req =
 		(struct spdk_nvmf_bcm_fc_request *)arg1;
+	struct spdk_nvmf_bcm_fc_hwqp *hwqp = fc_req->hwqp;
 	fc_caller_ctx_t *ctx = NULL, *tmp = NULL;
+	TAILQ_HEAD(abort_task_cbs, fc_caller_ctx) abort_cbs;
 
-	/*
-	 * Release backend IO buffers before calling cb's because
-	 * cb's can release the session which is required for
-	 * backend IO buffers cleanup.
-	 */
-	nvmf_fc_release_io_buff(fc_req);
+	/* Make a copy of the cb list from fc_req */
+	memcpy(&abort_cbs, &fc_req->abort_cbs, sizeof(struct abort_task_cbs));
 
-	/* Request abort completed. Notify all the callbacks */
-	TAILQ_FOREACH_SAFE(ctx, &fc_req->abort_cbs, link, tmp) {
-		/* Notify */
-		ctx->cb(fc_req->hwqp, 0, ctx->cb_args);
-		/* Remove */
-		TAILQ_REMOVE(&fc_req->abort_cbs, ctx, link);
-		/* free */
-		free(ctx);
-	}
-
-	SPDK_NOTICELOG("FC Request(%p) in state :%s aborted", fc_req,
+	SPDK_NOTICELOG("FC Request(%p) in state :%s aborted\n", fc_req,
 		       fc_req_state_strs[fc_req->state]);
 
 	spdk_nvmf_bcm_fc_free_req(fc_req);
+
+	/* Request abort completed. Notify all the callbacks */
+	TAILQ_FOREACH_SAFE(ctx, &abort_cbs, link, tmp) {
+		/* Remove */
+		TAILQ_REMOVE(&abort_cbs, ctx, link);
+		/* Notify */
+		ctx->cb(hwqp, 0, ctx->cb_args);
+		/* free */
+		free(ctx);
+	}
 }
 
 void
@@ -1431,7 +1445,7 @@ spdk_nvmf_bcm_fc_free_req(struct spdk_nvmf_bcm_fc_request *fc_req)
 	nvmf_fc_release_io_buff(fc_req);
 
 	/* Free Fc request */
-	nvmf_fc_free_req_buf(fc_req->hwqp, fc_req);
+	nvmf_fc_free_req_buf(fc_req->fc_conn, fc_req);
 }
 
 static void
@@ -1986,7 +2000,7 @@ nvmf_fc_handle_nvme_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_frame_hdr
 	}
 
 	/* allocate a request buffer */
-	fc_req = nvmf_fc_alloc_req_buf(hwqp);
+	fc_req = nvmf_fc_alloc_req_buf(fc_conn);
 	if (fc_req == NULL) {
 		/* Should not happen. Since fc_reqs == RQ buffers */
 		goto abort;

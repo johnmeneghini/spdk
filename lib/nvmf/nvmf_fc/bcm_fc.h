@@ -201,7 +201,6 @@ struct spdk_nvmf_bcm_fc_hwqp {
 	spdk_fc_hwqp_state_t state;  /* Poller state (e.g. online, offline) */
 
 	/* Internal */
-	struct spdk_mempool *fc_request_pool;
 	TAILQ_HEAD(, spdk_nvmf_bcm_fc_request) in_use_reqs;
 
 	TAILQ_HEAD(, spdk_nvmf_bcm_fc_xri) pending_xri_list;
@@ -450,6 +449,9 @@ struct spdk_nvmf_bcm_fc_conn {
 
 	/* for hwqp's connection list */
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_conn) link;
+
+	struct spdk_mempool *fc_request_pool;
+	uint32_t fc_req_count;
 };
 
 /*
@@ -597,6 +599,10 @@ void spdk_nvmf_bcm_fc_handle_ls_rqst(struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst);
 
 int spdk_nvmf_bcm_fc_xmt_ls_rsp(struct spdk_nvmf_bcm_fc_nport *tgtport,
 				struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst);
+
+int spdk_nvmf_bcm_fc_create_conn_req_mempool(struct spdk_nvmf_bcm_fc_conn *fc_conn);
+
+int spdk_nvmf_bcm_fc_free_conn_req_mempool(struct spdk_nvmf_bcm_fc_conn *fc_conn);
 
 void spdk_nvmf_bcm_fc_port_list_add(struct spdk_nvmf_bcm_fc_port *fc_port);
 
