@@ -371,6 +371,7 @@ SPDK_STATIC_ASSERT(MAX_REQ_STATES >= SPDK_NVMF_BCM_FC_REQ_MAX_STATE, "Too many r
  */
 struct spdk_nvmf_bcm_fc_request {
 	struct spdk_nvmf_request req;
+	union nvmf_h2c_msg cmd;
 	struct spdk_nvmf_fc_ersp_iu ersp;
 	uint32_t poller_lcore;
 	uint16_t buf_index;
@@ -552,19 +553,6 @@ struct spdk_nvmf_bcm_fc_ls_rqst {
 	struct spdk_nvmf_bcm_fc_nport *nport;
 	struct spdk_nvmf_bcm_fc_remote_port_info *rport;
 };
-
-/*
- * FC RQ buffer NVMe Command
- */
-struct __attribute__((__packed__)) spdk_nvmf_bcm_fc_rq_buf_nvme_cmd {
-	struct spdk_nvmf_fc_cmnd_iu cmd_iu;
-	struct spdk_nvmf_fc_xfer_rdy_iu xfer_rdy;
-	uint8_t rsvd[BCM_RQ_BUFFER_SIZE - (sizeof(struct spdk_nvmf_fc_cmnd_iu)
-					   + sizeof(struct spdk_nvmf_fc_xfer_rdy_iu))];
-};
-
-SPDK_STATIC_ASSERT(sizeof(struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd) ==
-		   BCM_RQ_BUFFER_SIZE, "RQ Buffer overflow");
 
 /*
  * RQ Buffer LS Overlay Structure

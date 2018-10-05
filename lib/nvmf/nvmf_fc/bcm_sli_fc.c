@@ -1430,9 +1430,6 @@ spdk_nvmf_bcm_fc_free_req(struct spdk_nvmf_bcm_fc_request *fc_req)
 	/* Release IO buffers */
 	nvmf_fc_release_io_buff(fc_req);
 
-	/* Release RQ buffer */
-	nvmf_fc_rqpair_buffer_release(fc_req->hwqp, fc_req->buf_index);
-
 	/* Free Fc request */
 	nvmf_fc_free_req_buf(fc_req->hwqp, fc_req);
 }
@@ -1618,7 +1615,6 @@ nvmf_fc_fill_sgl(struct spdk_nvmf_bcm_fc_request *fc_req)
 	uint32_t offset = 0;
 	uint64_t iov_phys;
 	bcm_sge_t *sge = NULL;
-	struct spdk_nvmf_bcm_fc_hwqp *hwqp = fc_req->hwqp;
 	void *sgl = fc_req->xri->sgl_virt;
 
 	assert((fc_req->req.iovcnt) <= MAX_NUM_OF_IOVECTORS);
@@ -1640,32 +1636,9 @@ nvmf_fc_fill_sgl(struct spdk_nvmf_bcm_fc_request *fc_req)
 
 	memset(sge, 0, (sizeof(bcm_sge_t) * BCM_MAX_IOVECS));
 
-	if (fc_req->req.xfer == SPDK_NVME_DATA_HOST_TO_CONTROLLER) { /* Write */
-		uint64_t xfer_rdy_phys;
-		struct spdk_nvmf_fc_xfer_rdy_iu *xfer_rdy_iu;
-
-		/* 1st SGE is tranfer ready buffer */
-		xfer_rdy_iu = hwqp->queues.rq_payload.buffer[fc_req->buf_index].virt +
-			      offsetof(struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd, xfer_rdy);
-		xfer_rdy_iu->relative_offset = 0;
-		to_be32(&xfer_rdy_iu->burst_len, fc_req->req.length);
-
-		xfer_rdy_phys = hwqp->queues.rq_payload.buffer[fc_req->buf_index].phys +
-				offsetof(struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd, xfer_rdy);
-
-		sge->sge_type = BCM_SGE_TYPE_DATA;
-		sge->buffer_address_low  = PTR_TO_ADDR32_LO(xfer_rdy_phys);
-		sge->buffer_address_high = PTR_TO_ADDR32_HI(xfer_rdy_phys);
-		sge->buffer_length = sizeof(struct spdk_nvmf_fc_xfer_rdy_iu);
-		sge++;
-
-	} else if (fc_req->req.xfer == SPDK_NVME_DATA_CONTROLLER_TO_HOST) { /* read */
-		/* 1st SGE is skip. */
-		sge->sge_type = BCM_SGE_TYPE_SKIP;
-		sge++;
-	} else {
-		return 0;
-	}
+	/* 1st SGE is skip. */
+	sge->sge_type = BCM_SGE_TYPE_SKIP;
+	sge++;
 
 	/* 2nd SGE is skip. */
 	sge->sge_type = BCM_SGE_TYPE_SKIP;
@@ -1903,7 +1876,6 @@ nvmf_fc_handle_nvme_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_frame_hdr
 {
 	uint16_t cmnd_len;
 	uint64_t rqst_conn_id;
-	struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd *req_buf = NULL;
 	struct spdk_nvmf_bcm_fc_request *fc_req = NULL;
 	struct spdk_nvmf_fc_cmnd_iu *cmd_iu = NULL;
 	struct spdk_nvmf_bcm_fc_conn *fc_conn = NULL;
@@ -1911,9 +1883,8 @@ nvmf_fc_handle_nvme_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_frame_hdr
 	bool found = false;
 	struct spdk_nvme_cmd *cmd = NULL;
 
-	req_buf = (struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd *)buffer->virt;
-	cmd_iu = &req_buf->cmd_iu;
-	cmnd_len = req_buf->cmd_iu.cmnd_iu_len;
+	cmd_iu = (struct spdk_nvmf_fc_cmnd_iu *)buffer->virt;
+	cmnd_len = cmd_iu->cmnd_iu_len;
 	cmnd_len = from_be16(&cmnd_len);
 
 	/* check for a valid cmnd_iu format */
@@ -1969,7 +1940,10 @@ nvmf_fc_handle_nvme_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_frame_hdr
 
 	fc_req->req.length = from_be32(&cmd_iu->data_len);
 	fc_req->req.conn = &fc_conn->conn;
-	fc_req->req.cmd = &req_buf->cmd_iu.cmd;
+
+	memcpy(&fc_req->cmd, &cmd_iu->cmd, sizeof(union nvmf_h2c_msg));
+	fc_req->req.cmd = &fc_req->cmd;
+
 	fc_req->req.rsp = &fc_req->ersp.rsp;
 	fc_req->req.io_rsrc_pool = hwqp->fc_port->io_rsrc_pool;
 	fc_req->oxid = frame->ox_id;
@@ -2045,7 +2019,7 @@ static int
 nvmf_fc_process_frame(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t buff_idx, fc_frame_hdr_t *frame,
 		      bcm_buffer_desc_t *buffer, uint32_t plen)
 {
-	int rc = SPDK_SUCCESS;
+	int rc = -1;
 	uint32_t s_id, d_id;
 	struct spdk_nvmf_bcm_fc_nport *nport = NULL;
 	struct spdk_nvmf_bcm_fc_remote_port_info *rport = NULL;
@@ -2055,18 +2029,13 @@ nvmf_fc_process_frame(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t buff_idx, fc_
 	s_id = from_be32(&s_id) >> 8;
 	d_id = from_be32(&d_id) >> 8;
 
-	/* Note: In tracelog below, we directly do endian conversion on rx_id and.
-	 * ox_id Since these are fields, we can't pass address to from_be16().
-	 * Since ox_id and rx_id are only needed for tracelog, assigning to local
-	 * vars. and doing conversion is a waste of time in non-debug builds. */
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
 		      "Process NVME frame s_id:0x%x d_id:0x%x oxid:0x%x rxid:0x%x.\n",
 		      s_id, d_id,
 		      ((frame->ox_id << 8) & 0xff00) | ((frame->ox_id >> 8) & 0xff),
 		      ((frame->rx_id << 8) & 0xff00) | ((frame->rx_id >> 8) & 0xff));
 
-	rc = nvmf_fc_find_nport_and_rport(hwqp, d_id, &nport, s_id, &rport);
-	if (rc) {
+	if (nvmf_fc_find_nport_and_rport(hwqp, d_id, &nport, s_id, &rport)) {
 		if (nport == NULL) {
 			SPDK_ERRLOG("%s: Nport not found. Dropping\n", __func__);
 			/* increment invalid nport counter */
@@ -2076,7 +2045,7 @@ nvmf_fc_process_frame(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t buff_idx, fc_
 			/* increment invalid rport counter */
 			hwqp->counters.rport_invalid++;
 		}
-		return rc;
+		goto buff_free;
 	}
 
 	if (nport->nport_state != SPDK_NVMF_BCM_FC_OBJECT_CREATED ||
@@ -2084,7 +2053,7 @@ nvmf_fc_process_frame(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t buff_idx, fc_
 		SPDK_ERRLOG("%s: %s state not created. Dropping\n", __func__,
 			    nport->nport_state != SPDK_NVMF_BCM_FC_OBJECT_CREATED ?
 			    "Nport" : "Rport");
-		return -1;
+		goto buff_free;
 	}
 
 	if ((frame->r_ctl == NVME_FC_R_CTL_LS_REQUEST) &&
@@ -2127,25 +2096,33 @@ nvmf_fc_process_frame(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t buff_idx, fc_
 			spdk_nvmf_bcm_fc_handle_ls_rqst(ls_rqst);
 		}
 
+		rc = 0;
+
+		/* For LS requests we hold the RQ buffer till the command completes */
+		goto done;
+
 	} else if ((frame->r_ctl == NVME_FC_R_CTL_CMD_REQ) &&
 		   (frame->type == NVME_FC_TYPE_FC_EXCHANGE)) {
 
 		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "Process IO NVME frame\n");
+
 		rc = nvmf_fc_handle_nvme_rqst(hwqp, frame, buff_idx, buffer, plen);
 	} else {
 
 		SPDK_ERRLOG("%s Unknown frame received. Dropping\n", __func__);
 		hwqp->counters.unknown_frame++;
-		rc = -1;
 	}
 
+buff_free:
+	nvmf_fc_rqpair_buffer_release(hwqp, buff_idx);
+done:
 	return rc;
 }
 
 static int
 nvmf_fc_process_rqpair(struct spdk_nvmf_bcm_fc_hwqp *hwqp, fc_eventq_t *cq, uint8_t *cqe)
 {
-	int rc = 0, rq_index = 0;
+	int rq_index = 0;
 	uint16_t rq_id = 0;
 	int32_t rq_status;
 	uint32_t buff_idx = 0;
@@ -2218,17 +2195,15 @@ nvmf_fc_process_rqpair(struct spdk_nvmf_bcm_fc_hwqp *hwqp, fc_eventq_t *cq, uint
 		/* Process marker completion */
 		nvmf_fc_process_marker_cqe(hwqp, cqe);
 	} else {
-		rc = nvmf_fc_process_frame(hwqp, buff_idx, frame, payload_buffer,
-					   rcqe->payload_data_placement_length);
-		if (!rc) {
-			return 0;
-		}
+		/* After this, buffer releasing will be taken care by nvmf_fc_process_frame */
+		return nvmf_fc_process_frame(hwqp, buff_idx, frame, payload_buffer,
+					     rcqe->payload_data_placement_length);
 	}
 
 buffer_release:
 	/* Return buffer to chip */
 	nvmf_fc_rqpair_buffer_release(hwqp, buff_idx);
-	return rc;
+	return 0;
 }
 
 static int
@@ -2318,6 +2293,7 @@ nvmf_fc_process_pending_ls_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 				hwqp->counters.rport_invalid++;
 			}
 			TAILQ_REMOVE(&hwqp->ls_pending_queue, ls_rqst, ls_pending_link);
+
 			/* Return buffer to chip */
 			nvmf_fc_rqpair_buffer_release(hwqp, ls_rqst->rqstbuf.buf_index);
 			continue;
@@ -2328,6 +2304,7 @@ nvmf_fc_process_pending_ls_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 				    nport->nport_state != SPDK_NVMF_BCM_FC_OBJECT_CREATED ?
 				    "Nport" : "Rport");
 			TAILQ_REMOVE(&hwqp->ls_pending_queue, ls_rqst, ls_pending_link);
+
 			/* Return buffer to chip */
 			nvmf_fc_rqpair_buffer_release(hwqp, ls_rqst->rqstbuf.buf_index);
 			continue;
