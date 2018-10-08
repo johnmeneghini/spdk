@@ -1219,6 +1219,25 @@ spdk_nvmf_bcm_fc_init_rqpair_buffers(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 		assert(0);
 	}
 
+#ifndef NETAPP
+	for (uint16_t i = 0; i < hdr->q.max_entries; i++) {
+		rc = nvmf_fc_rqpair_buffer_post(hwqp, i, false);
+		if (rc) {
+			break;
+		}
+		hdr->rq_map[i] = i;
+	}
+
+	/* Make sure CQs are in armed state */
+	nvmf_fc_bcm_notify_queue(&hwqp->queues.cq_wq.q, true, 0);
+	nvmf_fc_bcm_notify_queue(&hwqp->queues.cq_rq.q, true, 0);
+
+	if (!rc) {
+		/* Ring doorbell for one less */
+		nvmf_fc_bcm_notify_queue(&hdr->q, false, (hdr->q.max_entries - 1));
+	}
+#endif
+
 	return rc;
 }
 
