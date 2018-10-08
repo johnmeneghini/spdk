@@ -1772,7 +1772,8 @@ nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req)
 		/* Except for IO read/write, create buffers on fly. */
 		if (!(fc_conn->conn.type == CONN_TYPE_IOQ &&
 		      (cmd->opc == SPDK_NVME_OPC_READ ||
-		       cmd->opc == SPDK_NVME_OPC_WRITE))) {
+		       cmd->opc == SPDK_NVME_OPC_WRITE ||
+		       cmd->opc == SPDK_NVME_OPC_COMPARE))) {
 
 			fc_req->req.data = spdk_dma_zmalloc(fc_req->req.length, 4096, NULL);
 			if (!fc_req->req.data) {
