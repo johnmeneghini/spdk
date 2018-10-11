@@ -1619,7 +1619,7 @@ nvmf_fc_fill_sgl(struct spdk_nvmf_bcm_fc_request *fc_req)
 	uint64_t iov_phys;
 	bcm_sge_t *sge = NULL;
 	struct spdk_nvmf_bcm_fc_hwqp *hwqp = fc_req->hwqp;
-	void *prereg_sgl = fc_req->xri->sgl_prereg_virt;
+	void *sgl = fc_req->xri->sgl_virt;
 
 	assert((fc_req->req.iovcnt) <= MAX_NUM_OF_IOVECTORS);
 	if ((fc_req->req.iovcnt) > MAX_NUM_OF_IOVECTORS) {
@@ -1632,11 +1632,11 @@ nvmf_fc_fill_sgl(struct spdk_nvmf_bcm_fc_request *fc_req)
 		return 0;
 	}
 
-	if (!prereg_sgl) {
-		SPDK_ERRLOG("Error: no prereg SGL\n");
+	if (!sgl) {
+		SPDK_ERRLOG("Error: no SGL\n");
 		return 0;
 	}
-	sge = (bcm_sge_t *) prereg_sgl;
+	sge = (bcm_sge_t *) sgl;
 
 	memset(sge, 0, (sizeof(bcm_sge_t) * BCM_MAX_IOVECS));
 
