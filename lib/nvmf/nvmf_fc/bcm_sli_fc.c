@@ -134,13 +134,20 @@ nvmf_fc_process_fused_command(struct spdk_nvmf_bcm_fc_request *fc_req)
 	struct spdk_nvmf_bcm_fc_conn *fc_conn = fc_req->fc_conn;
 	uint32_t exp_csn = 0;
 
+
 	if (cmd->fuse == SPDK_NVME_FUSED_CMD1) {
+		fc_req->hwqp->reg_counters.compare_fused_rcvd++;
 		exp_csn = fc_req->csn + 1;
 		command_1 = fc_req;
 	} else {
+		fc_req->hwqp->reg_counters.write_fused_rcvd++;
 		exp_csn = fc_req->csn - 1;
 		command_2 = fc_req;
 	}
+
+	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
+		      "FC Request(%p):\n\tFused Command. CSN: 0x%x, Exp_CSN:%d\n", fc_req,
+		      fc_req->csn, exp_csn);
 
 	TAILQ_INSERT_TAIL(&fc_conn->fused_waiting_queue, fc_req, fused_link);
 	spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_FUSED_WAITING);
@@ -688,6 +695,7 @@ spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 	fc_caller_ctx_t *ctx = NULL;
 	struct spdk_event *event = NULL;
 	bool kill_req = false;
+	struct spdk_nvme_cmd *cmd = &fc_req->req.cmd->nvme_cmd;
 
 	/* Add the cb to list */
 	if (cb) {
@@ -737,6 +745,11 @@ spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 		TAILQ_REMOVE(&fc_req->fc_conn->pending_queue, fc_req, pending_link);
 		goto complete;
 	} else if (nvmf_fc_req_in_fused_waiting(fc_req)) {
+		if (cmd->opc == SPDK_NVME_OPC_COMPARE) {
+			fc_req->hwqp->counters.num_abts_fused_cmp++;
+		} else {
+			fc_req->hwqp->counters.num_abts_fused_write++;
+		}
 		TAILQ_REMOVE(&fc_req->fc_conn->fused_waiting_queue, fc_req, fused_link);
 		goto complete;
 	} else {
@@ -1769,7 +1782,7 @@ nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req)
 	}
 
 	if (fc_req->req.length) {
-		/* Except for IO read/write, create buffers on fly. */
+		/* Except for IO read/write/compare, create buffers on fly. */
 		if (!(fc_conn->conn.type == CONN_TYPE_IOQ &&
 		      (cmd->opc == SPDK_NVME_OPC_READ ||
 		       cmd->opc == SPDK_NVME_OPC_WRITE ||
@@ -1886,6 +1899,7 @@ nvmf_fc_handle_nvme_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_frame_hdr
 	struct spdk_nvmf_bcm_fc_conn *fc_conn = NULL;
 	enum spdk_nvme_data_transfer xfer;
 	bool found = false;
+	struct spdk_nvme_cmd *cmd = NULL;
 
 	req_buf = (struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd *)buffer->virt;
 	cmd_iu = &req_buf->cmd_iu;
@@ -1961,6 +1975,27 @@ nvmf_fc_handle_nvme_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_frame_hdr
 	fc_req->d_id = (uint32_t)frame->d_id;
 	fc_req->s_id = from_be32(&fc_req->s_id) >> 8;
 	fc_req->d_id = from_be32(&fc_req->d_id) >> 8;
+
+	cmd = &fc_req->req.cmd->nvme_cmd;
+	/* Tick up counters for special commands. */
+	if ((fc_conn->conn.type == CONN_TYPE_IOQ) && (cmd->opc != SPDK_NVME_OPC_READ) &&
+	    (cmd->opc != SPDK_NVME_OPC_WRITE)) {
+		/*
+		 * Start with compare at this point. This is the place to
+		 * add for all non-read/write commands received on the IOQ
+		 */
+		switch (cmd->opc) {
+		case SPDK_NVME_OPC_COMPARE:
+			if (!(cmd->fuse)) {
+				/* Fused commands are ticked up at another place */
+				fc_req->hwqp->reg_counters.compare_rcvd++;
+			}
+			break;
+		default:
+			break;
+		}
+	}
+
 
 	nvmf_fc_record_req_trace_point(fc_req, SPDK_NVMF_BCM_FC_REQ_INIT);
 	if (spdk_nvmf_is_fused_command(&fc_req->req.cmd->nvme_cmd)) {

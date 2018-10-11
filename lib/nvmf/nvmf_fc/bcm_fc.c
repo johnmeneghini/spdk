@@ -112,6 +112,7 @@ spdk_nvmf_bcm_fc_init_poller(struct spdk_nvmf_bcm_fc_port *fc_port,
 
 	// clear counters
 	memset(&hwqp->counters, 0, sizeof(struct spdk_nvmf_bcm_fc_errors));
+	memset(&hwqp->reg_counters, 0, sizeof(struct spdk_nvmf_bcm_fc_reg_counters));
 
 	spdk_nvmf_bcm_fc_init_poller_queues(hwqp);
 	(void)spdk_nvmf_bcm_fc_create_req_mempool(hwqp);

@@ -150,6 +150,21 @@ struct spdk_nvmf_bcm_fc_errors {
 	uint32_t rport_invalid;
 	uint32_t num_aborted;
 	uint32_t num_abts_sent;
+	uint32_t num_abts_fused_cmp;
+	uint32_t num_abts_fused_write;
+};
+
+/*
+ * NVME FC transport other counters/non-error paths.
+ * Placeholder to add other regular counters for
+ * special commands like PRs, FUSED commands and
+ * in the future anything else that comes on the
+ * IOQ.
+ */
+struct spdk_nvmf_bcm_fc_reg_counters {
+	uint32_t compare_rcvd; /* Number of Compares that are NOT fused commands */
+	uint32_t compare_fused_rcvd; /* Fused compare commands that are received */
+	uint32_t write_fused_rcvd;  /* Fused write commands that are received */
 };
 
 /*
@@ -187,6 +202,7 @@ struct spdk_nvmf_bcm_fc_hwqp {
 	TAILQ_HEAD(, spdk_nvmf_bcm_fc_xri) pending_xri_list;
 
 	struct spdk_nvmf_bcm_fc_errors counters;
+	struct spdk_nvmf_bcm_fc_reg_counters reg_counters;
 	uint32_t send_frame_xri;
 	uint8_t send_frame_seqid;
 
