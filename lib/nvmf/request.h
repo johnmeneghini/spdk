@@ -34,6 +34,7 @@
 #ifndef NVMF_REQUEST_H
 #define NVMF_REQUEST_H
 
+#include "spdk/nvmf.h"
 #include "spdk/nvmf_spec.h"
 #include "spdk/queue.h"
 
@@ -75,10 +76,12 @@ struct spdk_nvmf_request {
 	union nvmf_c2h_msg		*rsp;
 	struct spdk_scsi_unmap_bdesc	*unmap_bdesc;
 	struct spdk_bdev_io 		*bdev_io;
-	uint64_t req_state_trace[MAX_REQ_STATES];
-	struct spdk_mempool *io_rsrc_pool;
-	struct spdk_nvmf_request *fused_partner;
-	bool is_fused_partner_failed;
+	uint64_t			req_state_trace[MAX_REQ_STATES];
+	struct spdk_mempool		*io_rsrc_pool;
+	struct spdk_nvmf_request        *fused_partner;
+	bool 				is_fused_partner_failed;
+	spdk_nvmf_set_sge		set_sge;
+	bool				sgl_filled;
 };
 
 int

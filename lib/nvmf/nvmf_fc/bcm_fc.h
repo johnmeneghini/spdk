@@ -68,7 +68,8 @@
 #define BCM_LS_RQ_BUFFER_SIZE 		2048 /* Driver needs to be in sync. */
 #define BCM_MAX_LS_REQ_CMD_SIZE    	1536
 #define BCM_MAX_RESP_BUFFER_SIZE 	64
-#define BCM_MAX_IOVECS			(MAX_NUM_OF_IOVECTORS + 2) /* 2 for skips */
+#define BCM_MAX_SGLS			257 /* 256 + 1 for runt pages */
+#define BCM_MAX_IOVECS			(BCM_MAX_SGLS + 2) /* 2 for skips */
 
 #define SPDK_NVMF_FC_BCM_MRQ_CONNID_QUEUE_MASK  0xff
 

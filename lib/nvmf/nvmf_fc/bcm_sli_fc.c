@@ -1608,6 +1608,49 @@ nvmf_fc_process_wqe_release(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint16_t wqid)
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "WQE RELEASE\n");
 }
 
+static int nvmf_fc_set_sge(struct spdk_nvmf_request *req,
+			   int iovcnt,
+			   uint32_t offset,
+			   void *iov_base,
+			   size_t iov_len,
+			   int index)
+{
+	struct spdk_nvmf_bcm_fc_request *fc_req = spdk_nvmf_bcm_fc_get_fc_req(req);
+	void *sgl = fc_req->xri->sgl_virt;
+	bcm_sge_t *sge;
+	uint64_t iov_phys;
+	int i;
+
+	if (!sgl) {
+		SPDK_ERRLOG("Error: no SGL\n");
+		return -1;
+	}
+	sge = (bcm_sge_t *) sgl;
+
+	assert(iovcnt <= MAX_NUM_OF_IOVECTORS && iovcnt > 0);
+	if (iovcnt < 1 || iovcnt > MAX_NUM_OF_IOVECTORS) {
+		SPDK_ERRLOG("Error: invalid iovcnt\n");
+		return -1;
+	}
+
+	/* First 2 SGEs are reserved. */
+	i = index + 2;
+
+	iov_phys = spdk_vtophys(iov_base);
+	sge[i].sge_type = BCM_SGE_TYPE_DATA;
+	sge[i].buffer_address_low  = PTR_TO_ADDR32_LO(iov_phys);
+	sge[i].buffer_address_high = PTR_TO_ADDR32_HI(iov_phys);
+	sge[i].buffer_length = iov_len;
+	sge[i].data_offset = offset;
+
+	if (index == (iovcnt - 1)) {
+		sge[i].last = true;
+		req->sgl_filled = true;
+	}
+
+	return 0; /* success */
+}
+
 static uint32_t
 nvmf_fc_fill_sgl(struct spdk_nvmf_bcm_fc_request *fc_req)
 {
@@ -1634,8 +1677,6 @@ nvmf_fc_fill_sgl(struct spdk_nvmf_bcm_fc_request *fc_req)
 	}
 	sge = (bcm_sge_t *) sgl;
 
-	memset(sge, 0, (sizeof(bcm_sge_t) * BCM_MAX_IOVECS));
-
 	/* 1st SGE is skip. */
 	sge->sge_type = BCM_SGE_TYPE_SKIP;
 	sge++;
@@ -1644,22 +1685,35 @@ nvmf_fc_fill_sgl(struct spdk_nvmf_bcm_fc_request *fc_req)
 	sge->sge_type = BCM_SGE_TYPE_SKIP;
 	sge++;
 
-	for (i = 0; i < fc_req->req.iovcnt; i++) {
-		iov_phys = spdk_vtophys(fc_req->req.iov[i].iov_base);
-		sge->sge_type = BCM_SGE_TYPE_DATA;
-		sge->buffer_address_low  = PTR_TO_ADDR32_LO(iov_phys);
-		sge->buffer_address_high = PTR_TO_ADDR32_HI(iov_phys);
-		sge->buffer_length = fc_req->req.iov[i].iov_len;
-		sge->data_offset = offset;
-		offset += fc_req->req.iov[i].iov_len;
-
-		if (i == (fc_req->req.iovcnt - 1)) {
-			/* last */
-			sge->last = true;
-		} else {
+	if (fc_req->req.sgl_filled) {
+		for (i = 0; i < fc_req->req.iovcnt; i++) {
+			assert(sge->sge_type == BCM_SGE_TYPE_DATA);
+			assert(sge->data_offset == offset);
+			offset += sge->buffer_length;
+			if (i == (fc_req->req.iovcnt - 1)) {
+				assert(sge->last == true);
+			}
 			sge++;
 		}
+	} else {
+		for (i = 0; i < fc_req->req.iovcnt; i++) {
+			iov_phys = spdk_vtophys(fc_req->req.iov[i].iov_base);
+			sge->sge_type = BCM_SGE_TYPE_DATA;
+			sge->buffer_address_low  = PTR_TO_ADDR32_LO(iov_phys);
+			sge->buffer_address_high = PTR_TO_ADDR32_HI(iov_phys);
+			sge->buffer_length = fc_req->req.iov[i].iov_len;
+			sge->data_offset = offset;
+			offset += fc_req->req.iov[i].iov_len;
+
+			if (i == (fc_req->req.iovcnt - 1)) {
+				/* last */
+				sge->last = true;
+			} else {
+				sge++;
+			}
+		}
 	}
+
 	return offset;
 }
 
@@ -1946,6 +2000,7 @@ nvmf_fc_handle_nvme_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_frame_hdr
 
 	fc_req->req.rsp = &fc_req->ersp.rsp;
 	fc_req->req.io_rsrc_pool = hwqp->fc_port->io_rsrc_pool;
+	fc_req->req.set_sge = nvmf_fc_set_sge;
 	fc_req->oxid = frame->ox_id;
 	fc_req->oxid = from_be16(&fc_req->oxid);
 	fc_req->rpi = fc_conn->rpi;
