@@ -256,10 +256,11 @@ spdk_bdev_io_type_supported(struct spdk_bdev *bdev, enum spdk_bdev_io_type io_ty
 }
 
 int
-spdk_bdev_write(struct spdk_bdev_desc *desc, struct spdk_mempool *pool, struct spdk_io_channel *ch,
+spdk_bdev_write(struct spdk_bdev_desc *desc, struct spdk_mempool *pool,
+		struct spdk_io_channel *ch,
 		void *buf,
 		uint64_t offset, uint64_t nbytes, spdk_bdev_io_completion_cb cb, void *cb_arg,
-		struct spdk_bdev_io  **result_bdev_io)
+		struct spdk_bdev_io  **result_bdev_io, bool is_write)
 {
 	return 0;
 }
@@ -344,7 +345,8 @@ spdk_bdev_write_init(struct spdk_bdev_desc *desc,
 		     struct iovec *iov,
 		     int *iovcnt,
 		     uint32_t length,
-		     uint64_t offset)
+		     uint64_t offset,
+		     bool is_write)
 {
 	return NULL;
 }
@@ -357,7 +359,7 @@ spdk_bdev_write_fini(struct spdk_bdev_io *bdev_io)
 }
 
 void
-spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io, void *abt_ctx)
+spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io)
 {
 	return;
 }

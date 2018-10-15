@@ -154,6 +154,7 @@ nvmf_init_nvme_session_properties(struct spdk_nvmf_session *session)
 	session->vcdata.nvmf_specific.icdoff = 0; /* offset starts directly after SQE */
 	session->vcdata.nvmf_specific.ctrattr.ctrlr_model = SPDK_NVMF_CTRLR_MODEL_DYNAMIC;
 	session->vcdata.nvmf_specific.msdbd = 1; /* target supports single SGL in capsule */
+	session->vcdata.fuses = g_nvmf_tgt.opts.fuses;
 
 	/* TODO: this should be set by the transport */
 	// session->vcdata.nvmf_specific.ioccsz += g_nvmf_tgt.opts.in_capsule_data_size / 16;

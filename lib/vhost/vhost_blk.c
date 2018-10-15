@@ -262,7 +262,7 @@ process_blk_request(struct spdk_vhost_blk_task *task, struct spdk_vhost_blk_dev 
 		} else if (!bvdev->readonly) {
 			bdev_io = spdk_bdev_write_init(bvdev->bdev_desc, bvdev->bdev_io_channel, NULL,
 						       blk_request_complete_cb, task,
-						       &task->iovs[1], &task->iovcnt, req->sector * 512, task->length);
+						       &task->iovs[1], &task->iovcnt, req->sector * 512, task->length, true);
 			if (bdev_io) {
 				rc = spdk_bdev_writev(bdev_io);
 			} else {

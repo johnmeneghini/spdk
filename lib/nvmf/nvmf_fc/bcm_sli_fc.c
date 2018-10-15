@@ -132,15 +132,18 @@ nvmf_fc_process_fused_command(struct spdk_nvmf_bcm_fc_request *fc_req)
 	struct spdk_nvme_cmd *cmd = &fc_req->req.cmd->nvme_cmd;
 	struct spdk_nvmf_bcm_fc_conn *fc_conn = fc_req->fc_conn;
 	uint32_t exp_csn = 0;
+	uint8_t exp_cmd = 0;
 
 
 	if (cmd->fuse == SPDK_NVME_FUSED_CMD1) {
 		fc_req->hwqp->reg_counters.compare_fused_rcvd++;
 		exp_csn = fc_req->csn + 1;
+		exp_cmd = SPDK_NVME_FUSED_CMD2;
 		command_1 = fc_req;
 	} else {
 		fc_req->hwqp->reg_counters.write_fused_rcvd++;
 		exp_csn = fc_req->csn - 1;
+		exp_cmd = SPDK_NVME_FUSED_CMD1;
 		command_2 = fc_req;
 	}
 
@@ -153,7 +156,7 @@ nvmf_fc_process_fused_command(struct spdk_nvmf_bcm_fc_request *fc_req)
 
 	/* Search if we have the other command of fuse operation already */
 	TAILQ_FOREACH_SAFE(n, &fc_conn->fused_waiting_queue, fused_link, tmp) {
-		if (n->csn == exp_csn) {
+		if (n->csn == exp_csn && n->req.cmd->nvme_cmd.fuse == exp_cmd) {
 			/* Got both commands, command_1 and command_2 */
 			if (!command_1) {
 				command_1 = n;
@@ -537,6 +540,7 @@ nvmf_fc_alloc_req_buf(struct spdk_nvmf_bcm_fc_conn *fc_conn)
 	fc_req->req.sgl_filled	 = false;
 	fc_req->req.fused_partner 	    = NULL;
 	fc_req->req.is_fused_partner_failed = false;
+	fc_req->req.fail_with_fused_aborted = false;
 	for (int i = 0; i < MAX_REQ_STATES; i ++) {
 		fc_req->req.req_state_trace[i] = 0;
 	}
@@ -1493,13 +1497,6 @@ spdk_nvmf_bcm_fc_free_req(struct spdk_nvmf_bcm_fc_request *fc_req)
 		fc_req->xri = NULL;
 	}
 
-	/* Check if this is fused command_1 and if it failed */
-	if (fc_req->req.cmd->nvme_cmd.fuse == SPDK_NVME_FUSED_CMD1
-	    && fc_req->req.rsp->nvme_cpl.status.sc) {
-		/* Let the fused write partner req know this */
-		fc_req->req.fused_partner->is_fused_partner_failed = true;
-	}
-
 	/* Release IO buffers */
 	nvmf_fc_release_io_buff(fc_req);
 
@@ -2079,6 +2076,8 @@ nvmf_fc_handle_nvme_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_frame_hdr
 	fc_req->req.cmd = &fc_req->cmd;
 
 	fc_req->req.rsp = &fc_req->ersp.rsp;
+	fc_req->req.rsp->nvme_cpl.status.sct  = 0;
+	fc_req->req.rsp->nvme_cpl.status.dnr  = 0;
 	fc_req->req.io_rsrc_pool = hwqp->fc_port->io_rsrc_pool;
 	fc_req->req.set_sge = nvmf_fc_set_sge;
 	fc_req->oxid = frame->ox_id;

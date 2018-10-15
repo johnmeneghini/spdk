@@ -200,11 +200,18 @@ nvmf_virtual_ctrlr_complete_cmd(struct spdk_bdev_io *bdev_io, bool success,
 		free(req->unmap_bdesc);
 	}
 
-	spdk_bdev_io_get_nvme_status(bdev_io, &sct, &sc, &dnr);
-	response->status.sc = sc;
-	response->status.sct = sct;
-	response->status.dnr = dnr;
 
+	/*
+	 * The status for the CMD2 of a fused command will be explicitly
+	 * set by CMD1 when the fused command fails.is_fused_partner_failed
+	 * flag is set only on CMD2 when CMD1 fails
+	 */
+	if (!req->is_fused_partner_failed) {
+		spdk_bdev_io_get_nvme_status(bdev_io, &sct, &sc, &dnr);
+		response->status.sc = sc;
+		response->status.sct = sct;
+		response->status.dnr = dnr;
+	}
 
 	/*
 	 * BDEV IO is freed as part of request cleanup function call.
@@ -796,20 +803,51 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 			  struct spdk_io_channel *ch, struct spdk_nvmf_request *req)
 {
 	uint64_t lba_address;
+	uint64_t fused_lba_address;
 	uint64_t blockcnt;
 	uint64_t io_bytes;
 	uint64_t offset;
 	uint64_t llen;
 	uint32_t block_size = spdk_bdev_get_block_size(bdev);
 	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
+	struct spdk_nvme_cmd *fused_cmd = NULL;
 	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
+	struct spdk_nvme_cpl *fused_response = NULL;
 	struct nvme_read_cdw12 *cdw12 = (struct nvme_read_cdw12 *)&cmd->cdw12;
+	struct nvme_read_cdw12 *fused_cdw12 = NULL;
 
 	blockcnt = spdk_bdev_get_num_blocks(bdev);
 	lba_address = cmd->cdw11;
 	lba_address = (lba_address << 32) + cmd->cdw10;
 	offset = lba_address * block_size;
 	llen = cdw12->nlb + 1;
+
+	/* SPDK expects the transport to submit the fused
+	   commands in order. The lba range validation checks
+	   are performed when the first command is submitted
+	 */
+	if (cmd->fuse == SPDK_NVME_FUSED_CMD1) {
+		assert(req->fused_partner);
+		fused_cmd = &req->fused_partner->cmd->nvme_cmd;
+		fused_lba_address = fused_cmd->cdw11;
+		fused_lba_address = (fused_lba_address << 32) + fused_cmd->cdw10;
+		fused_cdw12 = (struct nvme_read_cdw12 *)&fused_cmd->cdw12;
+		if (cmd->nsid != fused_cmd->nsid || lba_address != fused_lba_address ||
+		    cdw12->nlb != fused_cdw12->nlb || cdw12->nlb != req->conn->sess->vcdata.acwu) {
+			SPDK_ERRLOG("Incorrect or mismatched Fused command NSID(%d:%d) LBA(%ld:%ld) NLB(%d:%d) ACWU(%d)\n",
+				    cmd->nsid,
+				    fused_cmd->nsid, lba_address,
+				    fused_lba_address, cdw12->nlb, fused_cdw12->nlb,
+				    req->conn->sess->vcdata.acwu);
+			response->status.dnr = 1;
+			response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+			req->fused_partner->fail_with_fused_aborted = false;
+			fused_response = &req->fused_partner->rsp->nvme_cpl;
+			fused_response->status.dnr = 1;
+			fused_response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+		}
+	}
 
 	if (lba_address >= blockcnt || llen > blockcnt || lba_address > (blockcnt - llen)) {
 		SPDK_ERRLOG("end of media\n");
@@ -819,7 +857,7 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 
 	io_bytes = llen * bdev->blocklen;
 	if (io_bytes != req->length) {
-		SPDK_ERRLOG("Read/Write NLB length(%ld) != SGL length(%d)\n", io_bytes, req->length);
+		SPDK_ERRLOG("Read/Write/Compare NLB length(%ld) != SGL length(%d)\n", io_bytes, req->length);
 		response->status.dnr = 1;
 		response->status.sc = SPDK_NVME_SC_DATA_SGL_LENGTH_INVALID;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
@@ -846,10 +884,10 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING;
 			}
 		}
-	} else { /* SPDK_NVME_OPC_WRITE */
+	} else { /* SPDK_NVME_OPC_WRITE OR SPDK_NVME_OPC_COMPARE */
 		if (req->data) {
 			if (spdk_bdev_write(desc, req->io_rsrc_pool, ch, req->data, offset, req->length,
-					    nvmf_virtual_ctrlr_complete_cmd, req, &req->bdev_io)) {
+					    nvmf_virtual_ctrlr_complete_cmd, req, &req->bdev_io, (cmd->opc == SPDK_NVME_OPC_WRITE))) {
 				response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 			}
@@ -860,8 +898,9 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 			}
 		} else {
 			/* Acquire IOV buffers from backend */
-			req->bdev_io = spdk_bdev_write_init(desc, ch, req->io_rsrc_pool, nvmf_virtual_ctrlr_complete_cmd,
-							    req, req->iov, &req->iovcnt, req->length, offset);
+			req->bdev_io = spdk_bdev_write_init(desc, ch, req->io_rsrc_pool,
+							    nvmf_virtual_ctrlr_complete_cmd,
+							    req, req->iov, &req->iovcnt, req->length, offset, (cmd->opc == SPDK_NVME_OPC_WRITE));
 			if (req->bdev_io) {
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_READY;
 			} else {
@@ -961,6 +1000,26 @@ nvmf_virtual_ctrlr_process_io_cmd(struct spdk_nvmf_request *req)
 	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
 	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
 
+	if (spdk_nvmf_is_fused_command(&req->cmd->nvme_cmd)) {
+		/* Rules for fused command:
+		   1) Whenever CMD1 fails, it will explicitly set
+		   the status for CMD2 also.
+		   2) CMD2 will be failed with a status of SPDK_NVME_SC_ABORTED_FAILED_FUSED
+		   in most of the cases (whenever fail_with_fused_aborted flag is set).
+		   3) There are a few scenarios where CMD2 will need to be failed with
+		   a different status. In such cases fail_with_fused_aborted shall be unset
+		   and CMD1 will set the status of CMD2 explicitly
+		   */
+		if (cmd->fuse == SPDK_NVME_FUSED_CMD1) {
+			req->fused_partner->fail_with_fused_aborted = true;
+		} else if (req->is_fused_partner_failed) {
+			/* This is CMD2 and our partner CMD1 failed, fail CMD_2 also.
+			   CMD1 would have set the right status for CMD2
+			   during CMD1's completion */
+			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+		}
+	}
+
 	/* pre-set response details for this command */
 	response->status.sc = SPDK_NVME_SC_SUCCESS;
 	nsid = cmd->nsid;
@@ -982,6 +1041,7 @@ nvmf_virtual_ctrlr_process_io_cmd(struct spdk_nvmf_request *req)
 	switch (cmd->opc) {
 	case SPDK_NVME_OPC_READ:
 	case SPDK_NVME_OPC_WRITE:
+	case SPDK_NVME_OPC_COMPARE:
 		return nvmf_virtual_ctrlr_rw_cmd(bdev, desc, ch, req);
 	case SPDK_NVME_OPC_FLUSH:
 		return nvmf_virtual_ctrlr_flush_cmd(bdev, desc, ch, req);
@@ -1019,7 +1079,7 @@ nvmf_virtual_ctrlr_process_io_abort(struct spdk_nvmf_request *req)
 					    (void *)req, NULL);
 		spdk_event_call(event);
 	} else if (req->bdev_io) {
-		spdk_bdev_io_abort(req->bdev_io, NULL);
+		spdk_bdev_io_abort(req->bdev_io);
 	}
 }
 
@@ -1038,6 +1098,7 @@ nvmf_virtual_ctrlr_process_io_cleanup(struct spdk_nvmf_request *req)
 		spdk_bdev_read_fini(req->bdev_io);
 		break;
 	case SPDK_NVME_OPC_WRITE:
+	case SPDK_NVME_OPC_COMPARE:
 		spdk_bdev_write_fini(req->bdev_io);
 	default:
 		break; /* Do nothing. */

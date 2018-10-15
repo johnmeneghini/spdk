@@ -91,6 +91,7 @@ enum spdk_bdev_io_type {
 	SPDK_BDEV_IO_TYPE_RESET,
 	SPDK_BDEV_IO_TYPE_NVME_ADMIN,
 	SPDK_BDEV_IO_TYPE_NVME_IO,
+	SPDK_BDEV_IO_TYPE_COMPARE,
 };
 
 /**
@@ -287,14 +288,14 @@ int spdk_bdev_read(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_poo
 int spdk_bdev_readv(struct spdk_bdev_io *bdev_io);
 
 /**
- * Submit a write request to the bdev on the given channel.
+ * Submit a write/compare request to the bdev on the given channel.
  *
  * \param bdev Block device
  * \param bdev_io_pool I/O request pool used to obtain a bdev_io  NULL to use global pool.
  * \param ch I/O channel. Obtained by calling spdk_bdev_get_io_channel().
  * \param buf Data buffer to written from.
  * \param offset The offset, in bytes, from the start of the block device.
- * \param nbytes The number of bytes to write. buf must be greater than or equal to this size.
+ * \param nbytes The number of bytes to write/compare. buf must be greater than or equal to this size.
  * \param cb Called when the request is complete.
  * \param cb_arg Argument passed to cb.
  *
@@ -302,13 +303,14 @@ int spdk_bdev_readv(struct spdk_bdev_io *bdev_io);
  * be called (even if the request ultimately failed). Return
  * negated errno on failure, in which case the callback will not be called.
  */
-int spdk_bdev_write(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
+int spdk_bdev_write(struct spdk_bdev_desc *desc,
+		    struct spdk_mempool *bdev_io_pool,
 		    struct spdk_io_channel *ch,
 		    void *buf, uint64_t offset, uint64_t nbytes,
-		    spdk_bdev_io_completion_cb cb, void *cb_arg, struct spdk_bdev_io **result_bdev_io);
+		    spdk_bdev_io_completion_cb cb, void *cb_arg, struct spdk_bdev_io **result_bdev_io, bool is_write);
 
 /**
- * Submit a write request to the bdev on the given channel. This differs from
+ * Submit a write/compare request to the bdev on the given channel. This differs from
  * spdk_bdev_write by allowing the data buffer to be described in a scatter
  * gather list. Some physical devices place memory alignment requirements on
  * data and may not be able to directly transfer out of the buffers provided. In
@@ -467,18 +469,22 @@ struct spdk_bdev_io *spdk_bdev_read_init(struct spdk_bdev_desc *desc,
 
 int spdk_bdev_read_fini(struct spdk_bdev_io *bdev_io);
 
+/* Initialize a write or compare request */
 struct spdk_bdev_io   *spdk_bdev_write_init(struct spdk_bdev_desc *desc,
 		struct spdk_io_channel *ch,
 		struct spdk_mempool *bdev_io_pool,
 		spdk_bdev_io_completion_cb io_complete_cb,
 		void *io_complete_cb_arg,
 		struct iovec *iov,
-		int *iovcnt,
+		int32_t *iovcnt,
 		uint32_t length,
-		uint64_t offset);
+		uint64_t offset,
+		bool is_write);
+
+/* Cleanup a write or compare request */
 int spdk_bdev_write_fini(struct spdk_bdev_io *bdev_io);
 
-void spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io, void *abt_ctx);
+void spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io);
 
 int spdk_bdev_module_get_max_ctx_size(void);
 

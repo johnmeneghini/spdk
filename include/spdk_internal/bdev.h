@@ -127,7 +127,7 @@ struct spdk_bdev_module_if {
  * Function table for a block device backend.
  *
  * The backend block device function table provides a set of APIs to allow
- * communication with a backend. The main commands are read/write API
+ * communication with a backend. The main commands are read/write/compare API
  * calls for I/O via submit_request.
  */
 struct spdk_bdev_fn_table {
@@ -151,11 +151,11 @@ struct spdk_bdev_fn_table {
 	/** API to release vector of I/O Buffers  acquired for read */
 	int (*fini_read)(struct spdk_bdev_io *bdev_io);
 
-	/** API to acquire vector of I/O Buffers for write */
+	/** API to acquire vector of I/O Buffers for write or compare */
 	int (*init_write)(uint64_t offset, uint32_t length, struct iovec *iov, int *iovcnt,
 			  struct spdk_bdev_io *bdev_io);
 
-	/** API to release vector of I/O Buffers  acquired for write */
+	/** API to release vector of I/O Buffers  acquired for write or compare */
 	int (*fini_write)(struct spdk_bdev_io *bdev_io);
 
 	/**
@@ -173,7 +173,7 @@ struct spdk_bdev_fn_table {
 	uint64_t (*get_spin_time)(struct spdk_io_channel *ch);
 
 	/* Abort a given IO. */
-	void (*abort_request)(struct spdk_bdev_io *, void *abt_ctx);
+	void (*abort_request)(struct spdk_bdev_io *bdev_io);
 
 	/* Get ANA path state for a given bdev via a given controller */
 	uint8_t (*get_ana_state)(void *ctx, uint16_t cntlid);
@@ -319,7 +319,7 @@ struct spdk_bdev_io {
 			bool put_rbuf;
 		} read;
 		struct {
-			/** For basic write case, use our own iovec element */
+			/** For basic write/compare case, use our own iovec element */
 			struct iovec iov;
 
 			/** For SG buffer cases, array of iovecs to transfer. */

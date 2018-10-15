@@ -80,6 +80,7 @@ struct spdk_nvmf_request {
 	struct spdk_mempool		*io_rsrc_pool;
 	struct spdk_nvmf_request        *fused_partner;
 	bool 				is_fused_partner_failed;
+	bool                            fail_with_fused_aborted;
 	spdk_nvmf_set_sge		set_sge;
 	bool				sgl_filled;
 };

@@ -232,9 +232,10 @@ spdk_bdev_write_init(struct spdk_bdev_desc *desc,
 		     spdk_bdev_io_completion_cb cb,
 		     void *cb_arg,
 		     struct iovec *iov,
-		     int *iovcnt,
+		     int32_t *iovcnt,
 		     uint32_t length,
-		     uint64_t offset)
+		     uint64_t offset,
+		     bool is_write)
 {
 	memset(&bdev_io, 0, sizeof(bdev_io));
 	return &bdev_io;

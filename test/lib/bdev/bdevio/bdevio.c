@@ -193,9 +193,10 @@ __blockdev_write(void *arg1, void *arg2)
 	int rc = 0;
 
 	if (req->iovcnt) {
-		bdev_io = spdk_bdev_write_init(target->bdev_desc, target->ch, NULL, quick_test_complete, NULL,
+		bdev_io = spdk_bdev_write_init(target->bdev_desc, target->ch, NULL, quick_test_complete,
+					       NULL,
 					       req->iov,
-					       &req->iovcnt, req->data_len, req->offset);
+					       &req->iovcnt, req->data_len, req->offset, true);
 		if (bdev_io) {
 			if (spdk_bdev_writev(bdev_io) < 0) {
 				bdev_io = NULL;
@@ -203,7 +204,7 @@ __blockdev_write(void *arg1, void *arg2)
 		}
 	} else {
 		rc = spdk_bdev_write(target->bdev_desc, NULL, target->ch, req->buf, req->offset,
-				     req->data_len, quick_test_complete, NULL, &bdev_io);
+				     req->data_len, quick_test_complete, NULL, &bdev_io, true);
 	}
 
 	if (rc) {

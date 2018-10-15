@@ -97,7 +97,7 @@ bdev_blob_write(struct spdk_bs_dev *dev, struct spdk_io_channel *channel, void *
 	uint32_t block_size = spdk_bdev_get_block_size(bdev);
 
 	rc = spdk_bdev_write(__get_desc(dev), NULL, channel, payload, lba * block_size,
-			     lba_count * block_size, bdev_blob_io_complete, cb_args, NULL);
+			     lba_count * block_size, bdev_blob_io_complete, cb_args, NULL, true);
 	if (rc) {
 		cb_args->cb_fn(cb_args->channel, cb_args->cb_arg, rc);
 	}

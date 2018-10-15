@@ -759,6 +759,11 @@ spdk_nvmf_subsystem_adjust_max_nsid(struct spdk_nvmf_subsystem *subsystem)
 	}
 }
 
+/*
+ * This API removes the namespace (bdev) from ns_list but does not free it.
+ * spdk_bdev_close api has to be called explicitly by the applications to
+ * free the bdev and the associated resources.
+ */
 int
 spdk_nvmf_subsystem_remove_ns(struct spdk_nvmf_subsystem *subsystem, uint32_t nsid)
 {
@@ -801,7 +806,6 @@ spdk_nvmf_subsystem_remove_ns(struct spdk_nvmf_subsystem *subsystem, uint32_t ns
 	}
 
 	subsystem->dev.virt.ns_list[nsid - 1] = NULL;
-	spdk_bdev_close(subsystem->dev.virt.desc[nsid - 1]);
 	spdk_nvmf_subsystem_set_ns_changed(subsystem, nsid);
 
 	if (nsid == subsystem->dev.virt.max_nsid) {

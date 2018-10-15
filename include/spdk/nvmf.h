@@ -272,6 +272,7 @@ struct spdk_nvmf_tgt_opts {
 	uint32_t				nanagrpid;
 	uint32_t				mnan;
 	uint8_t                                 tgt_instance_id;
+	uint16_t                                fuses;
 };
 
 struct spdk_nvmf_subsystem *spdk_nvmf_create_subsystem(const char *nqn,

@@ -352,7 +352,7 @@ bdevperf_submit_single(struct io_target *target)
 		task->iov.iov_base = task->buf;
 		task->iov.iov_len = g_io_size;
 		spdk_bdev_write(desc, NULL, ch, task->buf, task->offset, g_io_size,
-				bdevperf_verify_write_complete, task, NULL);
+				bdevperf_verify_write_complete, task, NULL, true);
 	} else if ((g_rw_percentage == 100) ||
 		   (g_rw_percentage != 0 && ((rand_r(&seed) % 100) < g_rw_percentage))) {
 		rbuf = g_zcopy ? NULL : task->buf;
@@ -368,7 +368,7 @@ bdevperf_submit_single(struct io_target *target)
 		task->iov.iov_base = task->buf;
 		task->iov.iov_len = g_io_size;
 		spdk_bdev_write(desc, NULL, ch, task->buf, task->offset, g_io_size,
-				bdevperf_complete, task, NULL);
+				bdevperf_complete, task, NULL, true);
 	}
 
 	target->current_queue_depth++;

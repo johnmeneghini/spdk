@@ -867,7 +867,8 @@ int
 spdk_bdev_write(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
 		struct spdk_io_channel *ch,
 		void *buf, uint64_t offset, uint64_t nbytes,
-		spdk_bdev_io_completion_cb cb, void *cb_arg, struct spdk_bdev_io **result_bdev_io)
+		spdk_bdev_io_completion_cb cb, void *cb_arg, struct spdk_bdev_io **result_bdev_io,
+		bool is_write)
 {
 	struct spdk_bdev *bdev = desc->bdev;
 	struct spdk_bdev_io *bdev_io;
@@ -884,12 +885,20 @@ spdk_bdev_write(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
 
 	bdev_io = spdk_bdev_get_io(bdev_io_pool);
 	if (!bdev_io) {
-		SPDK_ERRLOG("bdev_io memory allocation failed duing write\n");
+		SPDK_ERRLOG("bdev_io memory allocation failed duing %s\n", is_write ? "write" : "compare");
 		return -ENOMEM;
 	}
 
 	bdev_io->ch = channel;
-	bdev_io->type = SPDK_BDEV_IO_TYPE_WRITE;
+	if (is_write) {
+		bdev_io->type = SPDK_BDEV_IO_TYPE_WRITE;
+	} else {
+		bdev_io->type = SPDK_BDEV_IO_TYPE_COMPARE;
+	}
+	/*
+	 * We use the same buffer to hold data for
+	 * both compare and write operations.
+	 */
 	bdev_io->u.write.iov.iov_base = buf;
 	bdev_io->u.write.iov.iov_len = nbytes;
 	bdev_io->u.write.iovs = &bdev_io->u.write.iov;
@@ -1780,7 +1789,8 @@ spdk_bdev_write_init(struct spdk_bdev_desc *desc,
 		     struct iovec *iov,
 		     int *iovcnt,
 		     uint32_t length,
-		     uint64_t offset)
+		     uint64_t offset,
+		     bool is_write)
 {
 	int rc = 0;
 	struct spdk_bdev_io *bdev_io;
@@ -1795,11 +1805,20 @@ spdk_bdev_write_init(struct spdk_bdev_desc *desc,
 	bdev_io = spdk_bdev_get_io(bdev_io_pool);
 
 	if (!bdev_io) {
-		SPDK_ERRLOG("bdev_io memory allocation failed during writev\n");
+		SPDK_ERRLOG("bdev_io memory allocation failed during %s\n", is_write ? "write" : "compare");
 		return NULL;
 	}
 
 	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb);
+
+	/*
+	 * set IO type BEFORE calling into application
+	 */
+	if (is_write) {
+		bdev_io->type = SPDK_BDEV_IO_TYPE_WRITE;
+	} else {
+		bdev_io->type = SPDK_BDEV_IO_TYPE_COMPARE;
+	}
 
 	if (bdev->fn_table->init_write) {
 		rc = bdev->fn_table->init_write(offset, length, iov, iovcnt, bdev_io);
@@ -1836,11 +1855,11 @@ spdk_bdev_write_fini(struct spdk_bdev_io *bdev_io)
 }
 
 void
-spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io, void *abt_ctx)
+spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io)
 {
 	struct spdk_bdev *bdev = bdev_io->bdev;
 	if (spdk_likely(bdev->fn_table->abort_request)) {
-		bdev->fn_table->abort_request(bdev_io, abt_ctx);
+		bdev->fn_table->abort_request(bdev_io);
 	} else {
 		SPDK_TRACELOG(SPDK_TRACE_DEBUG, "Bdev abort_request not plugged in\n");
 	}
@@ -1862,6 +1881,7 @@ spdk_bdev_io_get_iovec(struct spdk_bdev_io *bdev_io, struct iovec **iovp, int *i
 		iovcnt = bdev_io->u.read.iovcnt;
 		break;
 	case SPDK_BDEV_IO_TYPE_WRITE:
+	case SPDK_BDEV_IO_TYPE_COMPARE:
 		iovs = bdev_io->u.write.iovs;
 		iovcnt = bdev_io->u.write.iovcnt;
 		break;
