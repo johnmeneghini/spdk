@@ -64,7 +64,8 @@
 /*
  * Misc defines
  */
-#define BCM_RQ_BUFFER_SIZE 		2048 /* Driver needs to be in sync. */
+#define BCM_RQ_BUFFER_SIZE 		128 /* Driver needs to be in sync. */
+#define BCM_LS_RQ_BUFFER_SIZE 		2048 /* Driver needs to be in sync. */
 #define BCM_MAX_LS_REQ_CMD_SIZE    	1536
 #define BCM_MAX_RESP_BUFFER_SIZE 	64
 #define BCM_MAX_IOVECS			(MAX_NUM_OF_IOVECTORS + 2) /* 2 for skips */
@@ -558,10 +559,8 @@ struct spdk_nvmf_bcm_fc_ls_rqst {
 struct __attribute__((__packed__)) spdk_nvmf_bcm_fc_rq_buf_nvme_cmd {
 	struct spdk_nvmf_fc_cmnd_iu cmd_iu;
 	struct spdk_nvmf_fc_xfer_rdy_iu xfer_rdy;
-	struct bcm_sge sge[BCM_MAX_IOVECS];
 	uint8_t rsvd[BCM_RQ_BUFFER_SIZE - (sizeof(struct spdk_nvmf_fc_cmnd_iu)
-					   + sizeof(struct spdk_nvmf_fc_xfer_rdy_iu)
-					   + (sizeof(struct bcm_sge) * BCM_MAX_IOVECS))];
+					   + sizeof(struct spdk_nvmf_fc_xfer_rdy_iu))];
 };
 
 SPDK_STATIC_ASSERT(sizeof(struct spdk_nvmf_bcm_fc_rq_buf_nvme_cmd) ==
@@ -574,12 +573,12 @@ struct __attribute__((__packed__)) spdk_nvmf_bcm_fc_rq_buf_ls_request {
 	uint8_t rqst[BCM_MAX_LS_REQ_CMD_SIZE];
 	uint8_t resp[BCM_MAX_RESP_BUFFER_SIZE];
 	struct spdk_nvmf_bcm_fc_ls_rqst ls_rqst;
-	uint8_t rsvd[BCM_RQ_BUFFER_SIZE - (sizeof(struct spdk_nvmf_bcm_fc_ls_rqst) +
-					   BCM_MAX_RESP_BUFFER_SIZE + BCM_MAX_LS_REQ_CMD_SIZE)];
+	uint8_t rsvd[BCM_LS_RQ_BUFFER_SIZE - (sizeof(struct spdk_nvmf_bcm_fc_ls_rqst) +
+					      BCM_MAX_RESP_BUFFER_SIZE + BCM_MAX_LS_REQ_CMD_SIZE)];
 };
 
 SPDK_STATIC_ASSERT(sizeof(struct spdk_nvmf_bcm_fc_rq_buf_ls_request) ==
-		   BCM_RQ_BUFFER_SIZE, "RQ Buffer overflow");
+		   BCM_LS_RQ_BUFFER_SIZE, "RQ Buffer overflow");
 
 /*
  * Function protos
