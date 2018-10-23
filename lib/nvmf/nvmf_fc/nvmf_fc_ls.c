@@ -435,7 +435,7 @@ nvmf_fc_ls_free_connection(struct spdk_nvmf_bcm_fc_port *fc_port,
 	}
 
 	/* Free connection fc_req pool */
-	spdk_nvmf_bcm_fc_free_conn_req_mempool(fc_conn);
+	spdk_nvmf_bcm_fc_free_conn_req_ring(fc_conn);
 
 	TAILQ_INSERT_TAIL(&fc_port->ls_rsrc_pool.fc_conn_free_list,
 			  fc_conn, port_free_conn_list_link);
@@ -714,7 +714,7 @@ nvmf_fc_ls_add_conn_to_poller(
 	}
 
 	/* alloc fc req objects for this connection */
-	if (spdk_nvmf_bcm_fc_create_conn_req_mempool(fc_conn)) {
+	if (spdk_nvmf_bcm_fc_create_conn_req_ring(fc_conn)) {
 		SPDK_ERRLOG("Alloc fc_req pool for connection failed.");
 		goto failure;
 	}

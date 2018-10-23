@@ -71,9 +71,9 @@ void spdk_nvmf_bcm_fc_req_abort_complete(void *arg1, void *arg2);
 
 bool spdk_nvmf_bcm_fc_req_in_xfer(struct spdk_nvmf_bcm_fc_request *fc_req);
 
-int spdk_nvmf_bcm_fc_create_conn_req_mempool(struct spdk_nvmf_bcm_fc_conn *fc_conn);
+int spdk_nvmf_bcm_fc_create_conn_req_ring(struct spdk_nvmf_bcm_fc_conn *fc_conn);
 
-int spdk_nvmf_bcm_fc_free_conn_req_mempool(struct spdk_nvmf_bcm_fc_conn *fc_conn);
+int spdk_nvmf_bcm_fc_free_conn_req_ring(struct spdk_nvmf_bcm_fc_conn *fc_conn);
 
 void *
 spdk_dma_malloc(size_t size, size_t align, uint64_t *phys_addr)
@@ -1090,12 +1090,12 @@ spdk_nvmf_bcm_fc_req_in_xfer(struct spdk_nvmf_bcm_fc_request *fc_req)
 	return false;
 }
 
-int spdk_nvmf_bcm_fc_create_conn_req_mempool(struct spdk_nvmf_bcm_fc_conn *fc_conn)
+int spdk_nvmf_bcm_fc_create_conn_req_ring(struct spdk_nvmf_bcm_fc_conn *fc_conn)
 {
 	return 0;
 }
 
-int spdk_nvmf_bcm_fc_free_conn_req_mempool(struct spdk_nvmf_bcm_fc_conn *fc_conn)
+int spdk_nvmf_bcm_fc_free_conn_req_ring(struct spdk_nvmf_bcm_fc_conn *fc_conn)
 {
 	return 0;
 }

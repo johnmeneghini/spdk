@@ -269,10 +269,14 @@ nvmf_fc_rqpair_get_frame_buffer(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint16_t rqi
 }
 
 int
-spdk_nvmf_bcm_fc_free_conn_req_mempool(struct spdk_nvmf_bcm_fc_conn *fc_conn)
+spdk_nvmf_bcm_fc_free_conn_req_ring(struct spdk_nvmf_bcm_fc_conn *fc_conn)
 {
+	if (fc_conn->fc_req) {
+		free(fc_conn->fc_req);
+		fc_conn->fc_req = NULL;
+	}
 	if (fc_conn->fc_request_pool) {
-		spdk_mempool_free(fc_conn->fc_request_pool);
+		spdk_ring_free(fc_conn->fc_request_pool);
 		fc_conn->fc_request_pool = NULL;
 		fc_conn->fc_req_count = 0;
 	}
@@ -280,29 +284,61 @@ spdk_nvmf_bcm_fc_free_conn_req_mempool(struct spdk_nvmf_bcm_fc_conn *fc_conn)
 }
 
 int
-spdk_nvmf_bcm_fc_create_conn_req_mempool(struct spdk_nvmf_bcm_fc_conn *fc_conn)
+spdk_nvmf_bcm_fc_create_conn_req_ring(struct spdk_nvmf_bcm_fc_conn *fc_conn)
 {
-	char name[64];
-	uint32_t poweroftwo = 1;
+	int32_t poweroftwo = 1;
+	uint32_t i, qd;
+	struct spdk_nvmf_bcm_fc_request *obj;
 
-	while (poweroftwo <= fc_conn->max_queue_depth) {
+	/* Need to add 1 to distinguish between empty and full ring */
+	while (poweroftwo <= (fc_conn->max_queue_depth + 1)) {
 		poweroftwo *= 2;
 	}
 
-	snprintf(name, sizeof(name), "NVMF_FC_REQ_POOL:%ld:%d", fc_conn->conn_id,
-		 fc_conn->hwqp->fc_port->port_hdl);
-
-	fc_conn->fc_request_pool = spdk_mempool_create(name,
-				   poweroftwo - 1,
-				   sizeof(struct spdk_nvmf_bcm_fc_request),
-				   0, SPDK_ENV_SOCKET_ID_ANY);
+	fc_conn->fc_request_pool = spdk_ring_create(SPDK_RING_TYPE_SP_SC,
+				   poweroftwo,
+				   SPDK_ENV_SOCKET_ID_ANY);
 
 	if (fc_conn->fc_request_pool == NULL) {
 		SPDK_ERRLOG("create fc conn request pool failed\n");
-		return -1;
+		goto error;
 	}
-	fc_conn->fc_req_count = (poweroftwo - 1);
+
+	/*
+	 * Create the ring objects. The number of fc-requests to be more
+	 * than the actual SQ size. This is to handle race conditions where the
+	 * target driver may send back a RSP and before the target driver
+	 * gets to process the CQE for the RSP, the initiator may have sent a
+	 * new command. Depending on the load on the HWQP, there is a slim
+	 * possibility that the target reaps the RQE corresponding to the new
+	 * command before processing the CQE corresponding to the RSP.
+	 * Allocating 120% of the SQ size.
+	 */
+
+	qd = (fc_conn->max_queue_depth * 120) / 100;
+
+	fc_conn->fc_req = calloc(qd, sizeof(struct spdk_nvmf_bcm_fc_request));
+	if (!fc_conn->fc_req) {
+		SPDK_ERRLOG("create fc req ring objects failed\n");
+		goto error;
+	}
+
+	fc_conn->fc_req_count = qd;
+
+	/* Initialise value in ring objects and queue the objects to ring */
+	for (i = 0; i < fc_conn->fc_req_count; i++) {
+		obj = fc_conn->fc_req + i;
+		obj->magic = 0xDEADBEEF;
+
+		if (spdk_ring_enqueue(fc_conn->fc_request_pool, (void **)&obj, 1) == 0) {
+			SPDK_ERRLOG("fc req ring enqueue objects failed %d\n", i);
+			goto error;
+		}
+	}
 	return 0;
+error:
+	(void)spdk_nvmf_bcm_fc_free_conn_req_ring(fc_conn);
+	return -1;
 }
 
 static inline void
@@ -474,8 +510,7 @@ nvmf_fc_alloc_req_buf(struct spdk_nvmf_bcm_fc_conn *fc_conn)
 	struct spdk_nvmf_bcm_fc_hwqp *hwqp = fc_conn->hwqp;
 	struct spdk_nvmf_bcm_fc_request *fc_req;
 
-	fc_req = (struct spdk_nvmf_bcm_fc_request *)spdk_mempool_get(fc_conn->fc_request_pool);
-	if (!fc_req) {
+	if (spdk_ring_dequeue(fc_conn->fc_request_pool, (void **)&fc_req, 1) == 0) {
 		SPDK_ERRLOG("Alloc request buffer failed\n");
 		return NULL;
 	}
@@ -500,7 +535,7 @@ nvmf_fc_free_req_buf(struct spdk_nvmf_bcm_fc_conn *fc_conn, struct spdk_nvmf_bcm
 	fc_req->magic = 0xDEADBEEF;
 
 	TAILQ_REMOVE(&hwqp->in_use_reqs, fc_req, link);
-	spdk_mempool_put(fc_conn->fc_request_pool, (void *)fc_req);
+	(void)spdk_ring_enqueue(fc_conn->fc_request_pool, (void **)&fc_req, 1);
 }
 
 static void

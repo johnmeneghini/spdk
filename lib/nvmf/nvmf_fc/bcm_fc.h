@@ -450,8 +450,10 @@ struct spdk_nvmf_bcm_fc_conn {
 	/* for hwqp's connection list */
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_conn) link;
 
-	struct spdk_mempool *fc_request_pool;
+	struct spdk_ring *fc_request_pool;
 	uint32_t fc_req_count;
+	/* Memory for the fc_req objects */
+	struct spdk_nvmf_bcm_fc_request *fc_req;
 };
 
 /*
@@ -600,9 +602,9 @@ void spdk_nvmf_bcm_fc_handle_ls_rqst(struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst);
 int spdk_nvmf_bcm_fc_xmt_ls_rsp(struct spdk_nvmf_bcm_fc_nport *tgtport,
 				struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst);
 
-int spdk_nvmf_bcm_fc_create_conn_req_mempool(struct spdk_nvmf_bcm_fc_conn *fc_conn);
+int spdk_nvmf_bcm_fc_create_conn_req_ring(struct spdk_nvmf_bcm_fc_conn *fc_conn);
 
-int spdk_nvmf_bcm_fc_free_conn_req_mempool(struct spdk_nvmf_bcm_fc_conn *fc_conn);
+int spdk_nvmf_bcm_fc_free_conn_req_ring(struct spdk_nvmf_bcm_fc_conn *fc_conn);
 
 void spdk_nvmf_bcm_fc_port_list_add(struct spdk_nvmf_bcm_fc_port *fc_port);
 
