@@ -515,9 +515,33 @@ nvmf_fc_alloc_req_buf(struct spdk_nvmf_bcm_fc_conn *fc_conn)
 		return NULL;
 	}
 
-	memset(fc_req, 0, sizeof(struct spdk_nvmf_bcm_fc_request));
-	TAILQ_INSERT_TAIL(&hwqp->in_use_reqs, fc_req, link);
+	/* Reset fc_req fields */
+	fc_req->xri	= NULL;
+	fc_req->magic	= 0;
+	fc_req->is_aborted	= 0;
+	fc_req->transfered_len 	= 0;
+	fc_req->link.tqe_next 	= NULL;
+	fc_req->link.tqe_prev 	= NULL;
+	fc_req->pending_link.tqe_next 	= NULL;
+	fc_req->pending_link.tqe_prev 	= NULL;
+	fc_req->fused_link.tqe_next 	= NULL;
+	fc_req->fused_link.tqe_prev 	= NULL;
 	TAILQ_INIT(&fc_req->abort_cbs);
+
+	/* Reset nvmf_req fields */
+	fc_req->req.iovcnt	 = 0;
+	fc_req->req.data	 = NULL;
+	fc_req->req.unmap_bdesc  = NULL;
+	fc_req->req.bdev_io	 = NULL;
+	fc_req->req.io_rsrc_pool = NULL;
+	fc_req->req.sgl_filled	 = false;
+	fc_req->req.fused_partner 	    = NULL;
+	fc_req->req.is_fused_partner_failed = false;
+	for (int i = 0; i < MAX_REQ_STATES; i ++) {
+		fc_req->req.req_state_trace[i] = 0;
+	}
+
+	TAILQ_INSERT_TAIL(&hwqp->in_use_reqs, fc_req, link);
 	return fc_req;
 }
 
@@ -1693,8 +1717,10 @@ static int nvmf_fc_set_sge(struct spdk_nvmf_request *req,
 	sge[i].data_offset = offset;
 
 	if (index == (iovcnt - 1)) {
-		sge[i].last = true;
-		req->sgl_filled = true;
+		sge[i].last	= true;
+		req->sgl_filled	= true;
+	} else {
+		sge[i].last = false;
 	}
 
 	return 0; /* success */
@@ -1728,10 +1754,12 @@ nvmf_fc_fill_sgl(struct spdk_nvmf_bcm_fc_request *fc_req)
 
 	/* 1st SGE is skip. */
 	sge->sge_type = BCM_SGE_TYPE_SKIP;
+	sge->last = false;
 	sge++;
 
 	/* 2nd SGE is skip. */
 	sge->sge_type = BCM_SGE_TYPE_SKIP;
+	sge->last = false;
 	sge++;
 
 	if (fc_req->req.sgl_filled) {
@@ -1758,6 +1786,7 @@ nvmf_fc_fill_sgl(struct spdk_nvmf_bcm_fc_request *fc_req)
 				/* last */
 				sge->last = true;
 			} else {
+				sge->last = false;
 				sge++;
 			}
 		}
@@ -2054,7 +2083,6 @@ nvmf_fc_handle_nvme_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_frame_hdr
 	fc_req->oxid = from_be16(&fc_req->oxid);
 	fc_req->rpi = fc_conn->rpi;
 	fc_req->csn = from_be32(&cmd_iu->csn);
-	fc_req->buf_index = buf_idx;
 	fc_req->poller_lcore = hwqp->lcore_id;
 	fc_req->hwqp = hwqp;
 	fc_req->fc_conn = fc_conn;
@@ -2658,7 +2686,6 @@ nvmf_fc_sendframe_fc_rsp(struct spdk_nvmf_bcm_fc_request *fc_req,
 	} else {
 		cqe_t cqe;
 
-		memset(&cqe, 0, sizeof(cqe_t));
 		cqe.u.wcqe.status = BCM_FC_WCQE_STATUS_SUCCESS;
 
 		/*
@@ -2880,18 +2907,12 @@ spdk_nvmf_bcm_fc_xmt_srsr_req(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 		goto done;
 	}
 
-	/* Make sure caller allocated space for two sges. */
-	if (srsr->sgl.len != (2 * sizeof(bcm_sge_t))) {
-		goto done;
-	}
-	sge = srsr->sgl.virt;
-	memset(sge, 0, (sizeof(bcm_sge_t) * 2));
-
 	xri = spdk_nvmf_bcm_fc_get_xri(hwqp);
 	if (!xri) {
 		/* Might be we should reserve some XRI for this */
 		goto done;
 	}
+	sge = (bcm_sge_t *) xri->sgl_virt;
 
 	ctx = calloc(1, sizeof(fc_caller_ctx_t));
 	if (!ctx) {
@@ -2906,6 +2927,7 @@ spdk_nvmf_bcm_fc_xmt_srsr_req(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 	sge->buffer_address_low  = PTR_TO_ADDR32_LO(srsr->rqst.phys);
 	sge->sge_type = BCM_SGE_TYPE_DATA;
 	sge->buffer_length = srsr->rqst.len;
+	sge->last = false;
 	sge ++;
 
 	sge->buffer_address_high = PTR_TO_ADDR32_HI(srsr->rsp.phys);

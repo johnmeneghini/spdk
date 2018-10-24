@@ -425,12 +425,6 @@ bls_rej:
 	return;
 }
 
-static inline void
-nvmf_fc_zero_sgl(void *sge)
-{
-	memset(sge, 0, (sizeof(bcm_sge_t) * BCM_MAX_IOVECS));
-}
-
 /*
  * Helper function to return an XRI back. If XRI is not
  * available return NULL (so that the IO can be dropped)
@@ -448,8 +442,6 @@ spdk_nvmf_bcm_fc_get_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 		hwqp->counters.no_xri++;
 		return NULL;
 	}
-
-	nvmf_fc_zero_sgl(xri->sgl_virt);
 
 	xri->is_active = false;
 	return xri;

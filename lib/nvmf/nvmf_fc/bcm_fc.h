@@ -374,7 +374,6 @@ struct spdk_nvmf_bcm_fc_request {
 	union nvmf_h2c_msg cmd;
 	struct spdk_nvmf_fc_ersp_iu ersp;
 	uint32_t poller_lcore;
-	uint16_t buf_index;
 	struct spdk_nvmf_bcm_fc_xri *xri;
 	uint16_t oxid;
 	uint16_t rpi;
