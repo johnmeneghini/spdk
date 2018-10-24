@@ -46,7 +46,14 @@
 #include "spdk_internal/log.h"
 
 #define MIN_KEEP_ALIVE_TIMEOUT 10000
-#define SPDK_NVMF_BLOCK_SIZE 4096
+
+/*
+ * The Maximum Data Transfer Size (MDTS) is
+ * specified in units of minimum memory page size,
+ * not the block size.
+ *
+ */
+#define SPDK_NVMF_PAGE_SIZE 4096
 
 /* Controller ID information is a 16-bit information formed by
  * 6 bits (least significant) of target instance information
@@ -75,7 +82,17 @@ nvmf_init_discovery_session_properties(struct spdk_nvmf_session *session)
 	session->vcdata.nvmf_specific.ctrattr.ctrlr_model = SPDK_NVMF_CTRLR_MODEL_DYNAMIC;
 	session->vcdata.nvmf_specific.msdbd = 1; /* target supports single SGL in capsule */
 	memcpy(&session->vcdata.sgls, &g_nvmf_tgt.opts.sgls, sizeof(uint32_t));
-	session->vcdata.mdts = spdk_u32log2(g_nvmf_tgt.opts.max_io_size / SPDK_NVMF_BLOCK_SIZE);
+
+	/*
+	 * Maximum Data Transfer Size (MDTS): The value is in units of the minimum
+	 * memory page size (CAP.MPSMIN) and is reported as a power of two (2^n).
+	 * A value of 0h indicates no restrictions on transfer size. The restriction
+	 * includes metadata if it is interleaved with the logical block data.
+	 * The restriction does not apply to commands that do not transfer data
+	 * between the host and the controller (e.g., Write Uncorrectable command
+	 * or Write Zeroes command). - NVM-Express-1.3b Figure 109.
+	 */
+	session->vcdata.mdts = spdk_u32log2(g_nvmf_tgt.opts.max_io_size / SPDK_NVMF_PAGE_SIZE);
 
 	strncpy((char *)session->vcdata.subnqn, SPDK_NVMF_DISCOVERY_NQN, sizeof(session->vcdata.subnqn));
 
@@ -86,8 +103,8 @@ nvmf_init_discovery_session_properties(struct spdk_nvmf_session *session)
 	session->vcprop.cap.bits.ams = 0;	/* optional arb mechanisms */
 	session->vcprop.cap.bits.dstrd = 0;	/* fixed to 0 for NVMf */
 	session->vcprop.cap.bits.css_nvm = 1; /* NVM command set */
-	session->vcprop.cap.bits.mpsmin = 0; /* 2 ^ 12 + mpsmin == 4k */
-	session->vcprop.cap.bits.mpsmax = 0; /* 2 ^ 12 + mpsmax == 4k */
+	session->vcprop.cap.bits.mpsmin = spdk_u32log2((SPDK_NVMF_PAGE_SIZE >> 12)); /* 2 ^ (12 + mpsmin) */
+	session->vcprop.cap.bits.mpsmax = spdk_u32log2((SPDK_NVMF_PAGE_SIZE >> 12)); /* 2 ^ (12 + mpsmax) */
 
 	if (g_nvmf_tgt.opts.nvmever == SPDK_NVME_VERSION(1, 3, 0)) {
 		/* Version Supported: 1.3.0 */
@@ -114,7 +131,7 @@ nvmf_init_nvme_session_properties(struct spdk_nvmf_session *session)
 {
 	uint16_t mqes;
 
-	assert((g_nvmf_tgt.opts.max_io_size % SPDK_NVMF_BLOCK_SIZE) == 0);
+	assert((g_nvmf_tgt.opts.max_io_size % SPDK_NVMF_PAGE_SIZE) == 0);
 
 	/* Init the controller details */
 	session->subsys->ops->ctrlr_get_data(session);
@@ -129,7 +146,7 @@ nvmf_init_nvme_session_properties(struct spdk_nvmf_session *session)
 	session->vcdata.cntlid = session->cntlid;
 	session->vcdata.kas = g_nvmf_tgt.opts.kas;
 	session->vcdata.maxcmd = session->host->max_io_queue_depth;
-	session->vcdata.mdts = spdk_u32log2(g_nvmf_tgt.opts.max_io_size / SPDK_NVMF_BLOCK_SIZE);
+	session->vcdata.mdts = spdk_u32log2(g_nvmf_tgt.opts.max_io_size / SPDK_NVMF_PAGE_SIZE);
 	memcpy(&session->vcdata.sgls, &g_nvmf_tgt.opts.sgls, sizeof(uint32_t));
 
 	session->vcdata.nvmf_specific.ioccsz = sizeof(struct spdk_nvme_cmd) / 16;
