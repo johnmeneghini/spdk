@@ -299,6 +299,12 @@ size_t spdk_ring_dequeue(struct spdk_ring *ring, void **objs, size_t count);
 
 uint64_t spdk_vtophys(void *buf);
 
+/**
+ * \brief Convert a virt address to a physical address and length
+ * Returns: phys_addr and phys_length
+ */
+uint64_t spdk_vtophys_and_len(void *buf, size_t length, size_t *phys_len);
+
 struct spdk_pci_addr {
 	uint32_t			domain;
 	uint8_t				bus;
