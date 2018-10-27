@@ -1682,9 +1682,9 @@ nvmf_fc_process_wqe_release(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint16_t wqid)
 }
 
 static int nvmf_fc_set_sge(struct spdk_nvmf_request *req,
-			   int iovcnt,
+			   uint32_t length,
 			   uint32_t offset,
-			   void *iov_base,
+			   void *iov_va,
 			   size_t iov_len,
 			   int index)
 {
@@ -1700,23 +1700,25 @@ static int nvmf_fc_set_sge(struct spdk_nvmf_request *req,
 	}
 	sge = (bcm_sge_t *) sgl;
 
-	assert(iovcnt <= MAX_NUM_OF_IOVECTORS && iovcnt > 0);
-	if (iovcnt < 1 || iovcnt > MAX_NUM_OF_IOVECTORS) {
-		SPDK_ERRLOG("Error: invalid iovcnt\n");
+	assert(index <= MAX_NUM_OF_IOVECTORS);
+	if (index > MAX_NUM_OF_IOVECTORS) {
+		SPDK_ERRLOG("Error: invalid index %d\n", index);
 		return -1;
 	}
 
 	/* First 2 SGEs are reserved. */
 	i = index + 2;
 
-	iov_phys = spdk_vtophys(iov_base);
+	iov_phys = spdk_vtophys(iov_va);
 	sge[i].sge_type = BCM_SGE_TYPE_DATA;
 	sge[i].buffer_address_low  = PTR_TO_ADDR32_LO(iov_phys);
 	sge[i].buffer_address_high = PTR_TO_ADDR32_HI(iov_phys);
 	sge[i].buffer_length = iov_len;
 	sge[i].data_offset = offset;
 
-	if (index == (iovcnt - 1)) {
+	offset += iov_len;
+
+	if (offset == length) {
 		sge[i].last	= true;
 		req->sgl_filled	= true;
 	} else {

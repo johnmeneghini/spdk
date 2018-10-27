@@ -77,16 +77,16 @@ typedef void (*spdk_nvmf_subsystem_disconnect_fn)(void *cb_ctx, struct spdk_nvmf
  * corresponding sgl index
  *
  * \param req         transport specific stuct pointer
- * \param iovcnt      total number of iovecs
+ * \param length      total length of transfer
  * \param offset      offset into the transfer, starting from 0
- * \param iov_base    iovec entry address
+ * \param iov_va      iovec entry virutal address
  * \param iov_len     iovec entry length
  * \param index       index into sgl
  */
 typedef int (*spdk_nvmf_set_sge)(struct spdk_nvmf_request *req,
-				 int iovcnt,
+				 uint32_t length,
 				 uint32_t offset,
-				 void *iov_base,
+				 void *iov_va,
 				 size_t iov_len,
 				 int index);
 
