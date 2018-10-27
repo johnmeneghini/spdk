@@ -106,6 +106,107 @@ vtophys_positive_test(void)
 	return rc;
 }
 
+static int
+vtophys_and_len_positive_test(void)
+{
+	void *p = NULL;
+	int i;
+	size_t phys_len, length = 1;
+	uint64_t phys_addr = 0;
+	int rc = 0;
+
+	for (i = 0; i < 31; i++) {
+		p = spdk_dma_zmalloc(length, 512, NULL);
+		if (p == NULL)
+			continue;
+
+		phys_addr = spdk_vtophys_and_len(p, length, &phys_len);
+
+		if (phys_addr == SPDK_VTOPHYS_ERROR) {
+			rc = -1;
+			printf("Err: VA=%p is not mapped to a huge_page,\n", p);
+			spdk_dma_free(p);
+			break;
+		}
+
+		if (phys_len != length) {
+			rc = -1;
+			printf("Err: VA %p : phys_len %lx != length %lx\n", p, phys_len, length);
+			spdk_dma_free(p);
+			break;
+		}
+
+		spdk_dma_free(p);
+		length = length << 1;
+	}
+
+	if (!rc)
+		printf("vtophys_and_len_positive_tes passed\n");
+	else
+		printf("vtophys_and_len_positive_tes failed\n");
+
+	return rc;
+}
+
+static int
+vtophys_and_len_negative_test(void)
+{
+	void *p = NULL;
+	int i;
+	size_t phys_len, length = 1;
+	uint64_t phys_addr = 0;
+	int rc = 0;
+
+	for (i = 0; i < 31; i++) {
+
+		p = malloc(length);
+		if (p == NULL)
+			continue;
+
+		phys_addr = spdk_vtophys_and_len(p, length, &phys_len);
+
+		if (phys_addr != SPDK_VTOPHYS_ERROR) {
+			rc = -1;
+			printf("Err: VA=%p mapped to a huge_page,\n", p);
+			free(p);
+			break;
+		}
+
+		if (phys_len != 0) {
+			rc = -1;
+			printf("Err: VA %p : phys_len %lx != 0\n", p, phys_len);
+			free(p);
+			break;
+		}
+
+		free(p);
+		length = length << 1;
+	}
+
+	/* Test addresses that are not in the valid x86-64 usermode range */
+
+	p = (void *)0x0000800000000000ULL;
+
+	phys_addr = spdk_vtophys_and_len(p, 4096, &phys_len);
+
+	if (phys_addr != SPDK_VTOPHYS_ERROR) {
+		rc = -1;
+		printf("Err: kernel-mode address incorrectly allowed\n");
+	}
+
+	if (phys_len != 0) {
+		rc = -1;
+		printf("Err: phys_len %lx != 0\n", phys_len);
+	}
+
+	if (!rc)
+		printf("vtophys_and_len_negative_test passed\n");
+	else
+		printf("vtophys_and_len_negative_test failed\n");
+
+	return rc;
+}
+
 static void
 test_map_notify(void *cb_ctx, struct spdk_mem_map *map,
 		enum spdk_mem_map_notify_action action,
@@ -161,5 +262,13 @@ main(int argc, char **argv)
 		return rc;
 
 	rc = mem_map_test();
+	if (rc < 0)
+		return rc;
+
+	rc = vtophys_and_len_positive_test();
+	if (rc < 0)
+		return rc;
+
+	rc = vtophys_and_len_negative_test();
 	return rc;
 }
