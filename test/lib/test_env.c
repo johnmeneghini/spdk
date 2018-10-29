@@ -92,6 +92,36 @@ uint64_t spdk_vtophys(void *buf)
 	}
 }
 
+uint64_t
+spdk_vtophys_and_len(void *buf, size_t length, size_t *phys_len)
+{
+	if (ut_fail_vtophys) {
+		*phys_len = 0;
+		return (uint64_t) - 1;
+	} else {
+		*phys_len = length;
+		return (uintptr_t)buf;
+	}
+}
+
+int
+spdk_dma_virt_to_iovec(void *buf, uint32_t len, struct iovec *iov, int iovcnt)
+{
+	/* Check if enough iovcnt is passed */
+	if (!iovcnt || !iov) {
+		return 0;
+	}
+
+	if (ut_fail_vtophys) {
+		return 0;
+	}
+
+	iov[0].iov_base = buf;
+	iov[0].iov_len = len;
+
+	return 1;
+}
+
 void *
 spdk_memzone_reserve(const char *name, size_t len, int socket_id, unsigned flags)
 {
