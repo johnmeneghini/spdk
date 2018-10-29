@@ -84,8 +84,10 @@ struct spdk_nvmf_request {
 	bool				sgl_filled;
 };
 
-int
-spdk_nvmf_request_exec(struct spdk_nvmf_request *req);
+spdk_nvmf_request_exec_status spdk_nvmf_request_setup_dma(struct spdk_nvmf_request *req,
+		uint32_t max_io_size);
+
+int spdk_nvmf_request_exec(struct spdk_nvmf_request *req);
 
 int spdk_nvmf_request_complete(struct spdk_nvmf_request *req);
 

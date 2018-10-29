@@ -34,6 +34,7 @@
 #include "spdk/stdinc.h"
 
 #include "spdk_cunit.h"
+#include "lib/test_env.c"
 
 #include "request.c"
 

@@ -301,6 +301,111 @@ spdk_nvmf_request_abort(struct spdk_nvmf_request *req)
 	return 0;
 }
 
+static spdk_nvmf_request_exec_status
+spdk_nvmf_request_setup_sgl(struct spdk_nvmf_request *req)
+{
+	size_t length = (size_t) req->length;
+	caddr_t bp = (caddr_t) req->data;
+	size_t plength, offset  = 0;
+	uint64_t pa;
+	int rc, i = 0;
+
+	assert(req->set_sge != NULL);
+	if (req->set_sge == NULL) {
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_ERROR;
+	}
+
+	req->iovcnt = 0;
+
+	while (offset < length) {
+		pa = spdk_vtophys_and_len(bp, length, &plength);
+
+		if (pa == SPDK_VTOPHYS_ERROR) {
+			SPDK_ERRLOG("spdk_vtophys_and_len returned SPDK_VTOPHYS_ERROR, VA %p, offset 0x%lx, length 0x%lx\n",
+				    bp, offset, length);
+			return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_ERROR;
+		}
+
+		rc = req->set_sge(req, (uint32_t) length, (uint32_t) offset, bp, plength, i);
+
+		if (rc) {
+			SPDK_ERRLOG("set_sge function returned error %d, VA %p, offset 0x%lx, length 0x%lx, index %d\n", rc,
+				    bp, offset, length, i);
+			return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_ERROR;
+		}
+
+		offset += plength;
+		bp += plength;
+		i++;
+	}
+
+	req->iovcnt = i;
+
+	return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_READY;
+}
+
+spdk_nvmf_request_exec_status
+spdk_nvmf_request_setup_dma(struct spdk_nvmf_request *req, uint32_t max_io_size)
+{
+	spdk_nvmf_request_exec_status status;
+	bool data_allocated = false;
+
+	if (req->length == 0) {
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_READY;
+	}
+
+	/* Some transports don't pre-allocate a data buffer. */
+
+	if (!req->data) {
+		if ((req->data = spdk_dma_zmalloc(req->length, 4096, NULL)) == NULL) {
+			SPDK_TRACELOG(SPDK_TRACE_NVMF, "Buffer allocation failed for command 0x%x, length %d\n",
+				      req->cmd->nvme_cmd.opc,
+				      req->length);
+			return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING;
+		}
+		data_allocated = true;
+	}
+
+	/* Some transports don't provide a set_sge function */
+
+	/* XXX The max_io_size hack is temporary.  It will be removed after debugging. XXX */
+	if (req->set_sge != NULL && max_io_size > 65536) {
+
+		status = spdk_nvmf_request_setup_sgl(req);
+
+		if (status == SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_ERROR) {
+
+			SPDK_TRACELOG(SPDK_TRACE_NVMF, "SGL setup failed for command 0x%x, length %d\n",
+				      req->cmd->nvme_cmd.opc, req->length);
+
+			if (data_allocated) {
+				spdk_dma_free(req->data);
+				req->data = NULL;
+			}
+		}
+
+		return status;
+	}
+
+	/* Do it the old fasion way. */
+	req->iovcnt = spdk_dma_virt_to_iovec(req->data, req->length, req->iov, MAX_NUM_OF_IOVECTORS);
+
+	if (req->iovcnt == 0) {
+
+		SPDK_TRACELOG(SPDK_TRACE_NVMF, "SGL setup failed for command 0x%x, length %d\n",
+			      req->cmd->nvme_cmd.opc, req->length);
+
+		if (data_allocated) {
+			spdk_dma_free(req->data);
+			req->data = NULL;
+		}
+
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_ERROR;
+	}
+
+	return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_READY;
+}
+
 int
 spdk_nvmf_request_exec(struct spdk_nvmf_request *req)
 {
