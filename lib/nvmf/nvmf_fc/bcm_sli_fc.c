@@ -1889,6 +1889,7 @@ nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req)
 {
 	struct spdk_nvme_cmd *cmd = &fc_req->req.cmd->nvme_cmd;
 	struct spdk_nvmf_bcm_fc_conn *fc_conn = fc_req->fc_conn;
+	spdk_nvmf_request_exec_status status;
 
 	/* Allocate an XRI if we dont use send frame for this command. */
 	if (!nvmf_fc_use_send_frame(&fc_req->req)) {
@@ -1905,23 +1906,22 @@ nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req)
 		       cmd->opc == SPDK_NVME_OPC_WRITE ||
 		       cmd->opc == SPDK_NVME_OPC_COMPARE))) {
 
-			fc_req->req.data = spdk_dma_zmalloc(fc_req->req.length, 4096, NULL);
-			if (!fc_req->req.data) {
-				SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
-					      "Admin buffer alloc failed. Requeue\n");
+			status = spdk_nvmf_request_setup_dma(&fc_req->req, g_nvmf_tgt.opts.max_io_size);
+
+			switch (status) {
+			case SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_READY:
+				break;
+			case SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING:
 				fc_req->hwqp->counters.aq_buf_alloc_err++;
 				goto pending;
+			case SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_ERROR:
+				/* This is not an allocation error  */
+				goto error;
+			default:
+				assert("spdk_nvmf_request_setup_dma failed" == 0);
+				goto error;
 			}
 
-			/* Convert data to IOV format */
-			fc_req->req.iovcnt = spdk_dma_virt_to_iovec(fc_req->req.data,
-					     fc_req->req.length, fc_req->req.iov, MAX_NUM_OF_IOVECTORS);
-			if (!fc_req->req.iovcnt) {
-				SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
-					      "Admin buffer to iov failed. Requeue\n");
-				fc_req->hwqp->counters.aq_buf_alloc_err++;
-				goto pending;
-			}
 		}
 
 		/* For IOQ Writes, alloc bdev buffers */
