@@ -861,7 +861,7 @@ ls_tests_init(void)
 		fcport.io_queues[i].num_conns = 0;
 		fcport.io_queues[i].cid_cnt = 0;
 		fcport.io_queues[i].queues.rq_payload.num_buffers = g_io_queue_depth;
-		fcport.io_queues[i].free_q_slots = fcport.io_queues[i].queues.rq_payload.num_buffers;
+		fcport.io_queues[i].used_q_slots = 0;
 		TAILQ_INIT(&fcport.io_queues[i].connection_list);
 		TAILQ_INIT(&fcport.io_queues[i].in_use_reqs);
 	}
@@ -936,6 +936,7 @@ invalid_connection_test(void)
 	run_create_conn_test(fc_ut_host, &tgtport, g_curr_assoc_id, 1);
 }
 
+#define TEST_MAX_ASSOCS_LIMIT 1024
 static void
 create_max_assoc_conns_test(void)
 {
@@ -944,7 +945,7 @@ create_max_assoc_conns_test(void)
 
 	g_last_rslt = 0;
 	g_create_assoc_test_cnt = 0;
-	while (1) {
+	while (g_create_assoc_test_cnt < TEST_MAX_ASSOCS_LIMIT) {
 		g_test_run_type = TEST_RUN_TYPE_CREATE_MAX_ASSOC;
 		run_create_assoc_test(fc_ut_good_subsystem, fc_ut_host, &tgtport);
 		if (g_last_rslt == 0) {
@@ -963,9 +964,9 @@ create_max_assoc_conns_test(void)
 	}
 
 	/* verify how many associations created against how many should be created */
-	if (g_create_assoc_test_cnt < fcport.ls_rsrc_pool.assocs_count) {
+	if (g_create_assoc_test_cnt < TEST_MAX_ASSOCS_LIMIT) {
 		CU_FAIL("Too few associations created");
-	} else if (g_create_assoc_test_cnt > fcport.ls_rsrc_pool.assocs_count) {
+	} else if (g_create_assoc_test_cnt > TEST_MAX_ASSOCS_LIMIT) {
 		CU_FAIL("Too many associations created");
 	} else if (g_last_rslt == LAST_RSLT_STOP_TEST) {
 		printf("(%d assocs.) ", g_create_assoc_test_cnt);

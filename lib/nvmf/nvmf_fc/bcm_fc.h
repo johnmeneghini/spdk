@@ -197,7 +197,7 @@ struct spdk_nvmf_bcm_fc_hwqp {
 	TAILQ_HEAD(, spdk_nvmf_bcm_fc_conn) connection_list;
 	uint32_t num_conns; /* number of connections to queue */
 	uint16_t cid_cnt;   /* used to generate unique conn. id for RQ */
-	uint32_t free_q_slots; /* free q slots available for connections  */
+	uint32_t used_q_slots; /* used q slots for connections  */
 	spdk_fc_hwqp_state_t state;  /* Poller state (e.g. online, offline) */
 
 	/* Internal */
@@ -243,28 +243,20 @@ struct spdk_nvmf_bcm_fc_association {
 	char host_nqn[SPDK_NVMF_FC_NQN_MAX_LEN];
 	char sub_nqn[SPDK_NVMF_FC_NQN_MAX_LEN];
 
+	struct spdk_nvmf_bcm_fc_conn *aq_conn; /* connection for admin queue */
+
 	uint16_t conn_count;
 	TAILQ_HEAD(, spdk_nvmf_bcm_fc_conn) fc_conns;
 
-	TAILQ_ENTRY(spdk_nvmf_bcm_fc_association) link;
+	void *conns_buf;
+	TAILQ_HEAD(, spdk_nvmf_bcm_fc_conn) avail_fc_conns;
 
-	/* for port's association free list */
-	TAILQ_ENTRY(spdk_nvmf_bcm_fc_association) port_free_assoc_list_link;
+	TAILQ_ENTRY(spdk_nvmf_bcm_fc_association) link;
 
 	void *ls_del_op_ctx; /* delete assoc. callback list */
 
 	/* req/resp buffers used to send disconnect to initiator */
 	struct spdk_nvmf_bcm_fc_send_srsr snd_disconn_bufs;
-};
-
-struct spdk_nvmf_bcm_fc_ls_rsrc_pool {
-	void *assocs_mptr;
-	uint32_t assocs_count;
-	TAILQ_HEAD(, spdk_nvmf_bcm_fc_association) assoc_free_list;
-
-	void *conns_mptr;
-	uint32_t conns_count;
-	TAILQ_HEAD(, spdk_nvmf_bcm_fc_conn) fc_conn_free_list;
 };
 
 /*
@@ -289,7 +281,6 @@ struct spdk_nvmf_bcm_fc_port {
 	int	num_nports;
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_port) link;
 
-	struct spdk_nvmf_bcm_fc_ls_rsrc_pool ls_rsrc_pool;
 	struct spdk_mempool *io_rsrc_pool; /* Pools to store bdev_io's for this port */
 	void *port_ctx;
 };
@@ -443,8 +434,8 @@ struct spdk_nvmf_bcm_fc_conn {
 	/* for association's connection list */
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_conn) assoc_link;
 
-	/* for port's free connection list */
-	TAILQ_ENTRY(spdk_nvmf_bcm_fc_conn) port_free_conn_list_link;
+	/* for assocations's available connection list */
+	TAILQ_ENTRY(spdk_nvmf_bcm_fc_conn) assoc_avail_link;
 
 	/* for hwqp's connection list */
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_conn) link;

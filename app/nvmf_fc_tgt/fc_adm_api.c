@@ -2344,9 +2344,9 @@ spdk_nvmf_bcm_fc_tgt_print_port(void *arg1, void *arg2)
 	struct spdk_nvmf_bcm_fc_hwqp *ls;
 	struct spdk_nvmf_bcm_fc_hwqp *io;
 	struct spdk_nvmf_bcm_fc_nport *nport;
-	struct spdk_nvmf_bcm_fc_ls_rsrc_pool lspool;
 	struct spdk_nvmf_bcm_fc_conn *fc_conn = NULL;
 	int i;
+	int assoc_count = 0, conn_count = 0;
 
 	SPDK_NOTICELOG("\nDump port details\n");
 	SPDK_NOTICELOG("\n*******************************\n");
@@ -2358,7 +2358,6 @@ spdk_nvmf_bcm_fc_tgt_print_port(void *arg1, void *arg2)
 	}
 
 	ls = &(port->ls_queue);
-	lspool = port->ls_rsrc_pool;
 
 	SPDK_NOTICELOG("Port Hdl: %d\n", port->port_hdl);
 	SPDK_NOTICELOG("Hw Port Status: %d\n", port->hw_port_status);
@@ -2383,15 +2382,17 @@ spdk_nvmf_bcm_fc_tgt_print_port(void *arg1, void *arg2)
 				SPDK_NOTICELOG("\t\tIO Queue %d Request Pool not present\n", i);
 			}
 		}
+		conn_count += io->num_conns;
 		SPDK_NOTICELOG("\n");
 	}
 	SPDK_NOTICELOG("Num of Nports: %d\n", port->num_nports);
 	TAILQ_FOREACH(nport, &port->nport_list, link) {
 		SPDK_NOTICELOG("\tNport Hdl: %d, Nport State: %d\n", nport->nport_hdl, nport->nport_state);
+		assoc_count += nport->assoc_count;
 	}
 	SPDK_NOTICELOG("LS Resource Pool:\n");
-	SPDK_NOTICELOG("\tAssociation Count: %d, Connection Count: %d\n", lspool.assocs_count,
-		       lspool.conns_count);
+	SPDK_NOTICELOG("\tAssociation Count: %d, Connection Count: %d\n", assoc_count,
+		       conn_count);
 	SPDK_NOTICELOG("\tXRI Ring Avail Count: %d\n", spdk_ring_count(port->xri_ring));
 	if (port->io_rsrc_pool) {
 		SPDK_NOTICELOG("\tIO Resource Pool Avail Count: %d\n",
@@ -2500,7 +2501,7 @@ spdk_nvmf_bcm_fc_tgt_print_hwqp(void *arg1, void *arg2)
 	SPDK_NOTICELOG("\n*******************************\n");
 	SPDK_NOTICELOG("Lcore ID: %d, Num of Conns: %d, Cid Cnt: %d\n", hwqp->lcore_id,
 		       hwqp->num_conns, hwqp->cid_cnt);
-	SPDK_NOTICELOG("Free Q slots: %d, State: %d,\n", hwqp->free_q_slots, hwqp->state);
+	SPDK_NOTICELOG("Used Q slots: %d, State: %d,\n", hwqp->used_q_slots, hwqp->state);
 	SPDK_NOTICELOG("Request Tag Pool Avail Count: %d Used Count: %d\n",
 		       spdk_ring_count(hwqp->queues.wq.reqtag_ring), spdk_ring_free_count(hwqp->queues.wq.reqtag_ring));
 	SPDK_NOTICELOG("Send Frame XRI: %d Send Frame SeqID: %d\n", hwqp->send_frame_xri,

@@ -549,7 +549,7 @@ spdk_nvmf_bcm_fc_hwqp_port_set_online(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	if (hwqp && (hwqp->state != SPDK_FC_HWQP_ONLINE)) {
 		hwqp->state = SPDK_FC_HWQP_ONLINE;
 		/* reset some queue counters */
-		hwqp->free_q_slots = hwqp->queues.rq_payload.num_buffers;
+		hwqp->used_q_slots = 0;
 		hwqp->num_conns = 0;
 		return SPDK_SUCCESS;
 	} else {

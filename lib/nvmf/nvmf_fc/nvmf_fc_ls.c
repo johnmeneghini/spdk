@@ -245,11 +245,9 @@ nvmf_fc_ls_format_rjt(void *buf, uint16_t buflen, uint8_t ls_cmd,
 /* Allocators/Deallocators (assocations, connections, */
 /* poller API data)                                   */
 
-static void
-nvmf_fc_association_init(struct spdk_nvmf_bcm_fc_association *assoc)
+static int
+nvmf_fc_assoc_alloc_disconn_buf(struct spdk_nvmf_bcm_fc_association *assoc)
 {
-	assoc->assoc_state = SPDK_NVMF_BCM_FC_OBJECT_ZOMBIE;
-
 #ifdef NVMF_FC_LS_SEND_LS_DISCONNECT
 	/* allocate rqst/resp buffers to send LS disconnect to initiator */
 	assoc->snd_disconn_bufs.rqst.virt = spdk_dma_malloc(
@@ -280,17 +278,37 @@ nvmf_fc_association_init(struct spdk_nvmf_bcm_fc_association *assoc)
 					   sizeof(struct nvmf_fc_ls_rjt);
 	assoc->snd_disconn_bufs.sgl.len = 2 * sizeof(bcm_sge_t);
 #endif
+	return 0;
 }
 
-static void
-nvmf_fc_association_fini(struct spdk_nvmf_bcm_fc_association *assoc)
+static int
+nvmf_fc_ls_alloc_connections(struct spdk_nvmf_bcm_fc_association *assoc,
+			     struct spdk_nvmf_host *host)
 {
-#ifdef NVMF_FC_LS_SEND_LS_DISCONNECT
-	if (assoc->snd_disconn_bufs.rqst.virt) {
-		spdk_dma_free(assoc->snd_disconn_bufs.rqst.virt);
-		assoc->snd_disconn_bufs.rqst.virt = NULL;
+	uint32_t i;
+	struct spdk_nvmf_bcm_fc_conn *fc_conn;
+
+	SPDK_NOTICELOG("Pre-alloc %d connections for host %s\n",
+		       g_nvmf_tgt.opts.max_queues_per_session, host->nqn);
+
+	/* allocate memory for all connections at once */
+	assoc->conns_buf = calloc(1, (g_nvmf_tgt.opts.max_queues_per_session *
+				      sizeof(struct spdk_nvmf_bcm_fc_conn)));
+
+	if (assoc->conns_buf == NULL) {
+		SPDK_ERRLOG("Out of memory for connections for new association\n");
+		return -1;
 	}
-#endif
+
+	/* admin queue connection gets first connection */
+	assoc->aq_conn = assoc->conns_buf;
+
+	for (i = 1; i < g_nvmf_tgt.opts.max_queues_per_session; i++) {
+		fc_conn = assoc->conns_buf + (i * sizeof(struct spdk_nvmf_bcm_fc_conn));
+		TAILQ_INSERT_TAIL(&assoc->avail_fc_conns, fc_conn, assoc_avail_link);
+	}
+
+	return 0;
 }
 
 static struct spdk_nvmf_bcm_fc_association *
@@ -312,17 +330,15 @@ nvmf_fc_ls_new_association(uint32_t s_id,
 		return NULL;
 	}
 
-	assoc = TAILQ_FIRST(&tgtport->fc_port->ls_rsrc_pool.assoc_free_list);
-
+	assoc = (struct spdk_nvmf_bcm_fc_association *)
+		calloc(1, sizeof(struct spdk_nvmf_bcm_fc_association));
 	if (assoc) {
-		/* remove from port's free association list */
-		TAILQ_REMOVE(&tgtport->fc_port->ls_rsrc_pool.assoc_free_list,
-			     assoc, port_free_assoc_list_link);
+		if (nvmf_fc_assoc_alloc_disconn_buf(assoc) != 0) {
+			SPDK_ERRLOG("out of dma memory for new association disconn buff\n");
+			goto free;
+		}
 
-		/* initialize association
-		 * IMPORTANT: do not do a memset/bzero association!
-		 * Some of the association fields are static */
-		assoc->assoc_id = 0;
+		/* initialize association */
 		assoc->s_id = s_id;
 		assoc->tgtport = tgtport;
 		assoc->rport = rport;
@@ -331,9 +347,9 @@ nvmf_fc_ls_new_association(uint32_t s_id,
 		memcpy(assoc->host_id, a_cmd->hostid, FCNVME_ASSOC_HOSTID_LEN);
 		memcpy(assoc->host_nqn, a_cmd->hostnqn, FCNVME_ASSOC_HOSTNQN_LEN);
 		memcpy(assoc->sub_nqn, a_cmd->subnqn, FCNVME_ASSOC_HOSTNQN_LEN);
-		assoc->conn_count = 0;
 
 		TAILQ_INIT(&assoc->fc_conns);
+		TAILQ_INIT(&assoc->avail_fc_conns);
 		assoc->ls_del_op_ctx = NULL;
 #ifdef NVMF_FC_LS_SEND_LS_DISCONNECT
 		assoc->snd_disconn_bufs.rpi = rpi;
@@ -342,20 +358,29 @@ nvmf_fc_ls_new_association(uint32_t s_id,
 		/* Back pointer to host specific controller configuration. */
 		assoc->host = host;
 
-		/* add association to target port's association list */
-		TAILQ_INSERT_TAIL(&tgtport->fc_associations, assoc, link);
-		tgtport->assoc_count++;
-		rport->assoc_count++;
-		SPDK_NOTICELOG("New Association %p created:\n", assoc);
-		SPDK_NOTICELOG("\thostnqn:%s\n", assoc->host_nqn);
-		SPDK_NOTICELOG("\tsubnqn:%s\n", assoc->sub_nqn);
-		SPDK_NOTICELOG("\twwpn:0x%lx\n", tgtport->fc_portname.u.wwn);
+		/* allocate connections for association */
+		if (nvmf_fc_ls_alloc_connections(assoc, host) == 0) {
+			/* add association to target port's association list */
+			TAILQ_INSERT_TAIL(&tgtport->fc_associations, assoc, link);
+			tgtport->assoc_count++;
+			rport->assoc_count++;
+			SPDK_NOTICELOG("New Association %p created:\n", assoc);
+			SPDK_NOTICELOG("\thostnqn:%s\n", assoc->host_nqn);
+			SPDK_NOTICELOG("\tsubnqn:%s\n", assoc->sub_nqn);
+			SPDK_NOTICELOG("\twwpn:0x%lx\n", tgtport->fc_portname.u.wwn);
+		} else {
+			/* failed to pre-allocate connections */
+			goto free;
+		}
 	} else {
 		SPDK_ERRLOG("out of associations on port %d\n",
 			    tgtport->fc_port->port_hdl);
 	}
 
 	return assoc;
+free:
+	free(assoc);
+	return NULL;
 }
 
 static inline void
@@ -363,9 +388,16 @@ nvmf_fc_ls_free_association(struct spdk_nvmf_bcm_fc_association *assoc)
 {
 	SPDK_NOTICELOG("Freeing association, assoc_id 0x%lx\n",
 		       assoc->assoc_id);
-	assoc->assoc_state = SPDK_NVMF_BCM_FC_OBJECT_ZOMBIE;
-	TAILQ_INSERT_TAIL(&assoc->tgtport->fc_port->ls_rsrc_pool.assoc_free_list,
-			  assoc, port_free_assoc_list_link);
+
+#ifdef NVMF_FC_LS_SEND_LS_DISCONNECT
+	/* free assocation's send disconnect buffer */
+	spdk_dma_free(assoc->snd_disconn_bufs.rqst.virt);
+#endif
+	/* free assocation's connections */
+	free((void *)assoc->conns_buf);
+
+	/* free the association */
+	free((void *)assoc);
 }
 
 static inline void
@@ -387,12 +419,11 @@ nvmf_fc_ls_new_connection(struct spdk_nvmf_bcm_fc_association *assoc,
 {
 	struct spdk_nvmf_bcm_fc_conn *fc_conn;
 
-	fc_conn = TAILQ_FIRST(&assoc->tgtport->fc_port->ls_rsrc_pool.fc_conn_free_list);
-
+	fc_conn = qid == 0 ? assoc->aq_conn : TAILQ_FIRST(&assoc->avail_fc_conns);
 	if (fc_conn) {
-		/* remove from port's free connection list */
-		TAILQ_REMOVE(&assoc->tgtport->fc_port->ls_rsrc_pool.fc_conn_free_list,
-			     fc_conn, port_free_conn_list_link);
+		if (qid != 0) {
+			TAILQ_REMOVE(&assoc->avail_fc_conns, fc_conn, assoc_avail_link);
+		}
 
 		bzero((void *)fc_conn, sizeof(*fc_conn));
 		fc_conn->conn.type = type;
@@ -435,8 +466,7 @@ nvmf_fc_ls_free_connection(struct spdk_nvmf_bcm_fc_port *fc_port,
 	/* Free connection fc_req pool */
 	spdk_nvmf_bcm_fc_free_conn_req_ring(fc_conn);
 
-	TAILQ_INSERT_TAIL(&fc_port->ls_rsrc_pool.fc_conn_free_list,
-			  fc_conn, port_free_conn_list_link);
+	TAILQ_INSERT_TAIL(&fc_conn->fc_assoc->avail_fc_conns, fc_conn, assoc_avail_link);
 }
 
 static inline union nvmf_fc_ls_op_ctx *
@@ -510,6 +540,22 @@ outer_loop:
 	return conn_id;
 }
 
+/* Get the given assoc connections on this hwqp. */
+static inline uint32_t
+nvmf_fc_get_hwqp_assoc_conns(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
+			     struct spdk_nvmf_bcm_fc_association *assoc)
+{
+	uint32_t num_conns = 0;
+	struct spdk_nvmf_bcm_fc_conn *fc_conn;
+
+	TAILQ_FOREACH(fc_conn, &assoc->fc_conns, assoc_link) {
+		if (fc_conn->hwqp == hwqp) {
+			num_conns ++;
+		}
+	}
+	return num_conns;
+}
+
 static inline struct spdk_nvmf_bcm_fc_hwqp *
 nvmf_fc_ls_assign_conn_to_q(struct spdk_nvmf_bcm_fc_association *assoc,
 			    uint64_t *conn_id, uint32_t sq_size, bool for_aq)
@@ -523,24 +569,42 @@ nvmf_fc_ls_assign_conn_to_q(struct spdk_nvmf_bcm_fc_association *assoc,
 		       tgtport->nport_hdl, assoc->assoc_id);
 
 	if (!for_aq) {
-		/* find queue with max amount of space available */
-		uint32_t qind;
+		/*
+		 * Find queue with,
+		 * Priority 1. Least assigned for this assoc and
+		 * Priority 2. Queue with max amount of space
+		 */
+		uint32_t qind, sel_hwqp_assoc_conns, hwqp_assoc_conns;
 
 		sel_qind = 1; /* queue 0 for AQ's, so start with queue 1 */
+		sel_hwqp_assoc_conns =
+			nvmf_fc_get_hwqp_assoc_conns(&fc_port->io_queues[sel_qind], assoc);
 
 		for (qind = sel_qind + 1; qind < fc_port->max_io_queues; qind++) {
-			if (fc_port->io_queues[qind].free_q_slots >
-			    fc_port->io_queues[sel_qind].free_q_slots)
+			hwqp_assoc_conns =
+				nvmf_fc_get_hwqp_assoc_conns(&fc_port->io_queues[qind], assoc);
+
+			if (sel_hwqp_assoc_conns > hwqp_assoc_conns) {
+				/* Pick the hwqp with least assigned connections of this assoc  */
+				sel_hwqp_assoc_conns = hwqp_assoc_conns;
 				sel_qind = qind;
-		}
-		if (fc_port->io_queues[sel_qind].free_q_slots < sq_size) {
-			return NULL; /* no queue has space of this connection */
+			} else if (sel_hwqp_assoc_conns == hwqp_assoc_conns) {
+				/*
+				 * Both hwqp have equal number connections for this assoc.
+				 * Pick the one with less load.
+				 */
+				if (fc_port->io_queues[qind].used_q_slots <
+				    fc_port->io_queues[sel_qind].used_q_slots) {
+					sel_hwqp_assoc_conns = hwqp_assoc_conns;
+					sel_qind = qind;
+				}
+			}
 		}
 	}
 
-	/* decrease the free slots now in case another connect request comes
+	/* Increment the used slots now in case another connect request comes
 	 * in while adding this connection in the poller thread */
-	fc_port->io_queues[sel_qind].free_q_slots -= sq_size;
+	fc_port->io_queues[sel_qind].used_q_slots += sq_size;
 
 	fc_port->io_queues[sel_qind].num_conns++;
 
@@ -548,8 +612,8 @@ nvmf_fc_ls_assign_conn_to_q(struct spdk_nvmf_bcm_fc_association *assoc,
 	*conn_id = nvmf_fc_gen_conn_id(sel_qind,
 				       &fc_port->io_queues[sel_qind]);
 
-	SPDK_NOTICELOG("q_num %d (free now %d), conn_id 0x%lx\n", sel_qind,
-		       fc_port->io_queues[sel_qind].free_q_slots,
+	SPDK_NOTICELOG("q_num %d (used now %d), conn_id 0x%lx\n", sel_qind,
+		       fc_port->io_queues[sel_qind].used_q_slots,
 		       *conn_id);
 
 	return &fc_port->io_queues[sel_qind];
@@ -600,7 +664,7 @@ nvmf_fc_handle_xmt_ls_rsp_failure(struct spdk_nvmf_bcm_fc_association *assoc,
 		nvmf_fc_ls_free_association(assoc);
 	} else {
 		/* IOQ - give the queue slots for this connection back to the hwqp */
-		fc_conn->hwqp->free_q_slots += fc_conn->max_queue_depth;
+		fc_conn->hwqp->used_q_slots -= fc_conn->max_queue_depth;
 	}
 
 	/* create context for delete connection API */
@@ -840,12 +904,12 @@ nvmf_fc_del_all_conns_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
 
 	if ((fc_conn->conn_id & SPDK_NVMF_FC_BCM_MRQ_CONNID_QUEUE_MASK) != 0) {
 		/* give the queue slots for this connection  back to the hwqp */
-		fc_conn->hwqp->free_q_slots += fc_conn->max_queue_depth;
+		fc_conn->hwqp->used_q_slots -= fc_conn->max_queue_depth;
 		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-			      "Freed up %d slots on hwqp %d (free %d)\n",
+			      "Freed up %d slots on hwqp %d (current in-use %d)\n",
 			      fc_conn->max_queue_depth, (int)(fc_conn->conn_id &
 					      SPDK_NVMF_FC_BCM_MRQ_CONNID_QUEUE_MASK),
-			      fc_conn->hwqp->free_q_slots);
+			      fc_conn->hwqp->used_q_slots);
 	}
 
 	/* remove connection from association's connection list */
@@ -1429,103 +1493,11 @@ nvmf_fc_ls_process_disc(struct spdk_nvmf_bcm_fc_nport *tgtport,
 void
 spdk_nvmf_bcm_fc_ls_init(struct spdk_nvmf_bcm_fc_port *fc_port)
 {
-	uint32_t ioqs_per_rq;
-	uint32_t max_ioqs;
-	uint32_t assocs_count;
-
-	if (fc_port->ls_rsrc_pool.assocs_mptr) {
-		return;
-	}
-
-	fc_port->ls_rsrc_pool.assocs_count = 0;
-	fc_port->ls_rsrc_pool.conns_count = 0;
-	TAILQ_INIT(&fc_port->ls_rsrc_pool.assoc_free_list);
-	TAILQ_INIT(&fc_port->ls_rsrc_pool.fc_conn_free_list);
-
-	/*
-	 * XXX Here's the logic that equates the global maximum queue depth
-	 * XXX and maximum IO queue number with the per-port HWQP resources.
-	 */
-	ioqs_per_rq = fc_port->io_queues[1].queues.rq_payload.num_buffers /
-		      g_nvmf_tgt.opts.max_io_queue_depth;
-	max_ioqs = ioqs_per_rq * (fc_port->max_io_queues - 1);
-	assocs_count = max_ioqs / (g_nvmf_tgt.opts.max_queues_per_session - 1);
-
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-		      "Port %d, max_ioqs=%d, max assocs=%d\n",
-		      fc_port->port_hdl, max_ioqs, assocs_count);
-
-	fc_port->ls_rsrc_pool.assocs_mptr =
-		malloc(assocs_count *
-		       sizeof(struct spdk_nvmf_bcm_fc_association));
-
-	if (fc_port->ls_rsrc_pool.assocs_mptr) {
-		uint32_t i;
-		struct spdk_nvmf_bcm_fc_association *assoc;
-		uint32_t conns_cnt;
-
-		for (i = 0; i < assocs_count; i++) {
-			assoc = (struct spdk_nvmf_bcm_fc_association *)
-				(fc_port->ls_rsrc_pool.assocs_mptr + (i *
-						sizeof(struct spdk_nvmf_bcm_fc_association)));
-			nvmf_fc_association_init(assoc);
-			TAILQ_INSERT_TAIL(&fc_port->ls_rsrc_pool.assoc_free_list,
-					  assoc, port_free_assoc_list_link);
-		}
-		fc_port->ls_rsrc_pool.assocs_count = assocs_count;
-
-		conns_cnt = g_nvmf_tgt.opts.max_queues_per_session * assocs_count;
-		fc_port->ls_rsrc_pool.conns_mptr = malloc(conns_cnt *
-						   sizeof(struct spdk_nvmf_bcm_fc_conn));
-
-		if (fc_port->ls_rsrc_pool.conns_mptr) {
-			for (i = 0; i < conns_cnt; i++) {
-				struct spdk_nvmf_bcm_fc_conn *fc_conn =
-					(struct spdk_nvmf_bcm_fc_conn *)
-					(fc_port->ls_rsrc_pool.conns_mptr + (i *
-							sizeof(struct spdk_nvmf_bcm_fc_conn)));
-
-				TAILQ_INSERT_TAIL(&fc_port->ls_rsrc_pool.fc_conn_free_list,
-						  fc_conn, port_free_conn_list_link);
-			}
-			fc_port->ls_rsrc_pool.conns_count = conns_cnt;
-
-		} else {
-			SPDK_ERRLOG("***ERROR*** - create NVMF FC connection"
-				    "pool failed (port %d)\n", fc_port->port_hdl);
-			free(fc_port->ls_rsrc_pool.assocs_mptr);
-			fc_port->ls_rsrc_pool.assocs_mptr = NULL;
-			fc_port->ls_rsrc_pool.assocs_count = 0;
-		}
-
-	} else {
-		SPDK_ERRLOG("***ERROR*** - create NVMF LS association pool"
-			    " failed (port %d)\n", fc_port->port_hdl);
-	}
 }
 
 void
 spdk_nvmf_bcm_fc_ls_fini(struct spdk_nvmf_bcm_fc_port *fc_port)
 {
-	if (fc_port->ls_rsrc_pool.assocs_mptr) {
-		uint32_t i;
-		struct spdk_nvmf_bcm_fc_association *assoc;
-
-		for (i = 0; i < fc_port->ls_rsrc_pool.assocs_count; i++) {
-			assoc = (struct spdk_nvmf_bcm_fc_association *)
-				(fc_port->ls_rsrc_pool.assocs_mptr + (i *
-						sizeof(struct spdk_nvmf_bcm_fc_association)));
-			nvmf_fc_association_fini(assoc);
-		}
-		free(fc_port->ls_rsrc_pool.assocs_mptr);
-		fc_port->ls_rsrc_pool.assocs_mptr = NULL;
-		fc_port->ls_rsrc_pool.assocs_count = 0;
-	}
-	if (fc_port->ls_rsrc_pool.conns_mptr) {
-		free(fc_port->ls_rsrc_pool.conns_mptr);
-		fc_port->ls_rsrc_pool.conns_mptr = NULL;
-		fc_port->ls_rsrc_pool.conns_count = 0;
-	}
 }
 
 void

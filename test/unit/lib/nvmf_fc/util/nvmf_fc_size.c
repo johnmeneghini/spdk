@@ -688,7 +688,7 @@ ls_tests_init(void)
 		fcport.io_queues[i].num_conns = 0;
 		fcport.io_queues[i].cid_cnt = 0;
 		fcport.io_queues[i].queues.rq_payload.num_buffers = 1024;
-		fcport.io_queues[i].free_q_slots = fcport.io_queues[i].queues.rq_payload.num_buffers;
+		fcport.io_queues[i].used_q_slots = 0;
 		TAILQ_INIT(&fcport.io_queues[i].connection_list);
 		TAILQ_INIT(&fcport.io_queues[i].in_use_reqs);
 	}
@@ -713,14 +713,14 @@ ls_tests_fini(void)
 	return 0;
 }
 
-
+#define TEST_MAX_ASSOCS_LIMIT 1024
 static void
 create_max_assoc_conns_test(void)
 {
 	/* run test to create max. associations with max. connections */
 	uint16_t i;
 	g_last_rslt = 0;
-	for (i = 0; i < fcport.ls_rsrc_pool.assocs_count &&
+	for (i = 0; i < TEST_MAX_ASSOCS_LIMIT &&
 	     g_last_rslt == 0; i++) {
 		g_test_run_type = TEST_RUN_TYPE_CREATE_ASSOC;
 		run_create_assoc_test(fc_ut_good_subsystem, fc_ut_host, &tgtport);
