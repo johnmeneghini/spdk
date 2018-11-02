@@ -144,13 +144,16 @@ struct spdk_bdev_fn_table {
 	struct spdk_io_channel *(*get_io_channel)(void *ctx);
 
 	/** API to acquire/init vector of I/O Buffers for read */
-	int (*init_read)(int32_t length, struct iovec *iov, int32_t *iovcnt, struct spdk_bdev_io *bdev_io);
+	int (*init_read)(uint64_t offset, uint32_t length, struct iovec *iov, int *iovcnt,
+			 struct spdk_bdev_io *bdev_io);
+
 
 	/** API to release vector of I/O Buffers  acquired for read */
 	int (*fini_read)(struct spdk_bdev_io *bdev_io);
 
 	/** API to acquire vector of I/O Buffers for write */
-	int (*init_write)(int32_t length, struct iovec *iov, int32_t *iovcnt, struct spdk_bdev_io *bdev_io);
+	int (*init_write)(uint64_t offset, uint32_t length, struct iovec *iov, int *iovcnt,
+			  struct spdk_bdev_io *bdev_io);
 
 	/** API to release vector of I/O Buffers  acquired for write */
 	int (*fini_write)(struct spdk_bdev_io *bdev_io);

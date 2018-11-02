@@ -461,8 +461,8 @@ struct spdk_bdev_io *spdk_bdev_read_init(struct spdk_bdev_desc *desc,
 		spdk_bdev_io_completion_cb io_complete_cb,
 		void *io_complete_cb_arg,
 		struct iovec *iov,
-		int32_t *iovcnt,
-		int32_t length,
+		int *iovcnt,
+		uint32_t length,
 		uint64_t offset);
 
 int spdk_bdev_read_fini(struct spdk_bdev_io *bdev_io);
@@ -473,8 +473,8 @@ struct spdk_bdev_io   *spdk_bdev_write_init(struct spdk_bdev_desc *desc,
 		spdk_bdev_io_completion_cb io_complete_cb,
 		void *io_complete_cb_arg,
 		struct iovec *iov,
-		int32_t *iovcnt,
-		int32_t length,
+		int *iovcnt,
+		uint32_t length,
 		uint64_t offset);
 int spdk_bdev_write_fini(struct spdk_bdev_io *bdev_io);
 

@@ -322,8 +322,8 @@ spdk_bdev_read_init(struct spdk_bdev_desc *desc,
 		    spdk_bdev_io_completion_cb cb,
 		    void *cb_arg,
 		    struct iovec *iov,
-		    int32_t *iovcnt,
-		    int32_t length,
+		    int *iovcnt,
+		    uint32_t length,
 		    uint64_t offset)
 {
 	return NULL;
@@ -342,8 +342,8 @@ spdk_bdev_write_init(struct spdk_bdev_desc *desc,
 		     spdk_bdev_io_completion_cb cb,
 		     void *cb_arg,
 		     struct iovec *iov,
-		     int32_t *iovcnt,
-		     int32_t length,
+		     int *iovcnt,
+		     uint32_t length,
 		     uint64_t offset)
 {
 	return NULL;

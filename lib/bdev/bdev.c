@@ -1711,8 +1711,8 @@ spdk_bdev_read_init(struct spdk_bdev_desc *desc,
 		    spdk_bdev_io_completion_cb cb,
 		    void *cb_arg,
 		    struct iovec *iov,
-		    int32_t *iovcnt,
-		    int32_t length,
+		    int *iovcnt,
+		    uint32_t length,
 		    uint64_t offset)
 {
 	int rc = 0;
@@ -1736,7 +1736,7 @@ spdk_bdev_read_init(struct spdk_bdev_desc *desc,
 
 	if (!(*iovcnt)) {
 		if (bdev->fn_table->init_read) {
-			rc = bdev->fn_table->init_read(length, iov, iovcnt, bdev_io);
+			rc = bdev->fn_table->init_read(offset, length, iov, iovcnt, bdev_io);
 		} else {
 			rc = spdk_bdev_get_buff(iov, iovcnt, length);
 		}
@@ -1778,8 +1778,8 @@ spdk_bdev_write_init(struct spdk_bdev_desc *desc,
 		     spdk_bdev_io_completion_cb cb,
 		     void *cb_arg,
 		     struct iovec *iov,
-		     int32_t *iovcnt,
-		     int32_t length,
+		     int *iovcnt,
+		     uint32_t length,
 		     uint64_t offset)
 {
 	int rc = 0;
@@ -1802,7 +1802,7 @@ spdk_bdev_write_init(struct spdk_bdev_desc *desc,
 	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb);
 
 	if (bdev->fn_table->init_write) {
-		rc = bdev->fn_table->init_write(length, iov, iovcnt, bdev_io);
+		rc = bdev->fn_table->init_write(offset, length, iov, iovcnt, bdev_io);
 	} else {
 		rc = spdk_bdev_get_buff(iov, iovcnt, length);
 	}

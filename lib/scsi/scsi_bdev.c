@@ -1329,7 +1329,7 @@ spdk_bdev_scsi_read(struct spdk_bdev *bdev,
 
 	task->bdev_io = spdk_bdev_read_init(task->desc, task->ch, NULL, spdk_bdev_scsi_task_complete_cmd,
 					    task,
-					    task->iovs, (int32_t *) &task->iovcnt, nbytes, offset);
+					    task->iovs, &task->iovcnt, nbytes, offset);
 
 	if (task->bdev_io) {
 		if (spdk_bdev_readv(task->bdev_io) >= 0) {
@@ -1390,7 +1390,7 @@ spdk_bdev_scsi_write(struct spdk_bdev *bdev,
 	offset += task->offset;
 	task->bdev_io = spdk_bdev_write_init(task->desc, task->ch, NULL, spdk_bdev_scsi_task_complete_cmd,
 					     task,
-					     task->iovs, (int32_t *) &task->iovcnt, task->length, offset);
+					     task->iovs, &task->iovcnt, task->length, offset);
 	if (task->bdev_io) {
 		if (spdk_bdev_writev(task->bdev_io) >= 0) {
 			if (!primary) {
