@@ -1700,8 +1700,8 @@ static int nvmf_fc_set_sge(struct spdk_nvmf_request *req,
 	}
 	sge = (bcm_sge_t *) sgl;
 
-	assert(index <= MAX_NUM_OF_IOVECTORS);
-	if (index > MAX_NUM_OF_IOVECTORS) {
+	assert(index <= BCM_MAX_SGLS);
+	if (index > BCM_MAX_SGLS) {
 		SPDK_ERRLOG("Error: invalid index %d\n", index);
 		return -1;
 	}
@@ -1737,9 +1737,9 @@ nvmf_fc_fill_sgl(struct spdk_nvmf_bcm_fc_request *fc_req)
 	bcm_sge_t *sge = NULL;
 	void *sgl = fc_req->xri->sgl_virt;
 
-	assert((fc_req->req.iovcnt) <= MAX_NUM_OF_IOVECTORS);
-	if ((fc_req->req.iovcnt) > MAX_NUM_OF_IOVECTORS) {
-		SPDK_ERRLOG("Error: (fc_req->req.iovcnt) > MAX_NUM_OF_IOVECTORS\n");
+	assert((fc_req->req.iovcnt) <= BCM_MAX_SGLS);
+	if ((fc_req->req.iovcnt) > BCM_MAX_SGLS) {
+		SPDK_ERRLOG("Error: (fc_req->req.iovcnt) > BCM_MAX_SGLS\n");
 		return 0;
 	}
 	assert(fc_req->req.iovcnt != 0);
