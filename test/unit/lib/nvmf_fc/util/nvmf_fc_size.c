@@ -216,6 +216,13 @@ spdk_env_get_master_lcore(void)
 	return 0;
 }
 
+unsigned
+spdk_env_get_current_core(void)
+{
+	return 0;
+
+}
+
 void
 spdk_nvmf_handle_connect(struct spdk_nvmf_request *req)
 {

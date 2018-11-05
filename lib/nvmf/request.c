@@ -42,6 +42,7 @@
 #include "spdk/nvme.h"
 #include "spdk/nvmf_spec.h"
 #include "spdk/trace.h"
+#include "spdk_internal/event.h"
 
 #include "spdk_internal/log.h"
 
@@ -120,17 +121,37 @@ invalid_connect_response(struct spdk_nvmf_fabric_connect_rsp *rsp, uint8_t iattr
 	rsp->status_code_specific.invalid.ipo = ipo;
 }
 
+#define INVALID_CONNECT_DATA(field) invalid_connect_response(rsp, 1, offsetof(struct spdk_nvmf_fabric_connect_data, field))
+
+static void
+nvmf_process_connect_master(void *arg1, void *arg2)
+{
+	struct spdk_nvmf_subsystem	*subsystem;
+	struct spdk_nvmf_request *req = (struct spdk_nvmf_request *)arg1;
+	struct spdk_nvmf_fabric_connect_data *data = (struct spdk_nvmf_fabric_connect_data *)
+			req->data;
+	struct spdk_nvmf_fabric_connect_rsp *rsp = &req->rsp->connect_rsp;
+
+	subsystem = spdk_nvmf_find_subsystem((const char *)data->subnqn);
+	if (subsystem == NULL) {
+		SPDK_ERRLOG("Could not find subsystem '%s'\n", data->subnqn);
+		INVALID_CONNECT_DATA(subnqn);
+		spdk_nvmf_request_complete(req);
+		return;
+	}
+
+	subsystem->connect_cb(subsystem->cb_ctx, req);
+}
+
 static spdk_nvmf_request_exec_status
 nvmf_process_connect(struct spdk_nvmf_request *req)
 {
-	struct spdk_nvmf_subsystem	*subsystem;
 	struct spdk_nvmf_fabric_connect_data *data = (struct spdk_nvmf_fabric_connect_data *)
 			req->data;
 	struct spdk_nvmf_fabric_connect_cmd *cmd = &req->cmd->connect_cmd;
 	struct spdk_nvmf_fabric_connect_rsp *rsp = &req->rsp->connect_rsp;
 	void *end;
-
-#define INVALID_CONNECT_DATA(field) invalid_connect_response(rsp, 1, offsetof(struct spdk_nvmf_fabric_connect_data, field))
+	struct spdk_event *event;
 
 	if (cmd->recfmt != 0) {
 		SPDK_ERRLOG("Connect command unsupported RECFMT %u\n", cmd->recfmt);
@@ -160,21 +181,11 @@ nvmf_process_connect(struct spdk_nvmf_request *req)
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 
-	subsystem = spdk_nvmf_find_subsystem((const char *)data->subnqn);
-	if (subsystem == NULL) {
-		SPDK_ERRLOG("Could not find subsystem '%s'\n", data->subnqn);
-		INVALID_CONNECT_DATA(subnqn);
-		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
-	}
-
-	if (!spdk_nvmf_subsystem_host_allowed(subsystem, (const char *)data->hostnqn)) {
-		SPDK_ERRLOG("Subsystem '%s' does not allow host '%s'\n", data->subnqn, data->hostnqn);
-		rsp->status.sct = SPDK_NVME_SCT_COMMAND_SPECIFIC;
-		rsp->status.sc = SPDK_NVMF_FABRIC_SC_INVALID_HOST;
-		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
-	}
-
-	subsystem->connect_cb(subsystem->cb_ctx, req);
+	/* Move to Master thread. Do not peek into subsystem or host lists from an IO poller thread.
+	 * Those lists can change while we are trying to walk them in the IO poller context.
+	 */
+	event = spdk_event_allocate(spdk_env_get_master_lcore(), nvmf_process_connect_master, req, NULL);
+	spdk_event_call(event);
 
 	return SPDK_NVMF_REQUEST_EXEC_STATUS_ASYNCHRONOUS;
 }

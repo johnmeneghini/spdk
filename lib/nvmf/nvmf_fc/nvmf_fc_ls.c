@@ -134,8 +134,6 @@ static char *validation_errors[] = {
 	"Bad Subsystem Port",
 };
 
-extern void spdk_post_event(void *context, struct spdk_event *event);
-
 /* Poller API structures (arguments and callback data */
 
 struct nvmf_fc_ls_add_conn_api_data {
@@ -1569,26 +1567,15 @@ spdk_nvmf_bcm_fc_delete_association(struct spdk_nvmf_bcm_fc_nport *tgtport,
 					  del_assoc_cb, cb_data, false);
 }
 
-static void
-nvmf_fc_subsys_connect_event(void *arg1, void *arg2)
-{
-	struct spdk_nvmf_request *req = arg1;
-
-	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS, "Subsystem connect callback for "
-		      "request %p\n", req);
-	spdk_nvmf_handle_connect(req);
-}
-
 /* Functions defined in struct spdk_nvmf_subsystem's ops field
  * (spdk_nvmf_ctrlr_ops) for connect & disconnnect callbacks */
 void
 spdk_nvmf_bcm_fc_subsys_connect_cb(void *cb_ctx, struct spdk_nvmf_request *req)
 {
-	struct spdk_nvmf_bcm_fc_request *fc_req = spdk_nvmf_bcm_fc_get_fc_req(req);
-	struct spdk_event *event;
+	/* The connect_cb should always be called in the master thread */
+	assert(spdk_env_get_current_core() == spdk_env_get_master_lcore());
 
-	event = spdk_event_allocate(spdk_env_get_master_lcore(), nvmf_fc_subsys_connect_event, req, NULL);
-	spdk_post_event(fc_req->hwqp->context, event);
+	spdk_nvmf_handle_connect(req);
 }
 
 void spdk_nvmf_bcm_fc_subsys_disconnect_cb(void *cb_ctx,

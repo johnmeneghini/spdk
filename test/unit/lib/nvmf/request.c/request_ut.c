@@ -155,6 +155,42 @@ test_nvmf_process_fabrics_cmd(void)
 	CU_ASSERT_EQUAL(ret, SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE);
 }
 
+struct spdk_event *
+spdk_event_allocate(uint32_t lcore, spdk_event_fn fn, void *arg1, void *arg2)
+{
+	struct spdk_event *event = malloc(sizeof(struct spdk_event));
+
+	if (event == NULL) {
+		return NULL;
+	}
+
+	event->lcore = lcore;
+	event->fn = fn;
+	event->arg1 = arg1;
+	event->arg2 = arg2;
+
+	return event;
+}
+
+void
+spdk_event_call(struct spdk_event *event)
+{
+	if (event) {
+		if (event->fn) {
+			event->fn(event->arg1, event->arg2);
+		}
+		free(event);
+	}
+}
+
+unsigned
+spdk_env_get_master_lcore(void)
+{
+	return 0;
+
+}
+
+
 int main(int argc, char **argv)
 {
 	CU_pSuite	suite = NULL;
