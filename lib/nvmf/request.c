@@ -328,7 +328,7 @@ spdk_nvmf_request_setup_sgl(struct spdk_nvmf_request *req)
 
 	req->iovcnt = 0;
 
-	while (offset < length) {
+	while (length > 0) {
 		pa = spdk_vtophys_and_len(bp, length, &plength);
 
 		if (pa == SPDK_VTOPHYS_ERROR) {
@@ -337,7 +337,7 @@ spdk_nvmf_request_setup_sgl(struct spdk_nvmf_request *req)
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_ERROR;
 		}
 
-		rc = req->set_sge(req, (uint32_t) length, (uint32_t) offset, bp, plength, i);
+		rc = req->set_sge(req, req->length, (uint32_t) offset, bp, plength, i);
 
 		if (rc) {
 			SPDK_ERRLOG("set_sge function returned error %d, VA %p, offset 0x%lx, length 0x%lx, index %d\n", rc,
@@ -346,9 +346,13 @@ spdk_nvmf_request_setup_sgl(struct spdk_nvmf_request *req)
 		}
 
 		offset += plength;
+		length -= plength;
 		bp += plength;
 		i++;
 	}
+
+	assert(req->length == (uint32_t) offset);
+	assert(req->sgl_filled == true);
 
 	req->iovcnt = i;
 
