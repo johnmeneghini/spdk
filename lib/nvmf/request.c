@@ -445,6 +445,72 @@ spdk_nvmf_request_setup_dma(struct spdk_nvmf_request *req, uint32_t max_io_size)
 	return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_READY;
 }
 
+spdk_nvmf_request_exec_status
+spdk_nvmf_request_init(struct spdk_nvmf_request *req)
+{
+	struct spdk_nvmf_session *session = req->conn->sess;
+	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
+	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
+	spdk_nvmf_request_exec_status status;
+	struct spdk_nvmf_subsystem *subsystem;
+
+	nvmf_trace_command(req->cmd, req->conn->type);
+
+	/*
+	 * Make sure xfer len is according to MDTS
+	 * The host should not submit a command that exceeds this transfer size.
+	 * If a command is submitted that exceeds the transfer size, then the
+	 * command is aborted with a status of Invalid Field in Command.
+	 */
+	if (req->length > g_nvmf_tgt.opts.max_io_size) {
+		SPDK_ERRLOG("IO length requested is greater than MDTS\n");
+		rsp->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+	}
+
+	/* Only Fabric commands are allowed when the controller is disabled */
+	if (cmd->opc != SPDK_NVME_OPC_FABRIC && (session == NULL || !session->vcprop.cc.bits.en)) {
+		SPDK_ERRLOG("Non-Fabric command sent to disabled controller\n");
+		rsp->status.sc = SPDK_NVME_SC_COMMAND_SEQUENCE_ERROR;
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+	}
+
+	switch (cmd->opc) {
+	case SPDK_NVME_OPC_FABRIC:
+		status = spdk_nvmf_request_setup_dma(req, g_nvmf_tgt.opts.max_io_size);
+		break;
+
+	default:
+		subsystem = session->subsys;
+		assert(subsystem != NULL);
+
+		if (subsystem->is_removed) {
+			/* XXX do we want to set DNR here? */
+			rsp->status.sc = SPDK_NVME_SC_ABORTED_BY_REQUEST;
+			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+		}
+
+		switch (req->conn->type) {
+		case CONN_TYPE_AQ:
+			status = spdk_nvmf_request_setup_dma(req, g_nvmf_tgt.opts.max_io_size);
+			break;
+		case CONN_TYPE_IOQ:
+			if (subsystem->ops->io_init) {
+				status = subsystem->ops->io_init(req);
+			} else {
+				status = spdk_nvmf_request_setup_dma(req, g_nvmf_tgt.opts.max_io_size);
+			}
+			break;
+		default:
+			SPDK_ERRLOG("Invalid connection type 0x%x\n", req->conn->type);
+			rsp->status.sc = SPDK_NVME_SC_COMMAND_SEQUENCE_ERROR;
+			status = SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+		}
+	}
+
+	return status;
+}
+
 int
 spdk_nvmf_request_exec(struct spdk_nvmf_request *req)
 {
@@ -452,8 +518,6 @@ spdk_nvmf_request_exec(struct spdk_nvmf_request *req)
 	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
 	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
 	spdk_nvmf_request_exec_status status;
-
-	nvmf_trace_command(req->cmd, req->conn->type);
 
 	if (cmd->opc == SPDK_NVME_OPC_FABRIC) {
 		status = nvmf_process_fabrics_command(req);

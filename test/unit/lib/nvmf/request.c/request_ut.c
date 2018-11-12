@@ -40,6 +40,8 @@
 
 SPDK_LOG_REGISTER_TRACE_FLAG("nvmf", SPDK_TRACE_NVMF)
 
+struct spdk_nvmf_tgt g_nvmf_tgt;
+
 void spdk_trace_record(uint16_t tpoint_id, uint16_t poller_id, uint32_t size,
 		       uint64_t object_id, uint64_t arg1)
 {

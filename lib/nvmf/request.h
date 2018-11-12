@@ -41,7 +41,7 @@
 
 typedef enum _spdk_nvmf_request_exec_status {
 	SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_ERROR = -1,
-	SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE,
+	SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE = 0,
 	SPDK_NVMF_REQUEST_EXEC_STATUS_ASYNCHRONOUS,
 	SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_READY,
 	SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING
@@ -85,6 +85,8 @@ struct spdk_nvmf_request {
 	spdk_nvmf_set_sge		set_sge;
 	bool				sgl_filled;
 };
+
+spdk_nvmf_request_exec_status spdk_nvmf_request_init(struct spdk_nvmf_request *req);
 
 spdk_nvmf_request_exec_status spdk_nvmf_request_setup_dma(struct spdk_nvmf_request *req,
 		uint32_t max_io_size);
