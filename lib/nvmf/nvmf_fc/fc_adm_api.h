@@ -114,6 +114,8 @@ struct spdk_nvmf_bcm_fc_hw_port_init_args {
 	void                             *cb_ctx;
 	void                             *port_ctx;
 	uint16_t                          fcp_rq_id; /* Base rq ID of SCSI queue */
+	struct spdk_ring                  *xri_ring;
+	uint32_t		                  rsvd_scsi_xri;
 };
 
 typedef struct spdk_nvmf_bcm_fc_hw_port_init_args spdk_nvmf_bcm_fc_hw_port_init_args_t;

@@ -120,6 +120,7 @@ struct spdk_nvmf_bcm_fc_hw_queues {
 	struct fc_wrkq   wq;
 	struct fc_rcvq   rq_hdr;
 	struct fc_rcvq   rq_payload;
+	uint32_t send_frame_xri;
 };
 
 /*
@@ -271,6 +272,7 @@ struct spdk_nvmf_bcm_fc_port {
 	uint16_t fcp_rq_id;
 	bool is_sgl_preregistered;
 	struct spdk_ring *xri_ring;
+	uint32_t rsvd_scsi_xri;
 	struct spdk_nvmf_bcm_fc_xri *xri_elem_pool;
 	struct spdk_nvmf_bcm_fc_hwqp ls_queue;
 	uint32_t max_io_queues;

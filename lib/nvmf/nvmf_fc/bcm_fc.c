@@ -437,14 +437,21 @@ spdk_nvmf_bcm_fc_get_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	/* Get the physical port from the hwqp and dequeue an XRI from the
 	 * corresponding ring. Send this back.
 	 */
-	if (0 == spdk_ring_dequeue(hwqp->fc_port->xri_ring, (void **)&xri, 1)) {
+	/* Use SCSI gaurdrails to stop from reaching into SCSI reserved XRIs */
+	if (spdk_ring_count(hwqp->fc_port->xri_ring) > hwqp->fc_port->rsvd_scsi_xri) {
+
+		if (0 == spdk_ring_dequeue(hwqp->fc_port->xri_ring, (void **)&xri, 1)) {
+			hwqp->counters.no_xri++;
+			return NULL;
+		}
+
+		xri->is_active = false;
+		return xri;
+	} else {
 		/* This code path can be hit thousands of times.  This is not an error */
 		hwqp->counters.no_xri++;
 		return NULL;
 	}
-
-	xri->is_active = false;
-	return xri;
 }
 
 /*

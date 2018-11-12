@@ -304,6 +304,12 @@ spdk_ring_create(enum spdk_ring_type type, size_t count, int socket_id)
 	return (struct spdk_ring *)rte_ring_create(ring_name, count, socket_id, flags);
 }
 
+unsigned
+spdk_ring_count(const struct spdk_ring *ring)
+{
+	return rte_ring_count((struct rte_ring *)ring);
+}
+
 void
 spdk_ring_free(struct spdk_ring *ring)
 {

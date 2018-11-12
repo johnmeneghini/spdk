@@ -295,6 +295,11 @@ size_t spdk_ring_enqueue(struct spdk_ring *ring, void **objs, size_t count);
  */
 size_t spdk_ring_dequeue(struct spdk_ring *ring, void **objs, size_t count);
 
+/**
+ * Return the number of free elements in the ring.
+ */
+unsigned spdk_ring_count(const struct spdk_ring *ring);
+
 #define SPDK_VTOPHYS_ERROR	(0xFFFFFFFFFFFFFFFFULL)
 
 uint64_t spdk_vtophys(void *buf);
