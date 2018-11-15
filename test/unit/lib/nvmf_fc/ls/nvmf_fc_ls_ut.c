@@ -1109,6 +1109,12 @@ int spdk_nvmf_bcm_fc_free_conn_req_ring(struct spdk_nvmf_bcm_fc_conn *fc_conn)
 	return 0;
 }
 
+void spdk_nvmf_qslots_update(enum spdk_nvmf_qslot_update qslot_update, uint32_t qslots,
+			     void *port_ctx)
+{
+	return;
+}
+
 static void
 usage(const char *program_name)
 {

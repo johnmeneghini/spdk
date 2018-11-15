@@ -606,6 +606,9 @@ nvmf_fc_ls_assign_conn_to_q(struct spdk_nvmf_bcm_fc_association *assoc,
 	 * in while adding this connection in the poller thread */
 	fc_port->io_queues[sel_qind].used_q_slots += sq_size;
 
+	/* Update the App for any notifications that may be needed */
+	spdk_nvmf_qslots_update(NVMF_QSLOTS_ADDED, sq_size, fc_port->port_ctx);
+
 	fc_port->io_queues[sel_qind].num_conns++;
 
 	/* create connection ID */
@@ -665,6 +668,8 @@ nvmf_fc_handle_xmt_ls_rsp_failure(struct spdk_nvmf_bcm_fc_association *assoc,
 	} else {
 		/* IOQ - give the queue slots for this connection back to the hwqp */
 		fc_conn->hwqp->used_q_slots -= fc_conn->max_queue_depth;
+		spdk_nvmf_qslots_update(NVMF_QSLOTS_REMOVED, fc_conn->max_queue_depth,
+					fc_conn->hwqp->fc_port->port_ctx);
 	}
 
 	/* create context for delete connection API */
@@ -905,6 +910,8 @@ nvmf_fc_del_all_conns_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
 	if ((fc_conn->conn_id & SPDK_NVMF_FC_BCM_MRQ_CONNID_QUEUE_MASK) != 0) {
 		/* give the queue slots for this connection  back to the hwqp */
 		fc_conn->hwqp->used_q_slots -= fc_conn->max_queue_depth;
+		spdk_nvmf_qslots_update(NVMF_QSLOTS_REMOVED, fc_conn->max_queue_depth,
+					fc_conn->hwqp->fc_port->port_ctx);
 		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
 			      "Freed up %d slots on hwqp %d (current in-use %d)\n",
 			      fc_conn->max_queue_depth, (int)(fc_conn->conn_id &

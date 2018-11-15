@@ -473,4 +473,22 @@ void spdk_nvmf_session_disconnect(struct spdk_nvmf_conn *conn);
 void spdk_nvmf_queue_aer_rsp(struct spdk_nvmf_subsystem *subsystem,
 			     enum aer_type aer_type,
 			     uint8_t aer_info);
+
+enum spdk_nvmf_qslot_update {
+	NVMF_QSLOTS_ADDED	= 0,
+	NVMF_QSLOTS_REMOVED	= 1,
+};
+
+/**
+ * This allows the app to notify/warn when the number of command slots
+ * on a specific hardware port starts crossing different thresholds.
+ *
+ * \param qslot_update Are the command slots being added or removed
+ * \param qslots Number of command slots changing
+ * \param port_ctx A context pointer per port that is provided by the app during port init.
+ *
+ * \return void
+ */
+void spdk_nvmf_qslots_update(enum spdk_nvmf_qslot_update qslot_update, uint32_t qslots,
+			     void *port_ctx);
 #endif

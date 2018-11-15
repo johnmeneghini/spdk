@@ -167,6 +167,7 @@ struct spdk_nvmf_bcm_fc_reg_counters {
 	uint32_t compare_rcvd; /* Number of Compares that are NOT fused commands */
 	uint32_t compare_fused_rcvd; /* Fused compare commands that are received */
 	uint32_t write_fused_rcvd;  /* Fused write commands that are received */
+	uint32_t pending_queue_ticks; /* Number of times the pending queue has been used for R/w IO */
 };
 
 /*

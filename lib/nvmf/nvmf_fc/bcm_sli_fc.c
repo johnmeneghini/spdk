@@ -2120,6 +2120,7 @@ nvmf_fc_handle_nvme_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_frame_hdr
 		nvmf_fc_process_fused_command(fc_req);
 	} else {
 		if (nvmf_fc_execute_nvme_rqst(fc_req)) {
+			fc_req->hwqp->reg_counters.pending_queue_ticks++;
 			TAILQ_INSERT_TAIL(&fc_conn->pending_queue, fc_req, pending_link);
 		}
 	}

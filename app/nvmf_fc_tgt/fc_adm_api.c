@@ -2314,6 +2314,13 @@ spdk_post_event(void *context, struct spdk_event *event)
 	spdk_event_call(event);
 }
 
+void spdk_nvmf_qslots_update(enum spdk_nvmf_qslot_update qslot_update, uint32_t qslots,
+			     void *port_ctx)
+{
+	return;
+}
+
+
 /* ******************* DUMP/DISPLAY FUNCTIONS - BEGIN ****************************** */
 
 void
