@@ -263,7 +263,7 @@ struct spdk_nvmf_subsystem g_nvmf_subsys;
 struct spdk_nvmf_subsystem *
 spdk_nvmf_find_subsystem(const char *subnqn)
 {
-	g_nvmf_subsys.disconnect_cb = spdk_nvmf_bcm_fc_subsys_disconnect_cb;
+	g_nvmf_subsys.app_cbs->disconnect_cb = spdk_nvmf_bcm_fc_subsys_disconnect_cb;
 	return &g_nvmf_subsys;
 }
 

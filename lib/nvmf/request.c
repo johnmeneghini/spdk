@@ -153,7 +153,7 @@ nvmf_process_connect_master(void *arg1, void *arg2)
 		return;
 	}
 
-	subsystem->connect_cb(subsystem->cb_ctx, req);
+	subsystem->app_cbs->connect_cb(subsystem->cb_ctx, req);
 }
 
 static spdk_nvmf_request_exec_status

@@ -340,7 +340,7 @@ nvmf_test_create_subsystem(void)
 
 	strncpy(nqn, "nqn.2016-06.io.spdk:subsystem1", sizeof(nqn));
 	subsystem = spdk_nvmf_create_subsystem(nqn, SPDK_NVMF_SUBTYPE_NVME,
-					       NVMF_SUBSYSTEM_MODE_DIRECT, NULL, NULL, NULL);
+					       NVMF_SUBSYSTEM_MODE_DIRECT, NULL, NULL);
 	SPDK_CU_ASSERT_FATAL(subsystem != NULL);
 	CU_ASSERT_STRING_EQUAL(subsystem->subnqn, nqn);
 	spdk_nvmf_delete_subsystem(subsystem);
@@ -351,7 +351,7 @@ nvmf_test_create_subsystem(void)
 	nqn[223] = '\0';
 	CU_ASSERT(strlen(nqn) == 223);
 	subsystem = spdk_nvmf_create_subsystem(nqn, SPDK_NVMF_SUBTYPE_NVME,
-					       NVMF_SUBSYSTEM_MODE_DIRECT, NULL, NULL, NULL);
+					       NVMF_SUBSYSTEM_MODE_DIRECT, NULL, NULL);
 	SPDK_CU_ASSERT_FATAL(subsystem != NULL);
 	CU_ASSERT_STRING_EQUAL(subsystem->subnqn, nqn);
 	spdk_nvmf_delete_subsystem(subsystem);
@@ -362,7 +362,7 @@ nvmf_test_create_subsystem(void)
 	nqn[224] = '\0';
 	CU_ASSERT(strlen(nqn) == 224);
 	subsystem = spdk_nvmf_create_subsystem(nqn, SPDK_NVMF_SUBTYPE_NVME,
-					       NVMF_SUBSYSTEM_MODE_DIRECT, NULL, NULL, NULL);
+					       NVMF_SUBSYSTEM_MODE_DIRECT, NULL, NULL);
 	CU_ASSERT(subsystem == NULL);
 }
 

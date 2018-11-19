@@ -230,21 +230,10 @@ static int
 nvmf_virtual_ctrlr_get_changed_ns_log_page(struct spdk_nvmf_request *req, uint64_t offset,
 		uint32_t length)
 {
-	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
 	uint8_t *curr_ptr = req->data;
 	struct spdk_nvmf_session *sess;
 	uint32_t i, copy_len, nsid;
 	uint16_t num_ns_changed;
-
-	if (!length) {
-		SPDK_ERRLOG("Get Log command with zero length\n");
-		goto error;
-	}
-
-	if (!req->conn || !req->conn->sess || !req->conn->sess->subsys) {
-		SPDK_ERRLOG("Get Log command with no subsystem\n");
-		goto error;
-	}
 
 	sess = req->conn->sess;
 
@@ -290,9 +279,6 @@ nvmf_virtual_ctrlr_get_changed_ns_log_page(struct spdk_nvmf_request *req, uint64
 	}
 
 	goto success;
-error:
-	response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
-	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 success:
 	spdk_nvmf_session_reset_ns_changed_map(sess);
 	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
@@ -304,7 +290,6 @@ nvmf_virtual_ctrlr_get_ana_log_page(struct spdk_nvmf_request *req, uint8_t lsp, 
 {
 	struct spdk_nvmf_subsystem *subsys = NULL;
 	uint32_t nsid, num_ns, copy_len;
-	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
 	uint8_t *curr_ptr = req->data;
 	struct spdk_nvmf_ana_log_page hdr = {0};
 	struct spdk_nvmf_ana_group_desc_format group_desc = {0};
@@ -312,26 +297,6 @@ nvmf_virtual_ctrlr_get_ana_log_page(struct spdk_nvmf_request *req, uint8_t lsp, 
 	struct spdk_nvmf_ana_group *ana_subsys_entry_tmp = NULL;
 	uint8_t ana_state;
 	bool rgo = (lsp & 0x01);
-
-	if (!length) {
-		SPDK_ERRLOG("Get Log command with zero length\n");
-		goto error;
-	}
-
-	if (!req->conn) {
-		SPDK_ERRLOG("Get Log command with no connection\n");
-		goto error;
-	}
-
-	if (!req->conn->sess) {
-		SPDK_ERRLOG("Get Log command with no session\n");
-		goto error;
-	}
-
-	if (!req->conn->sess->subsys) {
-		SPDK_ERRLOG("Get Log command with no subsystem\n");
-		goto error;
-	}
 
 	subsys = req->conn->sess->subsys;
 	num_ns = subsys->dev.virt.max_nsid;
@@ -423,10 +388,31 @@ nvmf_virtual_ctrlr_get_ana_log_page(struct spdk_nvmf_request *req, uint8_t lsp, 
 		}
 	}
 	goto done;
-error:
-	response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
 done:
 	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+}
+
+static int
+nvmf_virtual_ctrlr_get_vendor_specific_log_page(struct spdk_nvmf_request *req,
+		uint64_t offset)
+{
+	struct spdk_nvmf_subsystem *subsys = req->conn->sess->subsys;
+	if (subsys->app_cbs->get_vs_log_page) {
+		if (subsys->app_cbs->get_vs_log_page(req, offset) < 0) {
+			/*
+			 * In case of any error, since this is a vendor specific
+			 * log page, it will be upto the application callback
+			 * function i.e. get_vs_log_page(..) to set the appropriate
+			 * status code to return in the command response.
+			 */
+			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+		}
+	} else {
+		SPDK_TRACELOG(SPDK_TRACE_NVMF, "Vendor specific log page callback not defined\n");
+		req->rsp->nvme_cpl.status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+	}
+	return SPDK_NVMF_REQUEST_EXEC_STATUS_ASYNCHRONOUS;
 }
 
 static inline uint32_t
@@ -464,8 +450,13 @@ nvmf_virtual_ctrlr_get_log_page(struct spdk_nvmf_request *req)
 
 	lid = cmd->cdw10 & 0xFF;
 	lsp = (cmd->cdw10 >> 8) & 0xF;
-
 	len = nvmf_get_log_page_len(cmd);
+
+	if (!len) {
+		SPDK_ERRLOG("Get log page with 0 length\n");
+		response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+	}
 	if (len > req->length) {
 		SPDK_ERRLOG("Get log page: len (%u) > buf size (%u)\n",
 			    len, req->length);
@@ -483,6 +474,9 @@ nvmf_virtual_ctrlr_get_log_page(struct spdk_nvmf_request *req)
 		break;
 	case SPDK_NVME_LOG_CHANGED_NS_LIST:
 		return nvmf_virtual_ctrlr_get_changed_ns_log_page(req, log_page_offset, len);
+		break;
+	case SPDK_NVME_LOG_VENDOR_SPECIFIC:
+		return nvmf_virtual_ctrlr_get_vendor_specific_log_page(req, log_page_offset);
 		break;
 	default:
 		SPDK_ERRLOG("Unsupported Get Log Page 0x%02X\n", lid);
@@ -1091,6 +1085,20 @@ nvmf_virtual_ctrlr_process_io_abort(struct spdk_nvmf_request *req)
 		/* Dont call in this context. Schedule for later */
 		event = spdk_event_allocate(spdk_env_get_master_lcore(),
 					    nvmf_virtual_ctrlr_queue_request_complete,
+					    (void *)req, NULL);
+		spdk_event_call(event);
+	} else if ((req->conn->type == CONN_TYPE_AQ) &&
+		   (cmd->opc == SPDK_NVME_OPC_GET_LOG_PAGE) &&
+		   ((cmd->cdw10 & 0xFF) == SPDK_NVME_LOG_VENDOR_SPECIFIC)) {
+
+		if (!req->conn->sess->subsys->app_cbs->abort_vs_log_page_req) {
+			SPDK_TRACELOG(SPDK_TRACE_NVMF,
+				      "Abort vendor specific log page request callback not defined\n");
+			return;
+		}
+		struct spdk_event *event = NULL;
+		event = spdk_event_allocate(spdk_env_get_master_lcore(),
+					    req->conn->sess->subsys->app_cbs->abort_vs_log_page_req,
 					    (void *)req, NULL);
 		spdk_event_call(event);
 	} else if (req->bdev_io) {

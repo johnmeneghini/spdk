@@ -271,7 +271,7 @@ test_discovery_log(void)
 
 	/* Add one subsystem and verify that the discovery log contains it */
 	subsystem = spdk_nvmf_create_subsystem("nqn.2016-06.io.spdk:subsystem1", SPDK_NVMF_SUBTYPE_NVME,
-					       NVMF_SUBSYSTEM_MODE_DIRECT, NULL, NULL, NULL);
+					       NVMF_SUBSYSTEM_MODE_DIRECT, NULL, NULL);
 	SPDK_CU_ASSERT_FATAL(subsystem != NULL);
 
 	listen_addr = spdk_nvmf_tgt_listen("test_transport1", SPDK_NVMF_ADRFAM_IPV4, "1234", "5678");
@@ -330,7 +330,7 @@ test_discovery_log(void)
 	/* New tests with dynamic discovery log page */
 	/* Add one more subsystem and verify that the discovery log contains it */
 	subsystem2 = spdk_nvmf_create_subsystem("nqn.2016-06.io.spdk:subsystem2", SPDK_NVMF_SUBTYPE_NVME,
-						NVMF_SUBSYSTEM_MODE_DIRECT, NULL, NULL, NULL);
+						NVMF_SUBSYSTEM_MODE_DIRECT, NULL, NULL);
 	SPDK_CU_ASSERT_FATAL(subsystem != NULL);
 
 	listen_addr = spdk_nvmf_tgt_listen("test_transport1", SPDK_NVMF_ADRFAM_IPV4, "12345", "56789");

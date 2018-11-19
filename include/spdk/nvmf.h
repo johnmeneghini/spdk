@@ -179,6 +179,18 @@ struct spdk_nvmf_ana_group {
 };
 
 /*
+ * Function table for spdk_nvmf_subystem provides a set of APIs to
+ * allow communication with the target application.
+ */
+
+struct spdk_nvmf_subsystem_app_cbs {
+	void (*connect_cb)(void *cb_ctx, struct spdk_nvmf_request *req);
+	void (*disconnect_cb)(void *cb_ctx, struct spdk_nvmf_conn *conn);
+	int (*get_vs_log_page)(struct spdk_nvmf_request *req, uint64_t offset);
+	void (*abort_vs_log_page_req)(void *arg1, void *arg2);
+};
+
+/*
  * The NVMf subsystem, as indicated in the specification, is a collection
  * of virtual controller sessions.  Any individual controller session has
  * access to all the NVMe device/namespaces maintained by the subsystem.
@@ -218,9 +230,8 @@ struct spdk_nvmf_subsystem {
 
 	const struct spdk_nvmf_ctrlr_ops *ops;
 
+	struct spdk_nvmf_subsystem_app_cbs *app_cbs;
 	void					*cb_ctx;
-	spdk_nvmf_subsystem_connect_fn		connect_cb;
-	spdk_nvmf_subsystem_disconnect_fn	disconnect_cb;
 
 	TAILQ_HEAD(, spdk_nvmf_session)		sessions;
 
@@ -279,8 +290,7 @@ struct spdk_nvmf_subsystem *spdk_nvmf_create_subsystem(const char *nqn,
 		enum spdk_nvmf_subtype type,
 		enum spdk_nvmf_subsystem_mode mode,
 		void *cb_ctx,
-		spdk_nvmf_subsystem_connect_fn connect_cb,
-		spdk_nvmf_subsystem_disconnect_fn disconnect_cb);
+		struct spdk_nvmf_subsystem_app_cbs *app_cbs);
 
 /**
  * Initialize the subsystem on the thread that will be used to poll it.

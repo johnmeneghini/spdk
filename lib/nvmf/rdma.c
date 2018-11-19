@@ -695,7 +695,7 @@ spdk_nvmf_rdma_disconnect(struct rdma_cm_event *evt)
 
 	subsystem = session->subsys;
 
-	subsystem->disconnect_cb(subsystem->cb_ctx, conn);
+	subsystem->app_cbs->disconnect_cb(subsystem->cb_ctx, conn);
 
 	return 0;
 }

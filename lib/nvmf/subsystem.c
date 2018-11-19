@@ -227,8 +227,7 @@ spdk_nvmf_create_subsystem(const char *nqn,
 			   enum spdk_nvmf_subtype type,
 			   enum spdk_nvmf_subsystem_mode mode,
 			   void *cb_ctx,
-			   spdk_nvmf_subsystem_connect_fn connect_cb,
-			   spdk_nvmf_subsystem_disconnect_fn disconnect_cb)
+			   struct spdk_nvmf_subsystem_app_cbs *app_cbs)
 {
 	struct spdk_nvmf_subsystem	*subsystem;
 
@@ -247,8 +246,7 @@ spdk_nvmf_create_subsystem(const char *nqn,
 	subsystem->subtype = type;
 	subsystem->mode = mode;
 	subsystem->cb_ctx = cb_ctx;
-	subsystem->connect_cb = connect_cb;
-	subsystem->disconnect_cb = disconnect_cb;
+	subsystem->app_cbs = app_cbs;
 	snprintf(subsystem->subnqn, sizeof(subsystem->subnqn), "%s", nqn);
 
 	subsystem->host0.max_io_queue_depth = g_nvmf_tgt.opts.max_io_queue_depth;

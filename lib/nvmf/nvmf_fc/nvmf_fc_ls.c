@@ -904,8 +904,8 @@ nvmf_fc_del_all_conns_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
 	SPDK_NOTICELOG("Delete all connections for "
 		       "assoc_id 0x%lx\n", assoc->assoc_id);
 	if (assoc->subsystem) {
-		assoc->subsystem->disconnect_cb(assoc->subsystem->cb_ctx,
-						&fc_conn->conn);
+		assoc->subsystem->app_cbs->disconnect_cb(assoc->subsystem->cb_ctx,
+				&fc_conn->conn);
 	}
 
 	if ((fc_conn->conn_id & SPDK_NVMF_FC_BCM_MRQ_CONNID_QUEUE_MASK) != 0) {

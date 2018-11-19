@@ -432,7 +432,7 @@ test_changed_ns_log(void)
 
 	TAILQ_INIT(&g_nvmf_tgt.subsystems);
 	subsystem = spdk_nvmf_create_subsystem("nqn.2016-06.io.spdk:subsystem2", SPDK_NVMF_SUBTYPE_NVME,
-					       NVMF_SUBSYSTEM_MODE_VIRTUAL, NULL, NULL, NULL);
+					       NVMF_SUBSYSTEM_MODE_VIRTUAL, NULL, NULL);
 	SPDK_CU_ASSERT_FATAL(subsystem != NULL);
 
 	req.conn->sess->subsys = subsystem;
@@ -531,7 +531,7 @@ test_ana_log(void)
 
 	TAILQ_INIT(&g_nvmf_tgt.subsystems);
 	subsystem = spdk_nvmf_create_subsystem("nqn.2016-06.io.spdk:subsystem1", SPDK_NVMF_SUBTYPE_NVME,
-					       NVMF_SUBSYSTEM_MODE_VIRTUAL, NULL, NULL, NULL);
+					       NVMF_SUBSYSTEM_MODE_VIRTUAL, NULL, NULL);
 	SPDK_CU_ASSERT_FATAL(subsystem != NULL);
 
 	req.conn->sess->subsys = subsystem;
