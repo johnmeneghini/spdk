@@ -723,6 +723,7 @@ enum spdk_nvme_aer_config {
 /**
  * NVM command set opcodes
  */
+
 enum spdk_nvme_nvm_opcode {
 	SPDK_NVME_OPC_FLUSH				= 0x00,
 	SPDK_NVME_OPC_WRITE				= 0x01,
@@ -739,6 +740,7 @@ enum spdk_nvme_nvm_opcode {
 
 	SPDK_NVME_OPC_RESERVATION_ACQUIRE		= 0x11,
 	SPDK_NVME_OPC_RESERVATION_RELEASE		= 0x15,
+	SPDK_NVME_OPC_VENDOR_SPECIFIC			= 0x80, /* 80h to ffh */
 };
 
 /**

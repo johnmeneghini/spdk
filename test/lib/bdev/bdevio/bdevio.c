@@ -204,7 +204,7 @@ __blockdev_write(void *arg1, void *arg2)
 		}
 	} else {
 		rc = spdk_bdev_write(target->bdev_desc, NULL, target->ch, req->buf, req->offset,
-				     req->data_len, quick_test_complete, NULL, &bdev_io, true);
+				     req->data_len, quick_test_complete, NULL, &bdev_io);
 	}
 
 	if (rc) {

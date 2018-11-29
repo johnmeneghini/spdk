@@ -63,6 +63,25 @@ struct spdk_io_channel;
 struct spdk_json_write_ctx;
 struct spdk_mempool;
 
+/**
+ * Transport function to convert iovec entry to sgl entry
+ *
+ * Writes a single entry into the sgl at the index provided.
+ *
+ * \param req         transport specific stuct pointer
+ * \param length      total length of transfer
+ * \param offset      offset into the transfer, starting from 0
+ * \param iov_va      iovec entry virutal address
+ * \param iov_len     iovec entry length
+ * \param index       index into sgl
+ */
+typedef int (*spdk_nvmf_set_sge)(void *req,
+				 uint32_t length,
+				 uint32_t offset,
+				 void *iov_va,
+				 size_t iov_len,
+				 int index);
+
 /** bdev status */
 enum spdk_bdev_status {
 	SPDK_BDEV_STATUS_INVALID,
@@ -92,6 +111,7 @@ enum spdk_bdev_io_type {
 	SPDK_BDEV_IO_TYPE_NVME_ADMIN,
 	SPDK_BDEV_IO_TYPE_NVME_IO,
 	SPDK_BDEV_IO_TYPE_COMPARE,
+	SPDK_BDEV_IO_TYPE_NONE = -1
 };
 
 /**
@@ -288,16 +308,29 @@ int spdk_bdev_read(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_poo
 int spdk_bdev_readv(struct spdk_bdev_io *bdev_io);
 
 /**
- * Submit a write/compare request to the bdev on the given channel.
+ * Submit an io request to the bdev for processing. The bdev_io has already been
+ * been initialized by spdk_bdev_int_ioctx.
  *
- * \param bdev Block device
- * \param bdev_io_pool I/O request pool used to obtain a bdev_io  NULL to use global pool.
- * \param ch I/O channel. Obtained by calling spdk_bdev_get_io_channel().
- * \param buf Data buffer to written from.
- * \param offset The offset, in bytes, from the start of the block device.
- * \param nbytes The number of bytes to write/compare. buf must be greater than or equal to this size.
+ * \param bdev_io io descriptor
+ *
+ * \return 0 on success.
+ */
+int spdk_bdev_submit_io(struct spdk_bdev_io *bdev_io);
+
+int spdk_bdev_fini_io(struct spdk_bdev_io *bdev_io);
+
+/**
+ * Submit a write request to the bdev on the given channel.
+ *
+ * \param bdev - block device
+ * \param bdev_io_pool - I/O request pool used to obtain a bdev_io. When NULL to use global pool.
+ * \param ch - I/O channel. Obtained by calling spdk_bdev_get_io_channel().
+ * \param buf - data buffer to written from.
+ * \param offset - the offset, in bytes, from the start of the block device.
+ * \param nbytes - the number of bytes to write. buf must be greater than or equal to this size.
  * \param cb Called when the request is complete.
- * \param cb_arg Argument passed to cb.
+ * \param cb_arg - argument passed to cb.
+ * \param result_bdev_io - bdev io context handle, returned if not NULL
  *
  * \return 0 on success. On success, the callback will always
  * be called (even if the request ultimately failed). Return
@@ -307,10 +340,39 @@ int spdk_bdev_write(struct spdk_bdev_desc *desc,
 		    struct spdk_mempool *bdev_io_pool,
 		    struct spdk_io_channel *ch,
 		    void *buf, uint64_t offset, uint64_t nbytes,
-		    spdk_bdev_io_completion_cb cb, void *cb_arg, struct spdk_bdev_io **result_bdev_io, bool is_write);
+		    spdk_bdev_io_completion_cb cb, void *cb_arg, struct spdk_bdev_io **result_bdev_io);
+/**
+ * Submit a compare and write request to the bdev on the given channel.
+ *
+ *  Supports both Compare and Compare and Write fused commands
+ *
+ * \param opcode - nvme command opcode
+ * \param bdev - block device
+ * \param bdev_io_pool - I/O request pool used to obtain a bdev_io. When NULL to use global pool.
+ * \param ch - I/O channel. Obtained by calling spdk_bdev_get_io_channel().
+ * \param buf - data buffer to written from.
+ * \param offset - the offset, in bytes, from the start of the block device.
+ * \param nbytes - the number of bytes to compare or write. buf must be greater than or equal to this size.
+ * \param cb Called when the request is complete.
+ * \param cb_arg - argument passed to cb.
+ * \param result_bdev_io - bdev io context handle, returned if not NULL
+ * \param fused - true if this is a part of a fused compare and write operation
+ *
+ * \return 0 on success. On success, the callback will always
+ * be called (even if the request ultimately failed). Return
+ * negated errno on failure, in which case the callback will not be called.
+ */
+
+int
+spdk_bdev_compare_and_write(enum spdk_nvme_nvm_opcode opcode,
+			    struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
+			    struct spdk_io_channel *ch,
+			    void *buf, uint64_t offset, uint64_t nbytes,
+			    spdk_bdev_io_completion_cb cb, void *cb_arg, struct spdk_bdev_io **result_bdev_io, bool fused);
+
 
 /**
- * Submit a write/compare request to the bdev on the given channel. This differs from
+ * Submit a write request to the bdev on the given channel. This differs from
  * spdk_bdev_write by allowing the data buffer to be described in a scatter
  * gather list. Some physical devices place memory alignment requirements on
  * data and may not be able to directly transfer out of the buffers provided. In
@@ -472,6 +534,70 @@ int spdk_bdev_read_init(struct spdk_bdev_desc *desc,
 			uint64_t offset,
 			struct spdk_bdev_io **bdev_io_ctx);
 
+/**
+ * spdk_bdev_get_ioctx() - Allocate a bdev_io context.
+ *
+ * \param io_type The spdk_bdev_io_type to initialize
+ * \param desc Block device descriptor for the bdev
+ * \param ch I/O channel
+ * \param bdev_io_pool The spdk_mempool used to allocate the bdev_io
+ * \param cb Called when the request is complete.
+ * \param cb_arg Argument passed to cb.
+ * \param set_sge Transport specific function to fill SGLs
+ * \param sge_ctx Argument passed to set_sge
+ * \param bdev_ctx Return the bdev_io on success
+ *
+ * \return 0 on success.
+ *        -EPERM - permantent error
+ *        -EBADF - write protected bdev
+ *        -EAGAIN - failed to allocate an io_context, retry later
+ */
+
+int
+spdk_bdev_get_ioctx(enum spdk_bdev_io_type io_type,
+		    struct spdk_bdev_desc *desc,
+		    struct spdk_io_channel *ch,
+		    struct spdk_mempool *bdev_io_pool,
+		    spdk_bdev_io_completion_cb cb,
+		    void *cb_arg,
+		    spdk_nvmf_set_sge set_sge_fn,
+		    void *sge_ctx,
+		    void **bdev_ctx);
+
+void
+spdk_bdev_put_ioctx(void **bdev_ctx);
+
+/**
+ * spdk_bdev_init_ioctx() - Initialize a bdev_io context.
+ *
+ * Do io pre-processing needed for the specific bdev_io
+ * by calling the specific bdev->fn->io_init function and/or
+ * allocating memory needed to process the IO.
+ *
+ * \param bdev_ctx bdev_io context to initialize
+ * \param arg1 The io_type specific argument pointer
+ * \param arg2 The io_type specific argument handle
+ * \param length The length of the io request - number of bytes to transfer
+ * \param offset The offset of the io request
+ *
+ * \return 0 on success.
+ *        -EPERM - permantent error
+ *        -EBADF - write protected bdev
+ *        -EAGAIN - failed to allocate an io_context, retry later
+ *
+ * On error the bdev_ctx is consumed.
+ */
+
+int
+spdk_bdev_init_ioctx(void **bdev_ctx,
+		     void *arg1,
+		     void *arg2,
+		     uint32_t length,
+		     uint64_t offset);
+
+enum spdk_bdev_io_type
+spdk_bdev_nvme_opcode_to_bdev_io_type(enum spdk_nvme_nvm_opcode opcode,
+				      struct spdk_bdev *bdev);
 
 int spdk_bdev_read_fini(struct spdk_bdev_io *bdev_io);
 

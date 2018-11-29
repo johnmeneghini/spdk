@@ -148,7 +148,6 @@ struct spdk_bdev_fn_table {
 	int (*init_read)(uint64_t offset, uint32_t length, struct iovec *iov, int *iovcnt,
 			 struct spdk_bdev_io *bdev_io);
 
-
 	/** API to release vector of I/O Buffers  acquired for read */
 	int (*fini_read)(struct spdk_bdev_io *bdev_io);
 
@@ -158,6 +157,13 @@ struct spdk_bdev_fn_table {
 
 	/** API to release vector of I/O Buffers  acquired for write or compare */
 	int (*fini_write)(struct spdk_bdev_io *bdev_io);
+
+	/** API to acquire/init vector of I/O Buffers */
+	int (*init_io)(struct spdk_bdev_io *bdev_io, uint64_t offset, uint32_t length, void *arg1,
+		       void *arg2);
+
+	/** API to release vector of I/O Buffers */
+	int (*fini_io)(struct spdk_bdev_io *bdev_io);
 
 	/**
 	 * Output driver-specific configuration to a JSON stream. Optional - may be NULL.
@@ -398,6 +404,12 @@ struct spdk_bdev_io {
 
 	/** Context that will be passed to the completion callback */
 	void *caller_ctx;
+
+	/** User function that will be called to fill sgls */
+	spdk_nvmf_set_sge               set_sge;
+
+	/** Context passed to set_sge */
+	void                            *sge_ctx;
 
 	/**
 	 * Set to true while the bdev module submit_request function is in progress.

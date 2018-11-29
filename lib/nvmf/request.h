@@ -37,6 +37,7 @@
 #include "spdk/nvmf.h"
 #include "spdk/nvmf_spec.h"
 #include "spdk/queue.h"
+#include "spdk/bdev.h"
 
 typedef enum _spdk_nvmf_request_exec_status {
 	SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_ERROR = -1,
@@ -75,7 +76,7 @@ struct spdk_nvmf_request {
 	union nvmf_h2c_msg		*cmd;
 	union nvmf_c2h_msg		*rsp;
 	struct spdk_scsi_unmap_bdesc	*unmap_bdesc;
-	struct spdk_bdev_io 		*bdev_io;
+	struct spdk_bdev_io		*bdev_io;
 	uint64_t			req_state_trace[MAX_REQ_STATES];
 	struct spdk_mempool		*io_rsrc_pool;
 	struct spdk_nvmf_request        *fused_partner;

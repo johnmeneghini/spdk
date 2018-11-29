@@ -357,7 +357,11 @@ spdk_put_io_channel(struct spdk_io_channel *ch)
 void *
 spdk_io_channel_get_ctx(struct spdk_io_channel *ch)
 {
-	return (uint8_t *)ch + sizeof(*ch);
+	if (ch != NULL) {
+		return (uint8_t *)ch + sizeof(*ch);
+	} else {
+		return NULL;
+	}
 }
 
 struct spdk_thread *

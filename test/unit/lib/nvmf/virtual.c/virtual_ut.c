@@ -266,13 +266,22 @@ spdk_bdev_io_type_supported(struct spdk_bdev *bdev, enum spdk_bdev_io_type io_ty
 {
 	return false;
 }
+int
+spdk_bdev_compare_and_write(enum spdk_nvme_nvm_opcode opcode,
+			    struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
+			    struct spdk_io_channel *ch,
+			    void *buf, uint64_t offset, uint64_t nbytes,
+			    spdk_bdev_io_completion_cb cb, void *cb_arg, struct spdk_bdev_io **result_bdev_io, bool fused)
+{
+	return 0;
+}
 
 int
 spdk_bdev_write(struct spdk_bdev_desc *desc, struct spdk_mempool *pool,
 		struct spdk_io_channel *ch,
 		void *buf,
 		uint64_t offset, uint64_t nbytes, spdk_bdev_io_completion_cb cb, void *cb_arg,
-		struct spdk_bdev_io **result_bdev_io, bool is_write)
+		struct spdk_bdev_io **result_bdev_io)
 {
 	return 0;
 }

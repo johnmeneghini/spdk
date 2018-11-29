@@ -1750,13 +1750,14 @@ nvmf_fc_process_wqe_release(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint16_t wqid)
 	SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "WQE RELEASE\n");
 }
 
-static int nvmf_fc_set_sge(struct spdk_nvmf_request *req,
+static int nvmf_fc_set_sge(void *sge_ctx,
 			   uint32_t length,
 			   uint32_t offset,
 			   void *iov_va,
 			   size_t iov_len,
 			   int index)
 {
+	struct spdk_nvmf_request *req = sge_ctx;
 	struct spdk_nvmf_bcm_fc_request *fc_req = spdk_nvmf_bcm_fc_get_fc_req(req);
 	void *sgl = fc_req->xri->sgl_virt;
 	bcm_sge_t *sge;

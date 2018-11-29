@@ -971,6 +971,8 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 			}
 		}
 	} else { /* SPDK_NVME_OPC_WRITE OR SPDK_NVME_OPC_COMPARE */
+		bool fused = spdk_nvmf_is_fused_command(&req->cmd->nvme_cmd);
+
 		if (bdev->write_protect_flags.write_protect) {
 			response->status.sct = SPDK_NVME_SCT_GENERIC;
 			response->status.sc = SPDK_NVME_SC_NAMESPACE_IS_WRITE_PROTECTED;
@@ -978,11 +980,29 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 		}
 
 		if (req->data) {
-			if (spdk_bdev_write(desc, req->io_rsrc_pool, ch, req->data, offset, req->length,
-					    nvmf_virtual_ctrlr_complete_cmd, req, &req->bdev_io,
-					    (cmd->opc == SPDK_NVME_OPC_WRITE))) {
-				response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
-				return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+			if (cmd->opc == SPDK_NVME_OPC_WRITE) {
+				if (fused) {
+					if (spdk_bdev_compare_and_write(cmd->opc, desc, req->io_rsrc_pool, ch, req->data, offset,
+									req->length,
+									nvmf_virtual_ctrlr_complete_cmd, req, &req->bdev_io, true)) {
+						response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
+						return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+					}
+				} else {
+					if (spdk_bdev_write(desc, req->io_rsrc_pool, ch, req->data, offset, req->length,
+							    nvmf_virtual_ctrlr_complete_cmd, req, &req->bdev_io)) {
+						response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
+						return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+					}
+				}
+			} else {
+				if (spdk_bdev_compare_and_write(cmd->opc, desc, req->io_rsrc_pool, ch, req->data, offset,
+								req->length,
+								nvmf_virtual_ctrlr_complete_cmd, req, &req->bdev_io, fused)) {
+					response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
+					return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+				}
+
 			}
 		} else if (req->iovcnt) {
 			if (spdk_bdev_writev(req->bdev_io) < 0) {
@@ -1187,7 +1207,7 @@ nvmf_virtual_ctrlr_queue_request_complete(void *arg1, void *arg2)
 }
 
 static void
-nvmf_virtual_ctrlr_process_io_abort(struct spdk_nvmf_request *req)
+nvmf_virtual_ctrlr_io_abort(struct spdk_nvmf_request *req)
 {
 	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
 	struct spdk_nvmf_session *session = req->conn->sess;
@@ -1224,7 +1244,7 @@ nvmf_virtual_ctrlr_process_io_abort(struct spdk_nvmf_request *req)
 }
 
 static void
-nvmf_virtual_ctrlr_process_io_cleanup(struct spdk_nvmf_request *req)
+nvmf_virtual_ctrlr_io_cleanup(struct spdk_nvmf_request *req)
 {
 	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
 
@@ -1286,8 +1306,8 @@ const struct spdk_nvmf_ctrlr_ops spdk_nvmf_virtual_ctrlr_ops = {
 	.ctrlr_get_data			= nvmf_virtual_ctrlr_get_data,
 	.process_admin_cmd		= nvmf_virtual_ctrlr_process_admin_cmd,
 	.process_io_cmd			= nvmf_virtual_ctrlr_process_io_cmd,
-	.io_cleanup			= nvmf_virtual_ctrlr_process_io_cleanup,
-	.io_abort			= nvmf_virtual_ctrlr_process_io_abort,
+	.io_cleanup			= nvmf_virtual_ctrlr_io_cleanup,
+	.io_abort			= nvmf_virtual_ctrlr_io_abort,
 	.poll_for_completions		= nvmf_virtual_ctrlr_poll_for_completions,
 	.detach				= nvmf_virtual_ctrlr_detach,
 };

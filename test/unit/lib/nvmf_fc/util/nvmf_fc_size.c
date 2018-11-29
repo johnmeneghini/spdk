@@ -62,7 +62,6 @@ int spdk_nvmf_bcm_fc_xmt_ls_rsp(struct spdk_nvmf_bcm_fc_nport *tgtport,
 				struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst);
 void spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req, bool send_abts,
 				spdk_nvmf_bcm_fc_caller_cb cb, void *cb_args);
-void spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io);
 
 void spdk_nvmf_bcm_fc_req_abort_complete(void *arg1, void *arg2);
 
@@ -791,12 +790,6 @@ void
 spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 			   bool send_abts, spdk_nvmf_bcm_fc_caller_cb cb,
 			   void *cb_args)
-{
-	return;
-}
-
-void
-spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io)
 {
 	return;
 }

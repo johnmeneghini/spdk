@@ -70,26 +70,6 @@ int spdk_nvmf_check_pools(void);
 typedef void (*spdk_nvmf_subsystem_connect_fn)(void *cb_ctx, struct spdk_nvmf_request *req);
 typedef void (*spdk_nvmf_subsystem_disconnect_fn)(void *cb_ctx, struct spdk_nvmf_conn *conn);
 
-/**
- * Transport function to convert iovec entry to sgl entry
- *
- * Writes a single entry into the sgl at the index provided.
- * corresponding sgl index
- *
- * \param req         transport specific stuct pointer
- * \param length      total length of transfer
- * \param offset      offset into the transfer, starting from 0
- * \param iov_va      iovec entry virutal address
- * \param iov_len     iovec entry length
- * \param index       index into sgl
- */
-typedef int (*spdk_nvmf_set_sge)(struct spdk_nvmf_request *req,
-				 uint32_t length,
-				 uint32_t offset,
-				 void *iov_va,
-				 size_t iov_len,
-				 int index);
-
 enum spdk_nvmf_subsystem_mode {
 	NVMF_SUBSYSTEM_MODE_DIRECT	= 0,
 	NVMF_SUBSYSTEM_MODE_VIRTUAL	= 1,
@@ -134,6 +114,11 @@ struct spdk_nvmf_ctrlr_ops {
 	 * Process admin command.
 	 */
 	int (*process_admin_cmd)(struct spdk_nvmf_request *req);
+
+	/**
+	 * Initialize IO command.
+	 */
+	int (*io_init)(struct spdk_nvmf_request *req);
 
 	/**
 	 * Process IO command.
