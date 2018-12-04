@@ -544,6 +544,21 @@ identify_ns(struct spdk_nvmf_subsystem *subsystem,
 	nsdata->nmic.can_share = g_nvmf_tgt.opts.nmic;
 	nsdata->lbaf[0].lbads = spdk_u32log2(spdk_bdev_get_block_size(bdev));
 
+	if (bdev->blocklen == 4096) {
+		nsdata->nawun = 0;
+		nsdata->nawupf = 0;
+	} else {
+		nsdata->nawun = (g_nvmf_tgt.opts.max_io_size / bdev->blocklen) - 1;
+		nsdata->nawupf = (g_nvmf_tgt.opts.max_io_size / bdev->blocklen) - 1;
+		nsdata->nsfeat.ns_atomic_write_unit = 1;
+	}
+
+	if (bdev->blocklen < 4096) {
+		nsdata->noiob = 4096 / bdev->blocklen;
+	} else {
+		nsdata->noiob = ((bdev->blocklen % 4096) ? 0 : 1);
+	}
+
 	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 }
 
