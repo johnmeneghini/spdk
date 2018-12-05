@@ -106,7 +106,6 @@ struct spdk_bdev_desc {
 	struct spdk_bdev		*bdev;
 	spdk_bdev_remove_cb_t		remove_cb;
 	void				*remove_ctx;
-	bool				write;
 	TAILQ_ENTRY(spdk_bdev_desc)	link;
 };
 
@@ -875,7 +874,7 @@ spdk_bdev_write(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
 	struct spdk_bdev_channel *channel = spdk_io_channel_get_ctx(ch);
 	int rc;
 
-	if (!desc->write) {
+	if (bdev->write_protect_flags.write_protect) {
 		return -EBADF;
 	}
 
@@ -942,7 +941,7 @@ spdk_bdev_unmap(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	struct spdk_bdev_channel *channel = spdk_io_channel_get_ctx(ch);
 	int rc;
 
-	if (!desc->write) {
+	if (bdev->write_protect_flags.write_protect) {
 		return -EBADF;
 	}
 
@@ -989,7 +988,7 @@ spdk_bdev_flush(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
 	struct spdk_bdev_channel *channel = spdk_io_channel_get_ctx(ch);
 	int rc;
 
-	if (!desc->write) {
+	if (bdev->write_protect_flags.write_protect) {
 		return -EBADF;
 	}
 
@@ -1129,7 +1128,7 @@ spdk_bdev_nvme_admin_passthru(struct spdk_bdev_desc *desc, struct spdk_io_channe
 	struct spdk_bdev_channel *channel = spdk_io_channel_get_ctx(ch);
 	int rc;
 
-	if (!desc->write) {
+	if (bdev->write_protect_flags.write_protect) {
 		return -EBADF;
 	}
 
@@ -1166,7 +1165,7 @@ spdk_bdev_nvme_io_passthru(struct spdk_bdev_desc *desc, struct spdk_io_channel *
 	struct spdk_bdev_channel *channel = spdk_io_channel_get_ctx(ch);
 	int rc;
 
-	if (!desc->write) {
+	if (bdev->write_protect_flags.write_protect) {
 		/*
 		 * Do not try to parse the NVMe command - we could maybe use bits in the opcode
 		 *  to easily determine if the command is a read or write, but for now just
@@ -1560,7 +1559,11 @@ spdk_bdev_open(struct spdk_bdev *bdev, bool write, spdk_bdev_remove_cb_t remove_
 	desc->bdev = bdev;
 	desc->remove_cb = remove_cb;
 	desc->remove_ctx = remove_ctx;
-	desc->write = write;
+	if (write) {
+		bdev->write_protect_flags.write_protect = 0;
+	} else {
+		bdev->write_protect_flags.write_protect = 1;
+	}
 	*_desc = desc;
 
 	pthread_mutex_unlock(&bdev->mutex);
@@ -1576,7 +1579,7 @@ spdk_bdev_close(struct spdk_bdev_desc *desc)
 
 	pthread_mutex_lock(&bdev->mutex);
 
-	if (desc->write) {
+	if (!bdev->write_protect_flags.write_protect) {
 		assert(bdev->bdev_opened_for_write);
 		bdev->bdev_opened_for_write = false;
 	}
@@ -1604,14 +1607,14 @@ spdk_bdev_module_claim_bdev(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 		return -EPERM;
 	}
 
-	if ((!desc || !desc->write) && bdev->bdev_opened_for_write) {
+	if ((!desc || bdev->write_protect_flags.write_protect) && bdev->bdev_opened_for_write) {
 		SPDK_ERRLOG("bdev %s already opened with write access\n", bdev->name);
 		return -EPERM;
 	}
 
-	if (desc && !desc->write) {
+	if (desc && bdev->write_protect_flags.write_protect) {
 		bdev->bdev_opened_for_write = true;
-		desc->write = true;
+		bdev->write_protect_flags.write_protect = 1;
 	}
 
 	bdev->claim_module = module;

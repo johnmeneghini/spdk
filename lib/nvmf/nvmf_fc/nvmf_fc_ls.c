@@ -474,13 +474,13 @@ nvmf_fc_ls_free_connection(struct spdk_nvmf_bcm_fc_port *fc_port,
 			/* Give back the queue slots for this IO connection to hwqp */
 			fc_conn->hwqp->used_q_slots -= fc_conn->max_queue_depth;
 			spdk_nvmf_qslots_update(NVMF_QSLOTS_REMOVED, fc_conn->max_queue_depth,
-					fc_conn->hwqp->fc_port->port_ctx);
+						fc_conn->hwqp->fc_port->port_ctx);
 
 			SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-					"Freed up %d slots on hwqp %d (current in-use %d)\n",
-					fc_conn->max_queue_depth, (int)(fc_conn->conn_id &
-						SPDK_NVMF_FC_BCM_MRQ_CONNID_QUEUE_MASK),
-					fc_conn->hwqp->used_q_slots);
+				      "Freed up %d slots on hwqp %d (current in-use %d)\n",
+				      fc_conn->max_queue_depth, (int)(fc_conn->conn_id &
+						      SPDK_NVMF_FC_BCM_MRQ_CONNID_QUEUE_MASK),
+				      fc_conn->hwqp->used_q_slots);
 
 			TAILQ_INSERT_TAIL(&fc_conn->fc_assoc->avail_fc_conns, fc_conn, assoc_avail_link);
 		}
@@ -662,15 +662,15 @@ nvmf_fc_ls_rsp_fail_del_conn_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t
 	struct spdk_nvmf_bcm_fc_conn *fc_conn = dp->args.fc_conn;
 
 	SPDK_NOTICELOG("Transmit LS response failure callback"
-		      "for assoc = 0x%lx conn_id 0x%lx on Port %d\n", dp->assoc->assoc_id,
-		      dp->args.fc_conn->conn_id, dp->args.hwqp->fc_port->port_hdl);
+		       "for assoc = 0x%lx conn_id 0x%lx on Port %d\n", dp->assoc->assoc_id,
+		       dp->args.fc_conn->conn_id, dp->args.hwqp->fc_port->port_hdl);
 
 	/* remove connection from association's connection list */
 	TAILQ_REMOVE(&assoc->fc_conns, fc_conn, assoc_link);
 	assoc->conn_count--;
 
 	nvmf_fc_ls_free_connection(dp->args.hwqp->fc_port, dp->args.fc_conn);
-	
+
 	if (dp->assoc_conn) {
 		/* delete association */
 		nvmf_fc_del_assoc_from_tgt_port(assoc);
@@ -689,8 +689,8 @@ nvmf_fc_handle_xmt_ls_rsp_failure(struct spdk_nvmf_bcm_fc_association *assoc,
 	union nvmf_fc_ls_op_ctx *opd = NULL;
 
 	SPDK_NOTICELOG("Transmit LS response failure "
-		      "for assoc_id 0x%lx conn_id 0x%lx\n", assoc->assoc_id,
-		      fc_conn->conn_id);
+		       "for assoc_id 0x%lx conn_id 0x%lx\n", assoc->assoc_id,
+		       fc_conn->conn_id);
 
 	/* create context for delete connection API */
 	opd = nvmf_fc_ls_new_op_ctx();

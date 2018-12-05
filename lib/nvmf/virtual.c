@@ -173,6 +173,7 @@ nvmf_virtual_ctrlr_get_data(struct spdk_nvmf_session *session)
 	session->vcdata.nanagrpid = g_nvmf_tgt.opts.nanagrpid;
 	session->vcdata.nn = MAX_VIRTUAL_NAMESPACE;
 	session->vcdata.mnan = g_nvmf_tgt.opts.mnan;
+	memcpy(&session->vcdata.nwpc, &g_nvmf_tgt.opts.nwpc, sizeof(uint8_t));
 	session->vcdata.sgls.supported = 1;
 	strncpy((char *)session->vcdata.subnqn, session->subsys->subnqn, sizeof(session->vcdata.subnqn));
 	memcpy(&session->vcdata.oncs, &g_nvmf_tgt.opts.oncs, sizeof(uint16_t));
@@ -526,6 +527,13 @@ identify_ns(struct spdk_nvmf_subsystem *subsystem,
 
 	nsdata->nsze = num_blocks;
 	nsdata->ncap = num_blocks;
+
+	if (bdev->write_protect_flags.write_protect) {
+		nsdata->nsattr.write_protect = 1;
+	} else {
+		nsdata->nsattr.write_protect = 0;
+	}
+
 	nsdata->nlbaf = 0;
 	nsdata->flbas.format = 0;
 	nsdata->nmic.can_share = g_nvmf_tgt.opts.nmic;
@@ -714,6 +722,8 @@ nvmf_virtual_ctrlr_get_features(struct spdk_nvmf_request *req)
 		return spdk_nvmf_session_get_features_async_event_configuration(req);
 	case SPDK_NVME_FEAT_HOST_IDENTIFIER:
 		return spdk_nvmf_session_get_features_host_identifier(req);
+	case SPDK_NVME_FEAT_NAMESPACE_WRITE_PROTECT_CONFIG:
+		return spdk_nvmf_session_get_features_ns_write_protection_config(req);
 	default:
 		SPDK_ERRLOG("Get Features command with unsupported feature ID 0x%02x\n", feature);
 		response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
@@ -738,6 +748,8 @@ nvmf_virtual_ctrlr_set_features(struct spdk_nvmf_request *req)
 		return spdk_nvmf_session_set_features_async_event_configuration(req);
 	case SPDK_NVME_FEAT_HOST_IDENTIFIER:
 		return spdk_nvmf_session_set_features_host_identifier(req);
+	case SPDK_NVME_FEAT_NAMESPACE_WRITE_PROTECT_CONFIG:
+		return spdk_nvmf_session_set_features_ns_write_protection_config(req);
 	default:
 		SPDK_ERRLOG("Set Features command with unsupported feature ID 0x%02x\n", feature);
 		response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
@@ -843,8 +855,8 @@ nvmf_virtual_ctrlr_handle_bdev_rc(int rc, struct spdk_nvmf_request *req)
 		status = SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		break;
 	case -EBADF:
-		response->status.sct = SPDK_NVME_SCT_COMMAND_SPECIFIC;
-		response->status.sc = SPDK_NVME_SC_ATTEMPTED_WRITE_TO_RO_PAGE;
+		response->status.sct = SPDK_NVME_SCT_GENERIC;
+		response->status.sc = SPDK_NVME_SC_NAMESPACE_IS_WRITE_PROTECTED;
 		status = SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		break;
 	case -EAGAIN:
@@ -949,6 +961,12 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 			}
 		}
 	} else { /* SPDK_NVME_OPC_WRITE OR SPDK_NVME_OPC_COMPARE */
+		/* Check if bdev is write protected */
+		if (bdev->write_protect_flags.write_protect) {
+			response->status.sct = SPDK_NVME_SCT_GENERIC;
+			response->status.sc = SPDK_NVME_SC_NAMESPACE_IS_WRITE_PROTECTED;
+			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+		}
 		if (req->data) {
 			if (spdk_bdev_write(desc, req->io_rsrc_pool, ch, req->data, offset, req->length,
 					    nvmf_virtual_ctrlr_complete_cmd, req, &req->bdev_io,

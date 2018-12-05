@@ -886,6 +886,41 @@ spdk_nvmf_subsystem_add_ns(struct spdk_nvmf_subsystem *subsystem, struct spdk_bd
 	return nsid;
 }
 
+int
+spdk_nvmf_update_ns_attr_write_protect(struct spdk_nvmf_subsystem *subsystem, uint32_t nsid,
+				       struct nwpc wp_flags)
+{
+	struct spdk_bdev *bdev = NULL;
+	bool changed = false;
+
+	if (!subsystem) {
+		SPDK_ERRLOG("Invalid subsystem passed during update_ns_attr_ro\n");
+		return -1;
+	}
+
+	if (nsid > subsystem->dev.virt.max_nsid || nsid == 0) {
+		SPDK_ERRLOG("Subsystem %s: Update ns attr for invalid nsid %u\n",
+			    spdk_nvmf_subsystem_get_nqn(subsystem), nsid);
+		return -1;
+	}
+
+	bdev = subsystem->dev.virt.ns_list[nsid - 1];
+	if (bdev == NULL) {
+		SPDK_ERRLOG("Subsytem %s: Update ns attr with invalid bdev nsid %u\n",
+			    spdk_nvmf_subsystem_get_nqn(subsystem), nsid);
+		return -1;
+	}
+
+	changed = (bdev->write_protect_flags.write_protect != wp_flags.write_protect);
+	bdev->write_protect_flags = wp_flags;
+	/* Set an AEN only if write_protect flag have been changed */
+	if (changed) {
+		spdk_nvmf_subsystem_set_ns_changed(subsystem, nsid);
+	}
+
+	return 0;
+}
+
 const char *
 spdk_nvmf_subsystem_get_sn(const struct spdk_nvmf_subsystem *subsystem)
 {

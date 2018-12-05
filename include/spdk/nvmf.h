@@ -281,6 +281,7 @@ struct spdk_nvmf_tgt_opts {
 	uint8_t					anacap;
 	uint32_t				anagrpmax;
 	uint32_t				nanagrpid;
+	uint8_t					nwpc;
 	uint32_t				mnan;
 	uint8_t                                 tgt_instance_id;
 	uint16_t                                fuses;
@@ -413,6 +414,18 @@ uint32_t spdk_nvmf_subsystem_add_ns(struct spdk_nvmf_subsystem *subsystem, struc
  * \return A status <0 on failure and 0 on success
  */
 int spdk_nvmf_subsystem_remove_ns(struct spdk_nvmf_subsystem *subsystem, uint32_t nsid);
+
+/**
+ * Update a namespace write protect attribute
+ *
+ * \param subsystem Subsystem to update namespace from
+ * \param nsid Namespace ID to assign to the new namespace, or 0 to automatically use an available NSID
+ * \param write_protect write_protect flags, true denotes ns is write protected false otherwise
+ *
+ * \return A status <0 on failure and 0 on success
+ */
+int spdk_nvmf_update_ns_attr_write_protect(struct spdk_nvmf_subsystem *subsystem,
+		uint32_t  nsid, struct nwpc wp_flags);
 
 /**
  * Find an ANA group in a subsystem with a specified group id

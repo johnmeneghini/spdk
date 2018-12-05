@@ -44,6 +44,7 @@
 #include "spdk/bdev.h"
 #include "spdk/queue.h"
 #include "spdk/scsi_spec.h"
+#include "spdk/nvme_spec.h"
 
 /** \page block_backend_modules Block Device Backend Modules
  *
@@ -253,6 +254,9 @@ struct spdk_bdev {
 	TAILQ_ENTRY(spdk_bdev) vbdev_link;
 
 	bool bdev_opened_for_write;
+
+	/* denotes write protect conditions on this bdev */
+	struct nwpc write_protect_flags;
 
 	/**
 	 * Pointer to the module that has claimed this bdev for purposes of creating virtual

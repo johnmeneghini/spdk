@@ -143,6 +143,18 @@ spdk_nvmf_session_get_features_async_event_configuration(struct spdk_nvmf_reques
 }
 
 int
+spdk_nvmf_session_set_features_ns_write_protection_config(struct spdk_nvmf_request *req)
+{
+	return -1;
+}
+
+int
+spdk_nvmf_session_get_features_ns_write_protection_config(struct spdk_nvmf_request *req)
+{
+	return -1;
+}
+
+int
 spdk_nvmf_session_async_event_request(struct spdk_nvmf_request *req)
 {
 	return -1;

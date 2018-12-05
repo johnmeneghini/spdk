@@ -589,6 +589,7 @@ enum spdk_nvme_generic_command_status_code {
 	SPDK_NVME_SC_SANITIZE_IN_PROGRESS		= 0x1d,
 	SPDK_NVME_SC_SGL_DATA_BLOCK_GRANULARITY_INVALID	= 0x1e,
 	SPDK_NVME_SC_COMMAND_INVALID_IN_CMB		= 0x1f,
+	SPDK_NVME_SC_NAMESPACE_IS_WRITE_PROTECTED	= 0X20,
 
 	SPDK_NVME_SC_LBA_OUT_OF_RANGE			= 0x80,
 	SPDK_NVME_SC_CAPACITY_EXCEEDED			= 0x81,
@@ -793,6 +794,7 @@ enum spdk_nvme_feat {
 	SPDK_NVME_FEAT_HOST_IDENTIFIER				= 0x81,
 	SPDK_NVME_FEAT_HOST_RESERVE_MASK			= 0x82,
 	SPDK_NVME_FEAT_HOST_RESERVE_PERSIST			= 0x83,
+	SPDK_NVME_FEAT_NAMESPACE_WRITE_PROTECT_CONFIG		= 0X84,
 	/* 0xC0-0xFF - vendor specific */
 };
 
@@ -931,6 +933,13 @@ SPDK_STATIC_ASSERT(sizeof(union spdk_nvme_aer_cq_entry) == 4, "Incorrect size");
 #define SPDK_NVME_SPEC_MPDEL_NUMBER_SIZE 40
 #define SPDK_NVME_SPEC_FIRMWARE_REVISION_SIZE 8
 #define SPDK_NVME_SPEC_IEEE_OUI_SIZE 3
+
+struct nwpc {
+	uint8_t         write_protect : 1;
+	uint8_t         write_protect_upc : 1;
+	uint8_t         write_protect_perm : 1;
+	uint8_t         reserved : 5;
+};
 
 struct __attribute__((packed)) spdk_nvme_ctrlr_data {
 	/* bytes 0-255: controller capabilities and features */
@@ -1266,7 +1275,8 @@ struct __attribute__((packed)) spdk_nvme_ctrlr_data {
 	/** NVM vendor specific command configuration */
 	uint8_t			nvscc;
 
-	uint8_t			reserved531;
+	/** Namespace Write Protection Capabilities */
+	struct nwpc nwpc;
 
 	/** atomic compare & write unit */
 	uint16_t		acwu;
@@ -1504,7 +1514,17 @@ struct spdk_nvme_ns_data {
 
 	uint32_t		anagrpid;
 
-	uint8_t			reserved641[8];
+	uint8_t			reserved[3];
+
+	/* Namespace Attributes */
+	struct {
+		/* NS write protect flag */
+		uint8_t write_protect : 1;
+
+		uint8_t reserved : 7;
+	} nsattr;
+
+	uint8_t			reserved641[4];
 
 	/** namespace globally unique identifier */
 	uint8_t			nguid[16];

@@ -44,6 +44,7 @@
 #include "spdk/util.h"
 
 #include "spdk_internal/log.h"
+#include "spdk_internal/bdev.h"
 
 #define MIN_KEEP_ALIVE_TIMEOUT 10000
 
@@ -1000,6 +1001,43 @@ spdk_nvmf_session_get_features_async_event_configuration(struct spdk_nvmf_reques
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Get Features - Async Event Configuration\n");
 	rsp->cdw0 = session->async_event_config.raw;
+	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+}
+
+int
+spdk_nvmf_session_set_features_ns_write_protection_config(struct spdk_nvmf_request *req)
+{
+	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
+
+	SPDK_ERRLOG("Set Features - Namespace Write Protect Configuration not allowed\n");
+	rsp->status.sc = SPDK_NVME_SC_FEATURE_NOT_CHANGEABLE;
+	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+}
+
+int
+spdk_nvmf_session_get_features_ns_write_protection_config(struct spdk_nvmf_request *req)
+{
+	struct spdk_bdev *bdev;
+	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
+	struct spdk_nvmf_subsystem *subsystem = req->conn->sess->subsys;
+	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
+
+	uint32_t nsid = cmd->nsid;
+	if (nsid > subsystem->dev.virt.max_nsid || nsid == 0) {
+		SPDK_ERRLOG("Get Features - NS Write Protect Config for invalid nsid %u\n", nsid);
+		rsp->status.sc = SPDK_NVME_SC_INVALID_NAMESPACE_OR_FORMAT;
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+	}
+
+	bdev = subsystem->dev.virt.ns_list[nsid - 1];
+	if (bdev == NULL) {
+		SPDK_ERRLOG("Get Features - NS Write Protect Config for invalid nsid %u\n", nsid);
+		rsp->status.sc = SPDK_NVME_SC_INVALID_NAMESPACE_OR_FORMAT;
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+	}
+	rsp->cdw0 = bdev->write_protect_flags.write_protect;
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Get Features - NS Write Protect Config response %u\n", rsp->cdw0);
+
 	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 }
 
