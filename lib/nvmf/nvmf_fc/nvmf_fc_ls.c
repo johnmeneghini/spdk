@@ -433,7 +433,8 @@ nvmf_fc_ls_new_connection(struct spdk_nvmf_bcm_fc_association *assoc,
 		fc_conn->esrp_ratio = esrp_ratio;
 		fc_conn->fc_assoc = assoc;
 		fc_conn->rpi = rpi;
-		fc_conn->max_queue_depth = sq_size;
+		/* The protocol sq_size is 0 based. Actual slots are therefore 1 more */
+		fc_conn->max_queue_depth = sq_size + 1;
 
 		TAILQ_INIT(&fc_conn->pending_queue);
 		TAILQ_INIT(&fc_conn->fused_waiting_queue);
@@ -600,14 +601,14 @@ nvmf_fc_ls_assign_conn_to_q(struct spdk_nvmf_bcm_fc_association *assoc,
 				}
 			}
 		}
+
+		/* Increment the used slots now in case another connect request comes
+		 * in while adding this connection in the poller thread.
+		 */
+		fc_port->io_queues[sel_qind].used_q_slots += sq_size;
+		/* Update the App for any notifications that may be needed */
+		spdk_nvmf_qslots_update(NVMF_QSLOTS_ADDED, sq_size, fc_port->port_ctx);
 	}
-
-	/* Increment the used slots now in case another connect request comes
-	 * in while adding this connection in the poller thread */
-	fc_port->io_queues[sel_qind].used_q_slots += sq_size;
-
-	/* Update the App for any notifications that may be needed */
-	spdk_nvmf_qslots_update(NVMF_QSLOTS_ADDED, sq_size, fc_port->port_ctx);
 
 	fc_port->io_queues[sel_qind].num_conns++;
 
@@ -773,7 +774,7 @@ nvmf_fc_ls_add_conn_to_poller(
 	/* assign connection to (poller) queue */
 	fc_conn->hwqp = nvmf_fc_ls_assign_conn_to_q(assoc,
 			&fc_conn->conn_id,
-			sq_size,
+			fc_conn->max_queue_depth,
 			assoc_conn);
 	if (!fc_conn->hwqp) {
 		SPDK_ERRLOG("failed to find hwqp that could fit requested sq size\n");
