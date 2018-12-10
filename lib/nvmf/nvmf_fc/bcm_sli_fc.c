@@ -361,9 +361,6 @@ nvmf_fc_record_req_trace_point(struct spdk_nvmf_bcm_fc_request *fc_req,
 	case SPDK_NVMF_BCM_FC_REQ_READ_RSP:
 		tpoint_id = TRACE_FC_REQ_READ_RSP;
 		break;
-	case SPDK_NVMF_BCM_FC_REQ_WRITE_BUFFS:
-		tpoint_id = TRACE_FC_REQ_WRITE_BUFFS;
-		break;
 	case SPDK_NVMF_BCM_FC_REQ_WRITE_XFER:
 		tpoint_id = TRACE_FC_REQ_WRITE_XFER;
 		break;
@@ -519,6 +516,7 @@ nvmf_fc_alloc_req_buf(struct spdk_nvmf_bcm_fc_conn *fc_conn)
 	fc_req->magic	= 0;
 	fc_req->is_aborted	= 0;
 	fc_req->transfered_len 	= 0;
+	fc_req->state = SPDK_NVMF_BCM_FC_REQ_INIT;
 	fc_req->link.tqe_next 	= NULL;
 	fc_req->link.tqe_prev 	= NULL;
 	fc_req->pending_link.tqe_next 	= NULL;
@@ -607,17 +605,6 @@ nvmf_fc_req_in_bdev(struct spdk_nvmf_bcm_fc_request *fc_req)
 	case SPDK_NVMF_BCM_FC_REQ_READ_BDEV:
 	case SPDK_NVMF_BCM_FC_REQ_WRITE_BDEV:
 	case SPDK_NVMF_BCM_FC_REQ_NONE_BDEV:
-		return true;
-	default:
-		return false;
-	}
-}
-
-static inline bool
-nvmf_fc_req_in_get_buff(struct spdk_nvmf_bcm_fc_request *fc_req)
-{
-	switch (fc_req->state) {
-	case SPDK_NVMF_BCM_FC_REQ_WRITE_BUFFS:
 		return true;
 	default:
 		return false;
@@ -836,9 +823,6 @@ spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 		/* Notify hw */
 		spdk_nvmf_bcm_fc_issue_abort(fc_req->hwqp, fc_req->xri,
 					     send_abts, NULL, NULL);
-	} else if (nvmf_fc_req_in_get_buff(fc_req)) {
-		/* Will be completed by request_complete callback. */
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "Abort req when getting buffers.\n");
 	} else if (nvmf_fc_req_in_pending(fc_req)) {
 		/* Remove from pending */
 		TAILQ_REMOVE(&fc_req->fc_conn->pending_queue, fc_req, pending_link);
@@ -1957,118 +1941,102 @@ nvmf_fc_use_send_frame(struct spdk_nvmf_request *req)
 static int
 nvmf_fc_execute_nvme_rqst(struct spdk_nvmf_bcm_fc_request *fc_req)
 {
-	struct spdk_nvme_cmd *cmd = &fc_req->req.cmd->nvme_cmd;
 	struct spdk_nvmf_bcm_fc_conn *fc_conn = fc_req->fc_conn;
-	spdk_nvmf_request_exec_status status;
+
+	assert(fc_req->state == SPDK_NVMF_BCM_FC_REQ_INIT || fc_req->state == SPDK_NVMF_BCM_FC_REQ_PENDING);
 
 	/* Allocate an XRI if we dont use send frame for this command. */
 	if (!nvmf_fc_use_send_frame(&fc_req->req)) {
+		assert(fc_req->xri == NULL);
 		fc_req->xri = spdk_nvmf_bcm_fc_get_xri(fc_req->hwqp);
 		if (!fc_req->xri) {
-			goto pending;
+			return 1;
 		}
 	}
 
-	if (fc_req->req.length) {
-		/* Except for IO read/write/compare, create buffers on fly. */
-		if (!(fc_conn->conn.type == CONN_TYPE_IOQ &&
-		      (cmd->opc == SPDK_NVME_OPC_READ ||
-		       cmd->opc == SPDK_NVME_OPC_WRITE ||
-		       cmd->opc == SPDK_NVME_OPC_COMPARE))) {
-
-			status = spdk_nvmf_request_setup_dma(&fc_req->req, g_nvmf_tgt.opts.max_io_size);
-
-			switch (status) {
-			case SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_READY:
-				break;
-			case SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING:
-				fc_req->hwqp->counters.aq_buf_alloc_err++;
-				goto pending;
-			case SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_ERROR:
-				/* This is not an allocation error  */
-				goto error;
-			default:
-				assert("spdk_nvmf_request_setup_dma failed" == 0);
-				goto error;
-			}
-
-		}
-
-		/* For IOQ Writes, alloc bdev buffers */
-		else if (fc_conn->conn.type == CONN_TYPE_IOQ &&
-			 ((cmd->opc == SPDK_NVME_OPC_WRITE) || (cmd->opc == SPDK_NVME_OPC_COMPARE))) {
-
-			spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_WRITE_BUFFS);
-
-			switch (spdk_nvmf_request_exec(&fc_req->req)) {
-			case SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_READY:
-				break;
-			case SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING:
-				SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
-					      "Write buffer alloc failed. Requeue\n");
-				fc_req->hwqp->counters.write_buf_alloc_err++;
-				goto pending;
-			case SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE:
-			case SPDK_NVMF_REQUEST_EXEC_STATUS_ASYNCHRONOUS:
-				/* Aborted in nvmf layer, request_complete with take of cleanup. */
-				return 0;
-			default:
-				goto error;
-			}
-		}
-	}
-
-	if (fc_req->req.xfer == SPDK_NVME_DATA_HOST_TO_CONTROLLER) {
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "WRITE CMD.\n");
-
-		spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_WRITE_XFER);
-
-		if (nvmf_fc_recv_data(fc_req)) {
-			goto error;
-		}
-	} else {
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "READ/NONE CMD\n");
-
-		if (fc_req->req.xfer == SPDK_NVME_DATA_CONTROLLER_TO_HOST) {
-			spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_READ_BDEV);
-		} else {
-			spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_NONE_BDEV);
-		}
-
-		/* Even read can fail for lack of buffers. Handle that. */
-		switch (spdk_nvmf_request_exec(&fc_req->req)) {
-		case SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING:
-			SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC,
-				      "read buffer alloc failed. Requeue\n");
-			fc_req->hwqp->counters.read_buf_alloc_err++;
-			goto pending;
-		case SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE:
-		case SPDK_NVMF_REQUEST_EXEC_STATUS_ASYNCHRONOUS:
+	switch (spdk_nvmf_request_init(&fc_req->req)) {
+	case SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE:
+		switch (fc_req->req.xfer) {
+		case SPDK_NVME_DATA_HOST_TO_CONTROLLER:
+			spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_WRITE_RSP);
+			break;
+		case SPDK_NVME_DATA_CONTROLLER_TO_HOST:
+			spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_READ_RSP);
 			break;
 		default:
-			goto error;
+			spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_NONE_RSP);
 		}
+		spdk_nvmf_request_complete(&fc_req->req);
+		break;
+
+	case SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_READY:
+		switch (fc_req->req.xfer) {
+		case SPDK_NVME_DATA_HOST_TO_CONTROLLER:
+			spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_WRITE_XFER);
+			if (nvmf_fc_recv_data(fc_req)) {
+				goto error;
+			}
+			break;
+
+		default:
+			if (fc_req->req.xfer == SPDK_NVME_DATA_CONTROLLER_TO_HOST) {
+				spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_READ_BDEV);
+			} else {
+				spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_NONE_BDEV);
+			}
+
+			switch (spdk_nvmf_request_exec(&fc_req->req)) {
+			case SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE:
+			case SPDK_NVMF_REQUEST_EXEC_STATUS_ASYNCHRONOUS:
+				break;
+			default:
+				goto error;
+			}
+		}
+		break;
+
+	case SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING:
+		if (fc_conn->conn.type == CONN_TYPE_AQ && fc_req->req.xfer != SPDK_NVME_DATA_NONE) {
+			SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "Admin Command buffer alloc failed. Requeue\n");
+			fc_req->hwqp->counters.aq_buf_alloc_err++;
+		}
+		if (fc_req->req.xfer == SPDK_NVME_DATA_HOST_TO_CONTROLLER) {
+			SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "Write buffer alloc failed. Requeue\n");
+			fc_req->hwqp->counters.write_buf_alloc_err++;
+		} else {
+			assert(fc_req->req.xfer == SPDK_NVME_DATA_CONTROLLER_TO_HOST);
+			SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC, "Read buffer alloc failed. Requeue\n");
+			fc_req->hwqp->counters.read_buf_alloc_err++;
+		}
+
+		/*
+		 * The request remains pending. Note that the caller will add
+		 * this request to the pending_queue... if needed.
+		 */
+		if (fc_req->xri) {
+			spdk_nvmf_bcm_fc_put_xri(fc_req->hwqp, fc_req->xri);
+			fc_req->xri = NULL;
+		}
+
+		assert(fc_req->req.data == NULL);
+
+		return 1;
+
+	case SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_ERROR:
+	/* This error should not be returned by spdk_nvmf_request_init()  */
+	/* fall through */
+	default:
+		goto error;
 	}
 
 	return 0;
 
-pending:
+error:
+	/* Dropped return success to caller */
 	if (fc_req->xri) {
 		spdk_nvmf_bcm_fc_put_xri(fc_req->hwqp, fc_req->xri);
 		fc_req->xri = NULL;
 	}
-
-	if (fc_req->req.data) {
-		/* This can happen when conversion to iov failed. */
-		spdk_dma_free(fc_req->req.data);
-		fc_req->req.data = NULL;
-	}
-
-	spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_PENDING);
-
-	return 1;
-error:
-	/* Dropped return success to caller */
 	fc_req->hwqp->counters.unexpected_err++;
 	spdk_nvmf_bcm_fc_free_req(fc_req);
 	return 0;
@@ -2130,10 +2098,11 @@ nvmf_fc_handle_nvme_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_frame_hdr
 	}
 
 	/* Make sure xfer len is according to mdts */
-	if (from_be32(&cmd_iu->data_len) > g_nvmf_tgt.opts.max_io_size) {
-		SPDK_ERRLOG("IO length requested is greater than MDTS\n");
-		goto abort;
-	}
+
+	/*
+	 * This error is now handled by nvmf_fc_execute_nvme_rqst()
+	 * See: spdk_nvmf_request_init()
+	 */
 
 	/* allocate a request buffer */
 	fc_req = nvmf_fc_alloc_req_buf(fc_conn);
@@ -2185,7 +2154,6 @@ nvmf_fc_handle_nvme_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_frame_hdr
 		}
 	}
 
-
 	nvmf_fc_record_req_trace_point(fc_req, SPDK_NVMF_BCM_FC_REQ_INIT);
 	if (spdk_nvmf_is_fused_command(&fc_req->req.cmd->nvme_cmd)) {
 		nvmf_fc_process_fused_command(fc_req);
@@ -2200,6 +2168,7 @@ nvmf_fc_handle_nvme_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_frame_hdr
 		    || (nvmf_fc_execute_nvme_rqst(fc_req))) {
 			fc_req->hwqp->reg_counters.pending_queue_ticks++;
 			fc_req->hwqp->reg_counters.num_of_commands_in_pending_q++;
+			spdk_nvmf_bcm_fc_req_set_state(fc_req, SPDK_NVMF_BCM_FC_REQ_PENDING);
 			TAILQ_INSERT_TAIL(&fc_conn->pending_queue, fc_req, pending_link);
 		}
 	}
@@ -3082,7 +3051,8 @@ done:
 }
 
 int
-spdk_nvmf_bcm_fc_issue_marker(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint64_t u_id, uint16_t skip_rq)
+spdk_nvmf_bcm_fc_issue_marker(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint64_t u_id,
+			      uint16_t skip_rq)
 {
 	uint8_t wqe[128] = { 0 };
 	bcm_marker_wqe_t *marker = (bcm_marker_wqe_t *)wqe;
