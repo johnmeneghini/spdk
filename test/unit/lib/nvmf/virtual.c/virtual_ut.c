@@ -310,6 +310,12 @@ int spdk_bdev_writev(struct spdk_bdev_io *bdev_io)
 	return 0;
 }
 
+int
+spdk_bdev_submit_io(struct spdk_bdev_io *bdev_io)
+{
+	return 0;
+}
+
 int spdk_bdev_readv(struct spdk_bdev_io *bdev_io)
 {
 	return 0;
@@ -335,6 +341,46 @@ spdk_bdev_close(struct spdk_bdev_desc *desc)
 
 void spdk_bdev_io_get_nvme_status(const struct spdk_bdev_io *bdev_io, int *sct, int *sc, int *dnr)
 {
+}
+
+enum spdk_bdev_io_type
+spdk_bdev_nvme_opcode_to_bdev_io_type(enum spdk_nvme_nvm_opcode opcode, struct spdk_bdev *bdev) {
+	return SPDK_BDEV_IO_TYPE_NONE;
+}
+
+void
+spdk_bdev_put_ioctx(void **bdev_ctx)
+{
+}
+
+int
+spdk_bdev_fini_io(struct spdk_bdev_io *bdev_io)
+{
+	return 0;
+}
+
+int
+spdk_bdev_get_ioctx(enum spdk_bdev_io_type io_type,
+		    struct spdk_bdev_desc *desc,
+		    struct spdk_io_channel *ch,
+		    struct spdk_mempool *bdev_io_pool,
+		    spdk_bdev_io_completion_cb cb,
+		    void *cb_arg,
+		    spdk_nvmf_set_sge set_sge_fn,
+		    void *sge_ctx,
+		    void **bdev_ctx)
+{
+	return 0;
+}
+
+int
+spdk_bdev_init_ioctx(void **bdev_ctx,
+		     void *arg1,
+		     void *arg2,
+		     uint32_t length,
+		     uint64_t offset)
+{
+	return 0;
 }
 
 int
