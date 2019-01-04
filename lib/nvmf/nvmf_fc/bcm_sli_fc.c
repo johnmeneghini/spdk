@@ -293,8 +293,8 @@ spdk_nvmf_bcm_fc_create_conn_req_ring(struct spdk_nvmf_bcm_fc_conn *fc_conn)
 	uint32_t i, qd;
 	struct spdk_nvmf_bcm_fc_request *obj;
 
-	/* Need to add 1 to distinguish between empty and full ring */
-	while (poweroftwo <= (fc_conn->max_queue_depth + 1)) {
+	/* The fc_request_pool should be sized such that it accommodates 2 X SQ_size requests */
+	while (poweroftwo <= (fc_conn->max_queue_depth * 2)) {
 		poweroftwo *= 2;
 	}
 
@@ -315,10 +315,10 @@ spdk_nvmf_bcm_fc_create_conn_req_ring(struct spdk_nvmf_bcm_fc_conn *fc_conn)
 	 * new command. Depending on the load on the HWQP, there is a slim
 	 * possibility that the target reaps the RQE corresponding to the new
 	 * command before processing the CQE corresponding to the RSP.
-	 * Allocating 120% of the SQ size.
+	 * Allocating 200% of the SQ size.
 	 */
 
-	qd = (fc_conn->max_queue_depth * 120) / 100;
+	qd = (fc_conn->max_queue_depth * 2);
 
 	fc_conn->fc_req = calloc(qd, sizeof(struct spdk_nvmf_bcm_fc_request));
 	if (!fc_conn->fc_req) {
