@@ -797,11 +797,12 @@ nvmf_virtual_ctrlr_process_admin_cmd(struct spdk_nvmf_request *req)
 	case SPDK_NVME_OPC_CREATE_IO_CQ:
 	case SPDK_NVME_OPC_DELETE_IO_SQ:
 	case SPDK_NVME_OPC_DELETE_IO_CQ:
+		SPDK_ERRLOG("Admin opc 0x%02X not implemented/n", cmd->opc);
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+
+	default:
 		SPDK_ERRLOG("Admin opc 0x%02X not allowed in NVMf\n", cmd->opc);
 		response->status.sc = SPDK_NVME_SC_INVALID_OPCODE;
-		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
-	default:
-		SPDK_ERRLOG("Unsupported admin command\n");
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 
@@ -921,6 +922,7 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 
 }
 
+#ifndef NETAPP
 static int
 nvmf_virtual_ctrlr_flush_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 			     struct spdk_io_channel *ch, struct spdk_nvmf_request *req)
@@ -997,6 +999,7 @@ nvmf_virtual_ctrlr_nvme_passthru_io(struct spdk_bdev *bdev, struct spdk_bdev_des
 
 	return SPDK_NVMF_REQUEST_EXEC_STATUS_ASYNCHRONOUS;
 }
+#endif
 
 static int
 nvmf_virtual_ctrlr_process_io_cmd(struct spdk_nvmf_request *req)
@@ -1052,12 +1055,26 @@ nvmf_virtual_ctrlr_process_io_cmd(struct spdk_nvmf_request *req)
 	case SPDK_NVME_OPC_WRITE:
 	case SPDK_NVME_OPC_COMPARE:
 		return nvmf_virtual_ctrlr_rw_cmd(bdev, desc, ch, req);
+#ifndef NETAPP
 	case SPDK_NVME_OPC_FLUSH:
 		return nvmf_virtual_ctrlr_flush_cmd(bdev, desc, ch, req);
 	case SPDK_NVME_OPC_DATASET_MANAGEMENT:
 		return nvmf_virtual_ctrlr_dsm_cmd(bdev, desc, ch, req);
 	default:
 		return nvmf_virtual_ctrlr_nvme_passthru_io(bdev, desc, ch, req);
+#else
+	/*
+	 * NetApp only supports the manditory opcodes Read, Write and Flush.
+	 * Flush is a noop in the NetApp implementation, so return success here.
+	 */
+	case SPDK_NVME_OPC_FLUSH:
+		response->status.sc = SPDK_NVME_SC_SUCCESS;
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+	default:
+		SPDK_ERRLOG("NVM opc 0x%02X not allowed in NVMf\n", cmd->opc);
+		response->status.sc = SPDK_NVME_SC_INVALID_OPCODE;
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+#endif
 	}
 }
 
