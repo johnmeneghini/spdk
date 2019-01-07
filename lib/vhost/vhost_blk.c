@@ -194,10 +194,10 @@ process_blk_request(struct spdk_vhost_blk_task *task, struct spdk_vhost_blk_dev 
 {
 	struct rte_vhost_vring *vq = &bvdev->vdev.virtqueue[0];
 	const struct virtio_blk_outhdr *req;
-	struct spdk_bdev_io *bdev_io;
+	struct spdk_bdev_io *bdev_io = NULL;
 	struct iovec *iov;
 	uint32_t type;
-	int rc;
+	int rc = 0;
 
 	assert(task->bvdev == bvdev);
 	task->req_idx = req_idx;
@@ -251,22 +251,18 @@ process_blk_request(struct spdk_vhost_blk_task *task, struct spdk_vhost_blk_dev 
 		}
 
 		if (type == VIRTIO_BLK_T_IN) {
-			bdev_io = spdk_bdev_read_init(bvdev->bdev_desc, bvdev->bdev_io_channel, NULL,
-						      blk_request_complete_cb, task,
-						      &task->iovs[1], &task->iovcnt, req->sector * 512, task->length);
-			if (bdev_io) {
+			rc = spdk_bdev_read_init(bvdev->bdev_desc, bvdev->bdev_io_channel, NULL,
+						 blk_request_complete_cb, task,
+						 &task->iovs[1], &task->iovcnt, req->sector * 512, task->length, &bdev_io);
+			if (rc == 0) {
 				rc = spdk_bdev_readv(bdev_io);
-			} else {
-				rc = -1;
 			}
 		} else if (!bvdev->readonly) {
-			bdev_io = spdk_bdev_write_init(bvdev->bdev_desc, bvdev->bdev_io_channel, NULL,
-						       blk_request_complete_cb, task,
-						       &task->iovs[1], &task->iovcnt, req->sector * 512, task->length, true);
-			if (bdev_io) {
+			rc = spdk_bdev_write_init(bvdev->bdev_desc, bvdev->bdev_io_channel, NULL,
+						  blk_request_complete_cb, task,
+						  &task->iovs[1], &task->iovcnt, req->sector * 512, task->length, true, &bdev_io);
+			if (rc == 0) {
 				rc = spdk_bdev_writev(bdev_io);
-			} else {
-				rc = -1;
 			}
 		} else {
 			SPDK_TRACELOG(SPDK_TRACE_VHOST_BLK, "Device is in read-only mode!\n");
@@ -274,6 +270,7 @@ process_blk_request(struct spdk_vhost_blk_task *task, struct spdk_vhost_blk_dev 
 		}
 
 		if (rc) {
+			/* XXX this error path can leak bdev_ios XXX */
 			invalid_blk_request(task, VIRTIO_BLK_S_IOERR);
 			return -1;
 		}

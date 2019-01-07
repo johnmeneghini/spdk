@@ -187,7 +187,7 @@ spdk_bdev_get_buff(struct iovec *iov, int32_t *iovcnt, int32_t length)
 	int32_t i = 0, max_buff_len;
 
 	if (!iov) {
-		goto error;
+		return -EPERM;
 	}
 
 	*iovcnt = 0;
@@ -220,7 +220,7 @@ spdk_bdev_get_buff(struct iovec *iov, int32_t *iovcnt, int32_t length)
 	return 0;
 error:
 	SPDK_TRACELOG(SPDK_TRACE_DEBUG, "Bdev buffer allocation failed\n");
-	return -1;
+	return -ENOMEM;
 }
 
 static void
@@ -463,18 +463,18 @@ spdk_bdev_io_valid(struct spdk_bdev *bdev, uint64_t offset, uint64_t nbytes)
 {
 	/* Return failure if nbytes is not a multiple of bdev->blocklen */
 	if (nbytes % bdev->blocklen) {
-		return -1;
+		return -EFAULT;
 	}
 
 	/* Return failure if offset + nbytes is less than offset; indicates there
 	 * has been an overflow and hence the offset has been wrapped around */
 	if (offset + nbytes < offset) {
-		return -1;
+		return -EDOM;
 	}
 
 	/* Return failure if offset + nbytes exceeds the size of the bdev */
 	if (offset + nbytes > bdev->blockcnt * bdev->blocklen) {
-		return -1;
+		return -ERANGE;
 	}
 
 	return 0;
@@ -939,7 +939,7 @@ spdk_bdev_desc_get_bdev(struct spdk_bdev_desc *desc)
 	return desc->bdev;
 }
 
-struct spdk_bdev_io *
+int
 spdk_bdev_read_init(struct spdk_bdev_desc *desc,
 		    struct spdk_io_channel *ch,
 		    struct spdk_mempool *bdev_io_pool,
@@ -948,22 +948,23 @@ spdk_bdev_read_init(struct spdk_bdev_desc *desc,
 		    struct iovec *iov,
 		    int *iovcnt,
 		    uint32_t length,
-		    uint64_t offset)
+		    uint64_t offset,
+		    struct spdk_bdev_io **bdev_io_ctx)
 {
 	int rc = 0;
 	struct spdk_bdev_io *bdev_io;
 	struct spdk_bdev *bdev = desc->bdev;
 
 	assert(bdev->status != SPDK_BDEV_STATUS_INVALID);
-	if (spdk_bdev_io_valid(bdev, offset, length) != 0) {
-		return NULL;
+	if ((rc = spdk_bdev_io_valid(bdev, offset, length)) != 0) {
+		return rc;
 	}
 
 	bdev_io = spdk_bdev_get_io(bdev_io_pool);
 
 	if (!bdev_io) {
 		SPDK_ERRLOG("spdk_bdev_io memory allocation failed during readv\n");
-		return NULL;
+		return -EAGAIN;
 	}
 
 	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb);
@@ -992,7 +993,8 @@ spdk_bdev_read_init(struct spdk_bdev_desc *desc,
 		bdev_io->u.read.put_rbuf = false;
 	}
 
-	return bdev_io;
+	*bdev_io_ctx = bdev_io;
+	return rc;
 }
 
 int
@@ -1002,7 +1004,7 @@ spdk_bdev_read_fini(struct spdk_bdev_io *bdev_io)
 	return bdev->fn_table->fini_read(bdev_io);
 }
 
-struct spdk_bdev_io *
+int
 spdk_bdev_write_init(struct spdk_bdev_desc *desc,
 		     struct spdk_io_channel *ch,
 		     struct spdk_mempool *bdev_io_pool,
@@ -1012,15 +1014,16 @@ spdk_bdev_write_init(struct spdk_bdev_desc *desc,
 		     int *iovcnt,
 		     uint32_t length,
 		     uint64_t offset,
-		     bool is_write)
+		     bool is_write,
+		     struct spdk_bdev_io **bdev_io_ctx)
 {
 	int rc = 0;
 	struct spdk_bdev_io *bdev_io;
 	struct spdk_bdev *bdev = desc->bdev;
 
 	assert(bdev->status != SPDK_BDEV_STATUS_INVALID);
-	if (spdk_bdev_io_valid(bdev, offset, length) != 0) {
-		return NULL;
+	if ((rc = spdk_bdev_io_valid(bdev, offset, length)) != 0) {
+		return rc;
 	}
 
 	bdev_io = spdk_bdev_get_io(bdev_io_pool);
@@ -1028,7 +1031,7 @@ spdk_bdev_write_init(struct spdk_bdev_desc *desc,
 	if (!bdev_io) {
 		SPDK_ERRLOG("bdev_io memory allocation failed during %s\n",
 			    is_write ? "write init" : "compare init");
-		return NULL;
+		return -EAGAIN;
 	}
 
 	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb);
@@ -1059,7 +1062,8 @@ spdk_bdev_write_init(struct spdk_bdev_desc *desc,
 		bdev_io->u.write.offset = offset;
 	}
 
-	return bdev_io;
+	*bdev_io_ctx = bdev_io;
+	return rc;
 }
 
 int

@@ -1316,6 +1316,8 @@ spdk_bdev_scsi_read(struct spdk_bdev *bdev,
 	uint64_t blen;
 	uint64_t offset;
 	uint64_t nbytes;
+	struct spdk_bdev_io *bdev_io;
+	int rc = 0;
 
 	blen = spdk_bdev_get_block_size(bdev);
 
@@ -1327,11 +1329,13 @@ spdk_bdev_scsi_read(struct spdk_bdev *bdev,
 		      "Read: lba=%"PRIu64", len=%"PRIu64"\n",
 		      lba, (uint64_t)task->length / blen);
 
-	task->bdev_io = spdk_bdev_read_init(task->desc, task->ch, NULL, spdk_bdev_scsi_task_complete_cmd,
-					    task,
-					    task->iovs, &task->iovcnt, nbytes, offset);
+	rc = spdk_bdev_read_init(task->desc, task->ch, NULL, spdk_bdev_scsi_task_complete_cmd,
+				 task,
+				 task->iovs, &task->iovcnt, nbytes, offset, &bdev_io);
 
-	if (task->bdev_io) {
+	task->bdev_io = bdev_io;
+
+	if (rc == 0) {
 		if (spdk_bdev_readv(task->bdev_io) >= 0) {
 			task->data_transferred = nbytes;
 			task->status = SPDK_SCSI_STATUS_GOOD;
@@ -1343,7 +1347,7 @@ spdk_bdev_scsi_read(struct spdk_bdev *bdev,
 
 	}
 
-	SPDK_ERRLOG("spdk_bdev_readv() failed\n");
+	SPDK_ERRLOG("spdk_bdev_readv() failed, rc: %d\n", rc);
 	spdk_scsi_task_set_status(task, SPDK_SCSI_STATUS_CHECK_CONDITION,
 				  SPDK_SCSI_SENSE_NO_SENSE,
 				  SPDK_SCSI_ASC_NO_ADDITIONAL_SENSE,
@@ -1359,6 +1363,8 @@ spdk_bdev_scsi_write(struct spdk_bdev *bdev,
 	uint64_t offset;
 	uint64_t nbytes;
 	struct spdk_scsi_task *primary = task->parent;
+	struct spdk_bdev_io *bdev_io;
+	int rc;
 
 	if (len == 0) {
 		task->data_transferred = 0;
@@ -1388,10 +1394,12 @@ spdk_bdev_scsi_write(struct spdk_bdev *bdev,
 	}
 
 	offset += task->offset;
-	task->bdev_io = spdk_bdev_write_init(task->desc, task->ch, NULL, spdk_bdev_scsi_task_complete_cmd,
-					     task,
-					     task->iovs, &task->iovcnt, task->length, offset, true);
-	if (task->bdev_io) {
+	rc = spdk_bdev_write_init(task->desc, task->ch, NULL, spdk_bdev_scsi_task_complete_cmd,
+				  task,
+				  task->iovs, &task->iovcnt, task->length, offset, true, &bdev_io);
+	task->bdev_io = bdev_io;
+
+	if (rc == 0) {
 		if (spdk_bdev_writev(task->bdev_io) >= 0) {
 			if (!primary) {
 				task->data_transferred += task->length;

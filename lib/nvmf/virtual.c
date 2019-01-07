@@ -809,6 +809,74 @@ nvmf_virtual_ctrlr_process_admin_cmd(struct spdk_nvmf_request *req)
 }
 
 static int
+nvmf_virtual_ctrlr_handle_bdev_rc(int rc, struct spdk_nvmf_request *req)
+{
+	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
+	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
+	int status;
+
+	switch (rc) {
+	default:
+		/* Catch all - returns an non retriable error that will result in an IO error */
+		response->status.dnr = 1;
+		response->status.sc = SPDK_NVME_SC_OPERATION_DENIED;
+		status = SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+		break;
+	case -EFAULT:
+		/* Unaligned: nbytes or length is not a multiple of bdev->blocklen */
+		response->status.dnr = 1;
+		response->status.sc = SPDK_NVME_SC_SGL_DATA_BLOCK_GRANULARITY_INVALID;
+		status = SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+		break;
+	case -EDOM:
+		/* Overflow: offset + nbytes is less than offset */
+		response->status.dnr = 1;
+		response->status.sc = SPDK_NVME_SC_INVALID_SGL_OFFSET;
+		status = SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+		break;
+	case -ERANGE:
+		/* offset + nbytes exceeds the size of the bdev */
+		response->status.dnr = 1;
+		response->status.sc = SPDK_NVME_SC_DATA_SGL_LENGTH_INVALID;
+		status = SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+		break;
+	case -E2BIG:
+		response->status.dnr = 1;
+		response->status.sc = SPDK_NVME_SC_ATOMIC_WRITE_UNIT_EXCEEDED;
+		status = SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+		break;
+	case -EINVAL:
+		SPDK_ERRLOG("end of media\n");
+		response->status.dnr = 1;
+		response->status.sc = SPDK_NVME_SC_LBA_OUT_OF_RANGE;
+		status = SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+		break;
+	case -EPERM:
+	case -ENOMEM:
+		response->status.dnr = 1;
+		response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
+		status = SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+		break;
+	case -EBADF:
+		response->status.sct = SPDK_NVME_SCT_COMMAND_SPECIFIC;
+		response->status.sc = SPDK_NVME_SC_ATTEMPTED_WRITE_TO_RO_PAGE;
+		status = SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+		break;
+	case -EAGAIN:
+		status = SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING;
+		break;
+	case 0:
+		/* Success! */
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_READY;
+	}
+
+	SPDK_ERRLOG("NVM opc 0x%02X failed: rc: %d sct: 0x%x sc: 0x%x, dnr: %d, status: %d\n",
+		    cmd->opc, rc, response->status.sct, response->status.sc, response->status.dnr, status);
+
+	return status;
+}
+
+static int
 nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 			  struct spdk_io_channel *ch, struct spdk_nvmf_request *req)
 {
@@ -825,6 +893,7 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 	struct spdk_nvme_cpl *fused_response = NULL;
 	struct nvme_read_cdw12 *cdw12 = (struct nvme_read_cdw12 *)&cmd->cdw12;
 	struct nvme_read_cdw12 *fused_cdw12 = NULL;
+	int rc;
 
 	blockcnt = spdk_bdev_get_num_blocks(bdev);
 	lba_address = cmd->cdw11;
@@ -883,21 +952,22 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 			}
 		} else {
 			/* acquire IOV buffers from backend */
-			req->bdev_io = spdk_bdev_read_init(desc, ch, req->io_rsrc_pool, nvmf_virtual_ctrlr_complete_cmd,
-							   req, req->iov, &req->iovcnt, req->length, offset);
-			if (req->bdev_io) {
+			rc = spdk_bdev_read_init(desc, ch, req->io_rsrc_pool, nvmf_virtual_ctrlr_complete_cmd,
+						 req, req->iov, &req->iovcnt, req->length, offset, &req->bdev_io);
+			if (rc == 0) {
 				if (spdk_bdev_readv(req->bdev_io) < 0) {
 					response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
 					return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 				}
 			} else {
-				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING;
+				return (nvmf_virtual_ctrlr_handle_bdev_rc(rc, req));
 			}
 		}
 	} else { /* SPDK_NVME_OPC_WRITE OR SPDK_NVME_OPC_COMPARE */
 		if (req->data) {
 			if (spdk_bdev_write(desc, req->io_rsrc_pool, ch, req->data, offset, req->length,
-					    nvmf_virtual_ctrlr_complete_cmd, req, &req->bdev_io, (cmd->opc == SPDK_NVME_OPC_WRITE))) {
+					    nvmf_virtual_ctrlr_complete_cmd, req, &req->bdev_io,
+					    (cmd->opc == SPDK_NVME_OPC_WRITE))) {
 				response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 			}
@@ -908,13 +978,14 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 			}
 		} else {
 			/* Acquire IOV buffers from backend */
-			req->bdev_io = spdk_bdev_write_init(desc, ch, req->io_rsrc_pool,
-							    nvmf_virtual_ctrlr_complete_cmd,
-							    req, req->iov, &req->iovcnt, req->length, offset, (cmd->opc == SPDK_NVME_OPC_WRITE));
-			if (req->bdev_io) {
+			rc = spdk_bdev_write_init(desc, ch, req->io_rsrc_pool,
+						  nvmf_virtual_ctrlr_complete_cmd,
+						  req, req->iov, &req->iovcnt, req->length,
+						  offset, (cmd->opc == SPDK_NVME_OPC_WRITE), &req->bdev_io);
+			if (rc == 0) {
 				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_READY;
 			} else {
-				return SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING;
+				return (nvmf_virtual_ctrlr_handle_bdev_rc(rc, req));
 			}
 		}
 	}

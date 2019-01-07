@@ -457,29 +457,32 @@ void spdk_bdev_get_io_stat(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 
 uint8_t spdk_bdev_get_ana_state(struct spdk_bdev *bdev, uint16_t cntlid);
 
-struct spdk_bdev_io *spdk_bdev_read_init(struct spdk_bdev_desc *desc,
-		struct spdk_io_channel *ch,
-		struct spdk_mempool *bdev_io_pool,
-		spdk_bdev_io_completion_cb io_complete_cb,
-		void *io_complete_cb_arg,
-		struct iovec *iov,
-		int *iovcnt,
-		uint32_t length,
-		uint64_t offset);
+int spdk_bdev_read_init(struct spdk_bdev_desc *desc,
+			struct spdk_io_channel *ch,
+			struct spdk_mempool *bdev_io_pool,
+			spdk_bdev_io_completion_cb io_complete_cb,
+			void *io_complete_cb_arg,
+			struct iovec *iov,
+			int *iovcnt,
+			uint32_t length,
+			uint64_t offset,
+			struct spdk_bdev_io **bdev_io_ctx);
+
 
 int spdk_bdev_read_fini(struct spdk_bdev_io *bdev_io);
 
 /* Initialize a write or compare request */
-struct spdk_bdev_io   *spdk_bdev_write_init(struct spdk_bdev_desc *desc,
-		struct spdk_io_channel *ch,
-		struct spdk_mempool *bdev_io_pool,
-		spdk_bdev_io_completion_cb io_complete_cb,
-		void *io_complete_cb_arg,
-		struct iovec *iov,
-		int32_t *iovcnt,
-		uint32_t length,
-		uint64_t offset,
-		bool is_write);
+int spdk_bdev_write_init(struct spdk_bdev_desc *desc,
+			 struct spdk_io_channel *ch,
+			 struct spdk_mempool *bdev_io_pool,
+			 spdk_bdev_io_completion_cb io_complete_cb,
+			 void *io_complete_cb_arg,
+			 struct iovec *iov,
+			 int32_t *iovcnt,
+			 uint32_t length,
+			 uint64_t offset,
+			 bool is_write,
+			 struct spdk_bdev_io **bdev_io_ctx);
 
 /* Cleanup a write or compare request */
 int spdk_bdev_write_fini(struct spdk_bdev_io *bdev_io);

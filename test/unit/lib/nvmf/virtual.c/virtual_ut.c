@@ -260,7 +260,7 @@ spdk_bdev_write(struct spdk_bdev_desc *desc, struct spdk_mempool *pool,
 		struct spdk_io_channel *ch,
 		void *buf,
 		uint64_t offset, uint64_t nbytes, spdk_bdev_io_completion_cb cb, void *cb_arg,
-		struct spdk_bdev_io  **result_bdev_io, bool is_write)
+		struct spdk_bdev_io **result_bdev_io, bool is_write)
 {
 	return 0;
 }
@@ -269,7 +269,7 @@ int
 spdk_bdev_read(struct spdk_bdev_desc *desc, struct spdk_mempool *pool, struct spdk_io_channel *ch,
 	       void *buf,
 	       uint64_t offset, uint64_t nbytes, spdk_bdev_io_completion_cb cb, void *cb_arg,
-	       struct spdk_bdev_io  **result_bdev_io)
+	       struct spdk_bdev_io **result_bdev_io)
 {
 	return 0;
 }
@@ -316,7 +316,7 @@ void spdk_bdev_io_get_nvme_status(const struct spdk_bdev_io *bdev_io, int *sct, 
 {
 }
 
-struct spdk_bdev_io *
+int
 spdk_bdev_read_init(struct spdk_bdev_desc *desc,
 		    struct spdk_io_channel *ch,
 		    struct spdk_mempool *bdev_io_pool,
@@ -325,9 +325,10 @@ spdk_bdev_read_init(struct spdk_bdev_desc *desc,
 		    struct iovec *iov,
 		    int *iovcnt,
 		    uint32_t length,
-		    uint64_t offset)
+		    uint64_t offset,
+		    struct spdk_bdev_io **bdev_io_ctx)
 {
-	return NULL;
+	return 0;
 }
 
 int
@@ -336,7 +337,7 @@ spdk_bdev_read_fini(struct spdk_bdev_io *bdev_io)
 	return 0;
 }
 
-struct spdk_bdev_io *
+int
 spdk_bdev_write_init(struct spdk_bdev_desc *desc,
 		     struct spdk_io_channel *ch,
 		     struct spdk_mempool *bdev_io_pool,
@@ -346,9 +347,10 @@ spdk_bdev_write_init(struct spdk_bdev_desc *desc,
 		     int *iovcnt,
 		     uint32_t length,
 		     uint64_t offset,
-		     bool is_write)
+		     bool is_write,
+		     struct spdk_bdev_io **bdev_io_ctx)
 {
-	return NULL;
+	return 0;
 }
 
 
