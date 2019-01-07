@@ -274,69 +274,51 @@ nvmf_fc_rqpair_get_frame_buffer(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint16_t rqi
 int
 spdk_nvmf_bcm_fc_free_conn_req_ring(struct spdk_nvmf_bcm_fc_conn *fc_conn)
 {
-	if (fc_conn->fc_req) {
-		free(fc_conn->fc_req);
-		fc_conn->fc_req = NULL;
+	if (fc_conn->pool_memory) {
+		free(fc_conn->pool_memory);
+		fc_conn->pool_memory = NULL;
 	}
-	if (fc_conn->fc_request_pool) {
-		spdk_ring_free(fc_conn->fc_request_pool);
-		fc_conn->fc_request_pool = NULL;
-		fc_conn->fc_req_count = 0;
-	}
+
 	return 0;
 }
 
 int
 spdk_nvmf_bcm_fc_create_conn_req_ring(struct spdk_nvmf_bcm_fc_conn *fc_conn)
 {
-	int32_t poweroftwo = 1;
 	uint32_t i, qd;
 	struct spdk_nvmf_bcm_fc_request *obj;
 
-	/* The fc_request_pool should be sized such that it accommodates 2 X SQ_size requests */
-	while (poweroftwo <= (fc_conn->max_queue_depth * 2)) {
-		poweroftwo *= 2;
-	}
-
-	fc_conn->fc_request_pool = spdk_ring_create(SPDK_RING_TYPE_SP_SC,
-				   poweroftwo,
-				   SPDK_ENV_SOCKET_ID_ANY);
-
-	if (fc_conn->fc_request_pool == NULL) {
-		SPDK_ERRLOG("create fc conn request pool failed\n");
-		goto error;
-	}
 
 	/*
-	 * Create the ring objects. The number of fc-requests to be more
-	 * than the actual SQ size. This is to handle race conditions where the
-	 * target driver may send back a RSP and before the target driver
-	 * gets to process the CQE for the RSP, the initiator may have sent a
-	 * new command. Depending on the load on the HWQP, there is a slim
-	 * possibility that the target reaps the RQE corresponding to the new
+	 * Create number of fc-requests to be more than the actual SQ size.
+	 * This is to handle race conditions where the target driver may send
+	 * back a RSP and before the target driver gets to process the CQE
+	 * for the RSP, the initiator may have sent a new command.
+	 * Depending on the load on the HWQP, there is a slim possibility
+	 * that the target reaps the RQE corresponding to the new
 	 * command before processing the CQE corresponding to the RSP.
-	 * Allocating 200% of the SQ size.
+
+	 * Allocating SPDK_FC_CONN_REQ_RINGOBJS_PERCENT of the SQ size.
 	 */
+	qd = (fc_conn->max_queue_depth * SPDK_FC_CONN_REQ_RINGOBJS_PERCENT) / 100;
 
-	qd = (fc_conn->max_queue_depth * 2);
 
-	fc_conn->fc_req = calloc(qd, sizeof(struct spdk_nvmf_bcm_fc_request));
-	if (!fc_conn->fc_req) {
+	TAILQ_INIT(&fc_conn->pool_queue);
+
+	fc_conn->pool_memory = calloc(qd, sizeof(struct spdk_nvmf_bcm_fc_request));
+	if (!fc_conn->pool_memory) {
 		SPDK_ERRLOG("create fc req ring objects failed\n");
 		goto error;
 	}
+	fc_conn->pool_size = qd;
+	fc_conn->pool_free_elems = qd;
 
-	fc_conn->fc_req_count = qd;
-
-	/* Initialise value in ring objects and queue the objects to ring */
-	for (i = 0; i < fc_conn->fc_req_count; i++) {
-		obj = fc_conn->fc_req + i;
+	/* Initialise value in ring objects and link the objects */
+	for (i = 0; i < qd; i++) {
+		obj = fc_conn->pool_memory + i;
 		obj->magic = 0xDEADBEEF;
 
-		if (spdk_ring_enqueue(fc_conn->fc_request_pool, (void **)&obj, 1) == 0) {
-			SPDK_ERRLOG("fc req ring enqueue objects failed %d\n", i);
-			goto error;
-		}
+		TAILQ_INSERT_TAIL(&fc_conn->pool_queue, obj, pool_link);
 	}
 	return 0;
 error:
@@ -513,10 +495,13 @@ nvmf_fc_alloc_req_buf(struct spdk_nvmf_bcm_fc_conn *fc_conn)
 	struct spdk_nvmf_bcm_fc_hwqp *hwqp = fc_conn->hwqp;
 	struct spdk_nvmf_bcm_fc_request *fc_req;
 
-	if (spdk_ring_dequeue(fc_conn->fc_request_pool, (void **)&fc_req, 1) == 0) {
+	if (!(fc_req = TAILQ_FIRST(&fc_conn->pool_queue))) {
 		SPDK_ERRLOG("Alloc request buffer failed\n");
 		return NULL;
 	}
+
+	TAILQ_REMOVE(&fc_conn->pool_queue, fc_req, pool_link);
+	fc_conn->pool_free_elems -= 1;
 
 	/* Reset fc_req fields */
 	fc_req->xri	= NULL;
@@ -563,7 +548,10 @@ nvmf_fc_free_req_buf(struct spdk_nvmf_bcm_fc_conn *fc_conn, struct spdk_nvmf_bcm
 	fc_req->magic = 0xDEADBEEF;
 
 	TAILQ_REMOVE(&hwqp->in_use_reqs, fc_req, link);
-	(void)spdk_ring_enqueue(fc_conn->fc_request_pool, (void **)&fc_req, 1);
+
+	/* Put the free element at head of queue for better cache */
+	TAILQ_INSERT_HEAD(&fc_conn->pool_queue, fc_req, pool_link);
+	fc_conn->pool_free_elems += 1;
 }
 
 static void

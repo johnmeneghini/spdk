@@ -72,6 +72,7 @@
 #define BCM_MAX_IOVECS			(BCM_MAX_SGLS + 2) /* 2 for skips */
 
 #define SPDK_NVMF_FC_BCM_MRQ_CONNID_QUEUE_MASK  0xff
+#define SPDK_FC_CONN_REQ_RINGOBJS_PERCENT       200
 
 /*
  * PRLI service parameters
@@ -386,6 +387,7 @@ struct spdk_nvmf_bcm_fc_request {
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_request) fused_link;
 
 	TAILQ_HEAD(, fc_caller_ctx) abort_cbs;
+	TAILQ_ENTRY(spdk_nvmf_bcm_fc_request) pool_link;
 };
 
 SPDK_STATIC_ASSERT(!offsetof(struct spdk_nvmf_bcm_fc_request, req),
@@ -443,10 +445,14 @@ struct spdk_nvmf_bcm_fc_conn {
 	/* for hwqp's connection list */
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_conn) link;
 
-	struct spdk_ring *fc_request_pool;
-	uint32_t fc_req_count;
-	/* Memory for the fc_req objects */
-	struct spdk_nvmf_bcm_fc_request *fc_req;
+	/* Reqpool related */
+	TAILQ_HEAD(, spdk_nvmf_bcm_fc_request) pool_queue;
+	/* Memory for the fc_req  pool objects */
+	struct spdk_nvmf_bcm_fc_request *pool_memory;
+	/* Pool size */
+	uint32_t pool_size;
+	/* Current free elem in pool */
+	uint32_t pool_free_elems;
 };
 
 /*

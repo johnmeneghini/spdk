@@ -2382,9 +2382,9 @@ spdk_nvmf_bcm_fc_tgt_print_port(void *arg1, void *arg2)
 		SPDK_NOTICELOG("\tLcore ID: %d, HWQP ID: %d\n", io->lcore_id, io->hwqp_id);
 		SPDK_NOTICELOG("\tNum of Conns: %d, State: %d\n", io->num_conns, io->state);
 		TAILQ_FOREACH(fc_conn, &io->connection_list, link) {
-			if (fc_conn->fc_request_pool) {
+			if (fc_conn->pool_memory) {
 				SPDK_NOTICELOG("\t\tRequest Pool Max Count: %d Avail Count: %d\n",
-					       fc_conn->fc_req_count, spdk_mempool_avail_count(fc_conn->fc_request_pool));
+					       fc_conn->pool_size, fc_conn->pool_free_elems);
 			} else {
 				SPDK_NOTICELOG("\t\tIO Queue %d Request Pool not present\n", i);
 			}
@@ -2517,7 +2517,7 @@ spdk_nvmf_bcm_fc_tgt_print_hwqp(void *arg1, void *arg2)
 		SPDK_NOTICELOG("\tConn ID: 0x%lx, HWQP ID: %d, Outstanding IO Count: %d\n", conn->conn_id,
 			       conn->hwqp->hwqp_id, conn->cur_queue_depth);
 		SPDK_NOTICELOG("\tConn Request Pool Max Count: %d Avail Count: %d\n",
-			       conn->fc_req_count, spdk_mempool_avail_count(conn->fc_request_pool));
+			       conn->pool_size, conn->pool_free_elems);
 	}
 
 out:
