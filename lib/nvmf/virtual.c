@@ -797,11 +797,9 @@ nvmf_virtual_ctrlr_process_admin_cmd(struct spdk_nvmf_request *req)
 	case SPDK_NVME_OPC_CREATE_IO_CQ:
 	case SPDK_NVME_OPC_DELETE_IO_SQ:
 	case SPDK_NVME_OPC_DELETE_IO_CQ:
-		SPDK_ERRLOG("Admin opc 0x%02X not implemented/n", cmd->opc);
-		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
-
 	default:
-		SPDK_ERRLOG("Admin opc 0x%02X not allowed in NVMf\n", cmd->opc);
+		SPDK_ERRLOG("Admin opc 0x%02X not supported, Invalid Opcode/n", cmd->opc);
+		response->status.sct = SPDK_NVME_SCT_GENERIC;
 		response->status.sc = SPDK_NVME_SC_INVALID_OPCODE;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
