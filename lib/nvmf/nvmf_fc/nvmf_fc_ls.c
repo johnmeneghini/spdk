@@ -467,7 +467,26 @@ nvmf_fc_ls_free_connection(struct spdk_nvmf_bcm_fc_port *fc_port,
 	/* Free connection fc_req pool */
 	spdk_nvmf_bcm_fc_free_conn_req_ring(fc_conn);
 
-	TAILQ_INSERT_TAIL(&fc_conn->fc_assoc->avail_fc_conns, fc_conn, assoc_avail_link);
+	if ((fc_conn->conn_id & SPDK_NVMF_FC_BCM_MRQ_CONNID_QUEUE_MASK) != 0) {
+		fc_conn->hwqp->num_conns--;
+
+		if (fc_conn->fc_assoc->aq_conn != fc_conn) {
+			/* Give back the queue slots for this IO connection to hwqp */
+			fc_conn->hwqp->used_q_slots -= fc_conn->max_queue_depth;
+			spdk_nvmf_qslots_update(NVMF_QSLOTS_REMOVED, fc_conn->max_queue_depth,
+					fc_conn->hwqp->fc_port->port_ctx);
+
+			SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
+					"Freed up %d slots on hwqp %d (current in-use %d)\n",
+					fc_conn->max_queue_depth, (int)(fc_conn->conn_id &
+						SPDK_NVMF_FC_BCM_MRQ_CONNID_QUEUE_MASK),
+					fc_conn->hwqp->used_q_slots);
+
+			TAILQ_INSERT_TAIL(&fc_conn->fc_assoc->avail_fc_conns, fc_conn, assoc_avail_link);
+		}
+	}
+
+	memset(fc_conn, 0, sizeof(struct spdk_nvmf_bcm_fc_conn));
 }
 
 static inline union nvmf_fc_ls_op_ctx *
@@ -606,6 +625,7 @@ nvmf_fc_ls_assign_conn_to_q(struct spdk_nvmf_bcm_fc_association *assoc,
 		 * in while adding this connection in the poller thread.
 		 */
 		fc_port->io_queues[sel_qind].used_q_slots += sq_size;
+
 		/* Update the App for any notifications that may be needed */
 		spdk_nvmf_qslots_update(NVMF_QSLOTS_ADDED, sq_size, fc_port->port_ctx);
 	}
@@ -638,14 +658,24 @@ nvmf_fc_ls_rsp_fail_del_conn_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t
 	union nvmf_fc_ls_op_ctx *opd =
 			(union nvmf_fc_ls_op_ctx *)cb_data;
 	struct nvmf_fc_ls_del_conn_api_data *dp = &opd->del_conn;
+	struct spdk_nvmf_bcm_fc_association *assoc = dp->assoc;
+	struct spdk_nvmf_bcm_fc_conn *fc_conn = dp->args.fc_conn;
 
 	SPDK_NOTICELOG("Transmit LS response failure callback"
-		       "for %s conn_id 0x%lx on Port %d\n",
-		       (dp->assoc_conn) ? "Association" : "Connection",
-		       dp->args.fc_conn->conn_id, dp->args.hwqp->fc_port->port_hdl);
+		      "for assoc = 0x%lx conn_id 0x%lx on Port %d\n", dp->assoc->assoc_id,
+		      dp->args.fc_conn->conn_id, dp->args.hwqp->fc_port->port_hdl);
+
+	/* remove connection from association's connection list */
+	TAILQ_REMOVE(&assoc->fc_conns, fc_conn, assoc_link);
+	assoc->conn_count--;
 
 	nvmf_fc_ls_free_connection(dp->args.hwqp->fc_port, dp->args.fc_conn);
-	dp->args.hwqp->num_conns--;
+	
+	if (dp->assoc_conn) {
+		/* delete association */
+		nvmf_fc_del_assoc_from_tgt_port(assoc);
+		nvmf_fc_ls_free_association(assoc);
+	}
 
 	nvmf_fc_ls_free_op_ctx(opd);
 }
@@ -659,31 +689,18 @@ nvmf_fc_handle_xmt_ls_rsp_failure(struct spdk_nvmf_bcm_fc_association *assoc,
 	union nvmf_fc_ls_op_ctx *opd = NULL;
 
 	SPDK_NOTICELOG("Transmit LS response failure "
-		       "for assoc_id 0x%lx conn_id 0x%lx\n", assoc->assoc_id,
-		       fc_conn->conn_id);
-
-	if (assoc_conn) {
-		/* delete association */
-		nvmf_fc_del_assoc_from_tgt_port(assoc);
-		nvmf_fc_ls_free_association(assoc);
-	} else {
-		/* IOQ - give the queue slots for this connection back to the hwqp */
-		fc_conn->hwqp->used_q_slots -= fc_conn->max_queue_depth;
-		spdk_nvmf_qslots_update(NVMF_QSLOTS_REMOVED, fc_conn->max_queue_depth,
-					fc_conn->hwqp->fc_port->port_ctx);
-	}
+		      "for assoc_id 0x%lx conn_id 0x%lx\n", assoc->assoc_id,
+		      fc_conn->conn_id);
 
 	/* create context for delete connection API */
 	opd = nvmf_fc_ls_new_op_ctx();
 	if (!opd) { /* hopefully this doesn't happen */
-		nvmf_fc_ls_free_connection(fc_conn->hwqp->fc_port, fc_conn);
-		fc_conn->hwqp->num_conns--;
 		SPDK_ERRLOG("Mem alloc failed for del conn op data");
 		return;
 	}
 
 	api_data = &opd->del_conn;
-	api_data->assoc = NULL;
+	api_data->assoc = assoc;
 	api_data->ls_rqst = NULL;
 	api_data->assoc_conn = assoc_conn;
 	api_data->args.fc_conn = fc_conn;
@@ -908,22 +925,9 @@ nvmf_fc_del_all_conns_cb(void *cb_data, spdk_nvmf_bcm_fc_poller_api_ret_t ret)
 				&fc_conn->conn);
 	}
 
-	if ((fc_conn->conn_id & SPDK_NVMF_FC_BCM_MRQ_CONNID_QUEUE_MASK) != 0) {
-		/* give the queue slots for this connection  back to the hwqp */
-		fc_conn->hwqp->used_q_slots -= fc_conn->max_queue_depth;
-		spdk_nvmf_qslots_update(NVMF_QSLOTS_REMOVED, fc_conn->max_queue_depth,
-					fc_conn->hwqp->fc_port->port_ctx);
-		SPDK_TRACELOG(SPDK_TRACE_NVMF_BCM_FC_LS,
-			      "Freed up %d slots on hwqp %d (current in-use %d)\n",
-			      fc_conn->max_queue_depth, (int)(fc_conn->conn_id &
-					      SPDK_NVMF_FC_BCM_MRQ_CONNID_QUEUE_MASK),
-			      fc_conn->hwqp->used_q_slots);
-	}
-
 	/* remove connection from association's connection list */
 	TAILQ_REMOVE(&assoc->fc_conns, fc_conn, assoc_link);
 	nvmf_fc_ls_free_connection(assoc->tgtport->fc_port, fc_conn);
-	dp->args.hwqp->num_conns--;
 
 	if (--assoc->conn_count == 0) {
 		/* last connection - remove association from target port's
