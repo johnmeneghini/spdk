@@ -547,12 +547,6 @@ identify_ns(struct spdk_nvmf_subsystem *subsystem,
 		nsdata->nsfeat.ns_atomic_write_unit = 1;
 	}
 
-	if (bdev->blocklen < 4096) {
-		nsdata->noiob = 4096 / bdev->blocklen;
-	} else {
-		nsdata->noiob = ((bdev->blocklen % 4096) ? 0 : 1);
-	}
-
 	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 }
 
