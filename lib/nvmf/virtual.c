@@ -173,8 +173,6 @@ nvmf_virtual_ctrlr_get_data(struct spdk_nvmf_session *session)
 	session->vcdata.nanagrpid = g_nvmf_tgt.opts.nanagrpid;
 	session->vcdata.nn = MAX_VIRTUAL_NAMESPACE;
 	session->vcdata.mnan = g_nvmf_tgt.opts.mnan;
-	/* TODO: Madhu - Check if the next two lines are Ok. in our env. */
-	session->vcdata.vwc.present = 1;
 	session->vcdata.sgls.supported = 1;
 	strncpy((char *)session->vcdata.subnqn, session->subsys->subnqn, sizeof(session->vcdata.subnqn));
 	memcpy(&session->vcdata.oncs, &g_nvmf_tgt.opts.oncs, sizeof(uint16_t));
