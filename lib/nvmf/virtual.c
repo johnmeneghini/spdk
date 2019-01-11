@@ -493,7 +493,6 @@ identify_ns(struct spdk_nvmf_subsystem *subsystem,
 {
 	struct spdk_bdev *bdev;
 	uint64_t num_blocks;
-	uint64_t len_in_bytes;
 
 	if (cmd->nsid > subsystem->dev.virt.max_nsid || cmd->nsid == 0) {
 		SPDK_ERRLOG("Identify Namespace for invalid NSID %u\n", cmd->nsid);
@@ -517,11 +516,8 @@ identify_ns(struct spdk_nvmf_subsystem *subsystem,
 		    (spdk_bdev_get_ana_state(bdev, session->cntlid) ==
 		     SPDK_NVME_ANA_PERSISTENT_LOSS)) {
 			nsdata->nuse = 0;
-			memset(nsdata->nvmcap, 0, sizeof(nsdata->nvmcap));
 		} else {
 			nsdata->nuse = num_blocks;
-			len_in_bytes = num_blocks * bdev->blocklen;
-			memcpy(nsdata->nvmcap, &len_in_bytes, sizeof(nsdata->nvmcap));
 		}
 	} else {
 		nsdata->anagrpid = 0;
@@ -530,7 +526,6 @@ identify_ns(struct spdk_nvmf_subsystem *subsystem,
 
 	nsdata->nsze = num_blocks;
 	nsdata->ncap = num_blocks;
-	nsdata->nuse = num_blocks;
 	nsdata->nlbaf = 0;
 	nsdata->flbas.format = 0;
 	nsdata->nmic.can_share = g_nvmf_tgt.opts.nmic;
