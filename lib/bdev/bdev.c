@@ -616,7 +616,7 @@ spdk_bdev_io_resubmit(struct spdk_bdev_io *bdev_io, struct spdk_bdev_desc *new_b
 {
 	struct spdk_bdev *new_bdev = new_bdev_desc->bdev;
 
-	assert(bdev_io->status == SPDK_BDEV_IO_STATUS_PENDING);
+	assert(bdev_io->status == SPDK_BDEV_IO_STATUS_INIT);
 	bdev_io->bdev = new_bdev;
 
 	/*
@@ -643,7 +643,7 @@ spdk_bdev_io_init(struct spdk_bdev_io *bdev_io,
 	bdev_io->caller_ctx = cb_arg;
 	bdev_io->cb = cb;
 	bdev_io->gencnt = bdev->gencnt;
-	bdev_io->status = SPDK_BDEV_IO_STATUS_PENDING;
+	bdev_io->status = SPDK_BDEV_IO_STATUS_INIT;
 	bdev_io->in_submit_request = false;
 }
 
