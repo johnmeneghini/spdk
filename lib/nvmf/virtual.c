@@ -714,7 +714,7 @@ nvmf_virtual_ctrlr_get_features(struct spdk_nvmf_request *req)
 	case SPDK_NVME_FEAT_NUMBER_OF_QUEUES:
 		return spdk_nvmf_session_get_features_number_of_queues(req);
 	case SPDK_NVME_FEAT_VOLATILE_WRITE_CACHE:
-		response->cdw0 = 1;
+		response->cdw0 = 0;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	case SPDK_NVME_FEAT_KEEP_ALIVE_TIMER:
 		return spdk_nvmf_session_get_features_keep_alive_timer(req);
