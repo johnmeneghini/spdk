@@ -849,8 +849,8 @@ nvmf_virtual_ctrlr_handle_bdev_rc(int rc, struct spdk_nvmf_request *req)
 		status = SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		break;
 	case -EPERM:
-	case -ENOMEM:
 		response->status.dnr = 1;
+	case -ENOMEM:
 		response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
 		status = SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		break;
