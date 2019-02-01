@@ -2064,9 +2064,7 @@ nvmf_fc_handle_nvme_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_frame_hdr
 	fc_req->req.cmd = &fc_req->cmd;
 
 	fc_req->req.rsp = &fc_req->ersp.rsp;
-	fc_req->req.rsp->nvme_cpl.status.sc  = 0;
-	fc_req->req.rsp->nvme_cpl.status.sct  = 0;
-	fc_req->req.rsp->nvme_cpl.status.dnr  = 0;
+	memset(&fc_req->req.rsp->nvme_cpl, 0, sizeof(struct spdk_nvme_cpl));
 	fc_req->req.io_rsrc_pool = hwqp->fc_port->io_rsrc_pool;
 	fc_req->req.set_sge = nvmf_fc_set_sge;
 	fc_req->oxid = frame->ox_id;
