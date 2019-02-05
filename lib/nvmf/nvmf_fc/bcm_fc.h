@@ -170,6 +170,12 @@ struct spdk_nvmf_bcm_fc_reg_counters {
 	uint32_t compare_fused_rcvd; /* Fused compare commands that are received */
 	uint32_t write_fused_rcvd;  /* Fused write commands that are received */
 	uint32_t pending_queue_ticks; /* Number of times the pending queue has been used for R/w IO */
+	uint64_t ls_commands_processed; /* Total number of ls commands processed by the HWQP */
+	uint32_t ls_commands_avg_pending_q; /* The average time ls commands spend on the pending queue */
+	uint32_t ls_commands_high_wm_pending_q; /* The High Watermark for ls commands on the pending q */
+	uint32_t num_of_commands_in_pending_q; /* The snapshot of the number of commands on the pending q */
+	uint32_t num_of_commands_total; /* This represents the total number of commands on the HWQP in progress */
+	uint32_t ls_commands_pending_q; /* This represents the LS commands on the pending q */
 };
 
 /*
@@ -374,7 +380,7 @@ struct spdk_nvmf_bcm_fc_request {
 	uint16_t rpi;
 	struct spdk_nvmf_bcm_fc_conn *fc_conn;
 	struct spdk_nvmf_bcm_fc_hwqp *hwqp;
-	int state;
+	spdk_nvmf_bcm_fc_request_state_t state;
 	uint32_t transfered_len;
 	bool is_aborted;
 	uint32_t magic;
@@ -556,6 +562,8 @@ struct spdk_nvmf_bcm_fc_ls_rqst {
 	uint32_t d_id;
 	struct spdk_nvmf_bcm_fc_nport *nport;
 	struct spdk_nvmf_bcm_fc_remote_port_info *rport;
+	uint64_t pending_queue_insert; /* Time tick when(if) this command is added to pending q */
+	uint64_t pending_queue_remove; /* Time tick when this command is removed from pending q */
 };
 
 /*

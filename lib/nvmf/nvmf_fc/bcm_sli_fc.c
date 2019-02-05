@@ -179,7 +179,9 @@ process_fused:
 
 	/* Add these commands to pending queue in order */
 	TAILQ_INSERT_TAIL(&fc_conn->pending_queue, command_1, pending_link);
+	fc_req->hwqp->reg_counters.num_of_commands_in_pending_q++;
 	TAILQ_INSERT_TAIL(&fc_conn->pending_queue, command_2, pending_link);
+	fc_req->hwqp->reg_counters.num_of_commands_in_pending_q++;
 
 	/* Remove the commands from fused_waiting_queue */
 	TAILQ_REMOVE(&fc_conn->fused_waiting_queue, command_1, fused_link);
@@ -385,7 +387,8 @@ nvmf_fc_record_req_trace_point(struct spdk_nvmf_bcm_fc_request *fc_req,
 		assert(0);
 		break;
 	}
-	if (tpoint_id != SPDK_TRACE_MAX_TPOINT_ID) {
+	if ((tpoint_id != SPDK_TRACE_MAX_TPOINT_ID) &&
+	    (fc_req->state != state)) {
 		fc_req->req.req_state_trace[state] = spdk_get_ticks();
 		spdk_trace_record(tpoint_id, fc_req->poller_lcore, 0,
 				  (uint64_t)(&fc_req->req), 0);
@@ -531,6 +534,9 @@ nvmf_fc_alloc_req_buf(struct spdk_nvmf_bcm_fc_conn *fc_conn)
 	}
 
 	TAILQ_INSERT_TAIL(&hwqp->in_use_reqs, fc_req, link);
+	fc_conn->cur_queue_depth++;
+	hwqp->reg_counters.num_of_commands_total++;
+
 	return fc_req;
 }
 
@@ -552,6 +558,8 @@ nvmf_fc_free_req_buf(struct spdk_nvmf_bcm_fc_conn *fc_conn, struct spdk_nvmf_bcm
 	/* Put the free element at head of queue for better cache */
 	TAILQ_INSERT_HEAD(&fc_conn->pool_queue, fc_req, pool_link);
 	fc_conn->pool_free_elems += 1;
+	fc_conn->cur_queue_depth--;
+	hwqp->reg_counters.num_of_commands_total--;
 }
 
 static void
@@ -647,6 +655,7 @@ nvmf_fc_process_pending_req(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 			if (!nvmf_fc_execute_nvme_rqst(fc_req)) {
 				/* Succesfuly posted, Delete from pending. */
 				TAILQ_REMOVE(&fc_conn->pending_queue, fc_req, pending_link);
+				fc_req->hwqp->reg_counters.num_of_commands_in_pending_q--;
 			}
 
 			if (budget) {
@@ -808,6 +817,7 @@ spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 	} else if (nvmf_fc_req_in_pending(fc_req)) {
 		/* Remove from pending */
 		TAILQ_REMOVE(&fc_req->fc_conn->pending_queue, fc_req, pending_link);
+		fc_req->hwqp->reg_counters.num_of_commands_in_pending_q--;
 		goto complete;
 	} else if (nvmf_fc_req_in_fused_waiting(fc_req)) {
 		if (cmd->opc == SPDK_NVME_OPC_COMPARE) {
@@ -1553,11 +1563,28 @@ nvmf_fc_ls_rsp_cmpl_cb(void *ctx, uint8_t *cqe, int32_t status, void *arg)
 	struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst = arg;
 	struct spdk_nvmf_bcm_fc_hwqp *hwqp = ctx;
 	cqe_t *cqe_entry = (cqe_t *)cqe;
+	uint32_t avg_time = 0;
+	uint64_t wait_time = 0;
 
 	spdk_nvmf_bcm_fc_release_xri(hwqp, ls_rqst->xri, cqe_entry->u.generic.xb,
 				     nvmf_fc_abts_required(cqe));
 
+	/* Calculate the average time spent by this request in pending queue (if at all) */
 	/* Release RQ buffer */
+	if (ls_rqst->pending_queue_insert) {
+		assert(ls_rqst->pending_queue_remove > ls_rqst->pending_queue_insert);
+		wait_time = ls_rqst->pending_queue_remove - ls_rqst->pending_queue_insert;
+
+	}
+	avg_time = (hwqp->reg_counters.ls_commands_avg_pending_q * (hwqp->reg_counters.ls_commands_processed
+			- 1));
+	avg_time = (avg_time + wait_time) / hwqp->reg_counters.ls_commands_processed;
+	if (wait_time > hwqp->reg_counters.ls_commands_high_wm_pending_q) {
+		hwqp->reg_counters.ls_commands_high_wm_pending_q = wait_time;
+
+	}
+	hwqp->reg_counters.ls_commands_avg_pending_q = avg_time;
+
 	nvmf_fc_rqpair_buffer_release(hwqp, ls_rqst->rqstbuf.buf_index);
 
 	if (status) {
@@ -2107,6 +2134,7 @@ nvmf_fc_handle_nvme_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_frame_hdr
 	} else {
 		if (nvmf_fc_execute_nvme_rqst(fc_req)) {
 			fc_req->hwqp->reg_counters.pending_queue_ticks++;
+			fc_req->hwqp->reg_counters.num_of_commands_in_pending_q++;
 			TAILQ_INSERT_TAIL(&fc_conn->pending_queue, fc_req, pending_link);
 		}
 	}
@@ -2207,11 +2235,19 @@ nvmf_fc_process_frame(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t buff_idx, fc_
 		ls_rqst->d_id = d_id;
 		ls_rqst->nport = nport;
 		ls_rqst->rport = rport;
+		ls_rqst->pending_queue_insert = ls_rqst->pending_queue_remove = 0;
+		if (hwqp->reg_counters.ls_commands_processed == UINT32_MAX) {
+			hwqp->reg_counters.ls_commands_processed = 1;
+		} else {
+			hwqp->reg_counters.ls_commands_processed++;
+		}
 
 		ls_rqst->xri = spdk_nvmf_bcm_fc_get_xri(hwqp);
 		if (!ls_rqst->xri) {
 			/* No XRI available. Add to pending list. */
 			TAILQ_INSERT_TAIL(&hwqp->ls_pending_queue, ls_rqst, ls_pending_link);
+			ls_rqst->pending_queue_insert = spdk_get_ticks();
+			hwqp->reg_counters.ls_commands_pending_q++;
 		} else {
 			/* Handover the request to LS module */
 			spdk_nvmf_bcm_fc_handle_ls_rqst(ls_rqst);
@@ -2414,6 +2450,8 @@ nvmf_fc_process_pending_ls_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 				hwqp->counters.rport_invalid++;
 			}
 			TAILQ_REMOVE(&hwqp->ls_pending_queue, ls_rqst, ls_pending_link);
+			ls_rqst->pending_queue_remove = spdk_get_ticks();
+			hwqp->reg_counters.ls_commands_pending_q--;
 
 			/* Return buffer to chip */
 			nvmf_fc_rqpair_buffer_release(hwqp, ls_rqst->rqstbuf.buf_index);
@@ -2425,6 +2463,8 @@ nvmf_fc_process_pending_ls_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 				    nport->nport_state != SPDK_NVMF_BCM_FC_OBJECT_CREATED ?
 				    "Nport" : "Rport");
 			TAILQ_REMOVE(&hwqp->ls_pending_queue, ls_rqst, ls_pending_link);
+			ls_rqst->pending_queue_remove = spdk_get_ticks();
+			hwqp->reg_counters.ls_commands_pending_q--;
 
 			/* Return buffer to chip */
 			nvmf_fc_rqpair_buffer_release(hwqp, ls_rqst->rqstbuf.buf_index);
@@ -2435,6 +2475,8 @@ nvmf_fc_process_pending_ls_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 		if (ls_rqst->xri) {
 			/* Got an XRI. */
 			TAILQ_REMOVE(&hwqp->ls_pending_queue, ls_rqst, ls_pending_link);
+			ls_rqst->pending_queue_remove = spdk_get_ticks();
+			hwqp->reg_counters.ls_commands_pending_q--;
 			/* Handover the request to LS module */
 			spdk_nvmf_bcm_fc_handle_ls_rqst(ls_rqst);
 		} else {
