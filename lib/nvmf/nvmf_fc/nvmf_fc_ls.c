@@ -289,10 +289,10 @@ nvmf_fc_ls_alloc_connections(struct spdk_nvmf_bcm_fc_association *assoc,
 	struct spdk_nvmf_bcm_fc_conn *fc_conn;
 
 	SPDK_NOTICELOG("Pre-alloc %d connections for host %s\n",
-		       g_nvmf_tgt.opts.max_queues_per_session, host->nqn);
+		       host->max_connections_allowed, host->nqn);
 
 	/* allocate memory for all connections at once */
-	assoc->conns_buf = calloc(1, (g_nvmf_tgt.opts.max_queues_per_session *
+	assoc->conns_buf = calloc(1, (host->max_connections_allowed *
 				      sizeof(struct spdk_nvmf_bcm_fc_conn)));
 
 	if (assoc->conns_buf == NULL) {
@@ -303,7 +303,7 @@ nvmf_fc_ls_alloc_connections(struct spdk_nvmf_bcm_fc_association *assoc,
 	/* admin queue connection gets first connection */
 	assoc->aq_conn = assoc->conns_buf;
 
-	for (i = 1; i < g_nvmf_tgt.opts.max_queues_per_session; i++) {
+	for (i = 1; i < host->max_connections_allowed; i++) {
 		fc_conn = assoc->conns_buf + (i * sizeof(struct spdk_nvmf_bcm_fc_conn));
 		TAILQ_INSERT_TAIL(&assoc->avail_fc_conns, fc_conn, assoc_avail_link);
 	}
