@@ -203,7 +203,7 @@ struct spdk_nvmf_bcm_fc_hwqp {
 
 	void *context;			/* Vendor Context */
 
-	TAILQ_HEAD(, spdk_nvmf_bcm_fc_conn) connection_list;
+	TAILQ_HEAD(hwqp_conn, spdk_nvmf_bcm_fc_conn) connection_list;
 	uint32_t num_conns; /* number of connections to queue */
 	uint16_t cid_cnt;   /* used to generate unique conn. id for RQ */
 	uint32_t used_q_slots; /* used q slots for connections  */
@@ -713,4 +713,8 @@ spdk_nvmf_bcm_fc_get_fc_req(struct spdk_nvmf_request *req)
 	       ((uintptr_t)req - offsetof(struct spdk_nvmf_bcm_fc_request, req));
 }
 
+/* Returns the number of ls requests deleted from the pending queue */
+int spdk_nvmf_bcm_fc_cleanup_pending_ls_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
+		struct spdk_nvmf_bcm_fc_nport *nport,
+		struct spdk_nvmf_bcm_fc_remote_port_info *rport);
 #endif

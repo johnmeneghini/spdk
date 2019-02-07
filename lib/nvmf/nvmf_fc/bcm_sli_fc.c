@@ -101,6 +101,10 @@ static int nvmf_fc_send_frame(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 			      uint32_t s_id, uint32_t d_id, uint16_t ox_id,
 			      uint8_t htype, uint8_t r_ctl, uint32_t f_ctl,
 			      uint8_t *payload, uint32_t plen);
+int
+spdk_nvmf_fc_delete_ls_pending(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
+			       struct spdk_nvmf_bcm_fc_nport *nport,
+			       struct spdk_nvmf_bcm_fc_remote_port_info *rport);
 
 static inline uint16_t
 nvmf_fc_advance_conn_sqhead(struct spdk_nvmf_conn *conn)
@@ -634,12 +638,17 @@ spdk_nvmf_bcm_fc_req_in_xfer(struct spdk_nvmf_bcm_fc_request *fc_req)
 static inline void
 nvmf_fc_process_pending_req(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 {
-	struct spdk_nvmf_bcm_fc_conn *fc_conn = NULL;
+	struct spdk_nvmf_bcm_fc_conn *fc_conn = NULL, *tmp_conn, *last_conn;
 	struct spdk_nvmf_bcm_fc_request *fc_req = NULL, *tmp, *command_1;
 	struct spdk_nvme_cmd *cmd = NULL;
 	int budget = 64;
 
-	TAILQ_FOREACH(fc_conn, &hwqp->connection_list, link) {
+	last_conn = TAILQ_LAST(&hwqp->connection_list, hwqp_conn);
+
+	TAILQ_FOREACH_SAFE(fc_conn, &hwqp->connection_list, link, tmp_conn) {
+		/* Remove the connection from the list. */
+		TAILQ_REMOVE(&hwqp->connection_list, fc_conn, link);
+
 		TAILQ_FOREACH_SAFE(fc_req, &fc_conn->pending_queue, pending_link, tmp) {
 			cmd = &fc_req->req.cmd->nvme_cmd;
 
@@ -661,10 +670,18 @@ nvmf_fc_process_pending_req(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 			if (budget) {
 				budget --;
 			} else {
-				return;
+				break;
 			}
 		}
+
+		/* Add at the tail. */
+		TAILQ_INSERT_TAIL(&hwqp->connection_list, fc_conn, link);
+
+		if (!budget || (fc_conn == last_conn)) {
+			return;
+		}
 	}
+
 }
 
 static inline bool
@@ -3115,4 +3132,30 @@ nvmf_fc_send_frame(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 	rc = nvmf_fc_post_wqe(hwqp, (uint8_t *)sf, true, nvmf_fc_sendframe_cmpl_cb, NULL);
 
 	return rc;
+}
+
+int
+spdk_nvmf_fc_delete_ls_pending(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
+			       struct spdk_nvmf_bcm_fc_nport *nport,
+			       struct spdk_nvmf_bcm_fc_remote_port_info *rport)
+{
+	struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst = NULL, *tmp;
+	int num_deleted = 0;
+
+	if (hwqp == NULL || nport == NULL) {
+		SPDK_ERRLOG("Error %s is NULL\n", (hwqp == NULL ? "hwqp" : "nport"));
+		return -1;
+	}
+
+	TAILQ_FOREACH_SAFE(ls_rqst, &hwqp->ls_pending_queue, ls_pending_link, tmp) {
+		int rc = nvmf_fc_find_nport_and_rport(hwqp, ls_rqst->d_id, &nport, ls_rqst->s_id, &rport);
+		if (rc == 0) {
+			TAILQ_REMOVE(&hwqp->ls_pending_queue, ls_rqst, ls_pending_link);
+			num_deleted++;
+
+			/* Return buffer to chip */
+			nvmf_fc_rqpair_buffer_release(hwqp, ls_rqst->rqstbuf.buf_index);
+		}
+	}
+	return num_deleted;
 }

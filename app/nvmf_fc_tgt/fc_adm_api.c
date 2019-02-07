@@ -1912,6 +1912,15 @@ nvmf_fc_i_t_delete(void *arg1, void *arg2)
 		rc = SPDK_ERR_INTERNAL;
 		goto out;
 	}
+	/*
+	 * We have the rport slated for deletion. At this point clean up
+	 * any LS requests that are sitting in the pending list. Do this
+	 * first, then, set the states of the rport so that new LS requests
+	 * are not accepted. Then start the cleanup.
+	 */
+	num_of_pending_q_deletes = spdk_nvmf_bcm_fc_cleanup_pending_ls_rqst(&(nport->fc_port->ls_queue),
+				   nport, rport);
+
 
 	/*
 	 * We have found exactly one rport. Allocate memory for callback data.

@@ -71,6 +71,9 @@ extern void spdk_nvmf_bcm_fc_release_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 		struct spdk_nvmf_bcm_fc_xri *xri, bool xb, bool abts);
 extern int spdk_nvmf_bcm_fc_issue_marker(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint64_t u_id,
 		uint16_t skip_rq);
+extern int spdk_nvmf_fc_delete_ls_pending(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
+		struct spdk_nvmf_bcm_fc_nport *nport,
+		struct spdk_nvmf_bcm_fc_remote_port_info *rport);
 
 /* locals */
 static inline struct spdk_nvmf_bcm_fc_conn *nvmf_fc_get_fc_conn(struct spdk_nvmf_conn *conn);
@@ -119,6 +122,7 @@ spdk_nvmf_bcm_fc_init_poller(struct spdk_nvmf_bcm_fc_port *fc_port,
 	TAILQ_INIT(&hwqp->in_use_reqs);
 	TAILQ_INIT(&hwqp->sync_cbs);
 	TAILQ_INIT(&hwqp->ls_pending_queue);
+	TAILQ_INIT(&hwqp->connection_list);
 }
 
 void
@@ -792,6 +796,14 @@ spdk_nvmf_bcm_fc_get_sess_init_traddr(char *traddr, struct spdk_nvmf_session *se
 			 from_be64(&fc_session->fc_assoc->rport->fc_portname.u.wwn));
 	}
 	return SPDK_SUCCESS;
+}
+
+/* Returns the number of ls requests deleted from the pending queue */
+int spdk_nvmf_bcm_fc_cleanup_pending_ls_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
+		struct spdk_nvmf_bcm_fc_nport *nport,
+		struct spdk_nvmf_bcm_fc_remote_port_info *rport)
+{
+	return spdk_nvmf_fc_delete_ls_pending(hwqp, nport, rport);
 }
 
 inline uint32_t
