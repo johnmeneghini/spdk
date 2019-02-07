@@ -909,18 +909,28 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 		fused_lba_address = (fused_lba_address << 32) + fused_cmd->cdw10;
 		fused_cdw12 = (struct nvme_read_cdw12 *)&fused_cmd->cdw12;
 		if (cmd->nsid != fused_cmd->nsid || lba_address != fused_lba_address ||
-		    cdw12->nlb != fused_cdw12->nlb || cdw12->nlb != req->conn->sess->vcdata.acwu) {
-			SPDK_ERRLOG("Incorrect or mismatched Fused command NSID(%d:%d) LBA(%ld:%ld) NLB(%d:%d) ACWU(%d)\n",
+		    cdw12->nlb != fused_cdw12->nlb) {
+			SPDK_ERRLOG("Incorrect or mismatched Fused command NSID(%d:%d) LBA(%ld:%ld) NLB(%d:%d)\n",
 				    cmd->nsid,
 				    fused_cmd->nsid, lba_address,
-				    fused_lba_address, cdw12->nlb, fused_cdw12->nlb,
-				    req->conn->sess->vcdata.acwu);
+				    fused_lba_address, cdw12->nlb, fused_cdw12->nlb);
 			response->status.dnr = 1;
 			response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
 			req->fused_partner->fail_with_fused_aborted = false;
 			fused_response = &req->fused_partner->rsp->nvme_cpl;
 			fused_response->status.dnr = 1;
 			fused_response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+		}
+
+		if (cdw12->nlb != req->conn->sess->vcdata.acwu) {
+			SPDK_ERRLOG("Fused command larger than ACWU(%d:%d)\n", req->conn->sess->vcdata.acwu, cdw12->nlb);
+			response->status.dnr = 1;
+			response->status.sc = SPDK_NVME_SC_ATOMIC_WRITE_UNIT_EXCEEDED;
+			req->fused_partner->fail_with_fused_aborted = false;
+			fused_response = &req->fused_partner->rsp->nvme_cpl;
+			fused_response->status.dnr = 1;
+			fused_response->status.sc = SPDK_NVME_SC_ATOMIC_WRITE_UNIT_EXCEEDED;
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		}
 	}
@@ -940,7 +950,6 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 	}
 
 	if (cmd->opc == SPDK_NVME_OPC_READ) {
-		/* modified to for SGL iovs */
 		if (req->data) {
 			if (spdk_bdev_read(desc, req->io_rsrc_pool, ch, req->data, offset, req->length,
 					   nvmf_virtual_ctrlr_complete_cmd, req, &req->bdev_io)) {
@@ -961,12 +970,12 @@ nvmf_virtual_ctrlr_rw_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 			}
 		}
 	} else { /* SPDK_NVME_OPC_WRITE OR SPDK_NVME_OPC_COMPARE */
-		/* Check if bdev is write protected */
 		if (bdev->write_protect_flags.write_protect) {
 			response->status.sct = SPDK_NVME_SCT_GENERIC;
 			response->status.sc = SPDK_NVME_SC_NAMESPACE_IS_WRITE_PROTECTED;
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		}
+
 		if (req->data) {
 			if (spdk_bdev_write(desc, req->io_rsrc_pool, ch, req->data, offset, req->length,
 					    nvmf_virtual_ctrlr_complete_cmd, req, &req->bdev_io,
@@ -1075,6 +1084,16 @@ nvmf_virtual_ctrlr_nvme_passthru_io(struct spdk_bdev *bdev, struct spdk_bdev_des
 }
 #endif
 
+static bool
+nvmf_virtual_ctrlr_is_compare_supported(struct spdk_nvmf_request *req)
+{
+	if (spdk_nvmf_is_fused_command(&req->cmd->nvme_cmd)) {
+		return (g_nvmf_tgt.opts.fuses & 0x1);
+	} else {
+		return (g_nvmf_tgt.opts.oncs & 0x1);
+	}
+}
+
 static int
 nvmf_virtual_ctrlr_process_io_cmd(struct spdk_nvmf_request *req)
 {
@@ -1127,8 +1146,14 @@ nvmf_virtual_ctrlr_process_io_cmd(struct spdk_nvmf_request *req)
 	switch (cmd->opc) {
 	case SPDK_NVME_OPC_READ:
 	case SPDK_NVME_OPC_WRITE:
-	case SPDK_NVME_OPC_COMPARE:
 		return nvmf_virtual_ctrlr_rw_cmd(bdev, desc, ch, req);
+	case SPDK_NVME_OPC_COMPARE:
+		if (nvmf_virtual_ctrlr_is_compare_supported(req)) {
+			return nvmf_virtual_ctrlr_rw_cmd(bdev, desc, ch, req);
+		} else {
+			response->status.sc = SPDK_NVME_SC_INVALID_OPCODE;
+			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+		}
 #ifndef NETAPP
 	case SPDK_NVME_OPC_FLUSH:
 		return nvmf_virtual_ctrlr_flush_cmd(bdev, desc, ch, req);
