@@ -1142,6 +1142,27 @@ nvmf_fc_ls_disconnect_assoc(struct spdk_nvmf_bcm_fc_nport *tgtport,
 	}
 }
 
+static bool
+nvmf_fc_io_qid_is_invalid(struct spdk_nvmf_bcm_fc_association *assoc,
+			  uint16_t qid)
+{
+	struct spdk_nvmf_bcm_fc_conn *fc_conn;
+
+	/*
+	 * QID 0 is for Admin Q.
+	 */
+	if (qid == 0) {
+		return true;
+	}
+
+	TAILQ_FOREACH(fc_conn, &assoc->fc_conns, assoc_avail_link) {
+		if (fc_conn->conn.qid == qid) {
+			return true;
+		}
+	}
+	return false;
+}
+
 /* **************************** */
 /* LS Reqeust Handler Functions */
 
@@ -1362,6 +1383,11 @@ nvmf_fc_ls_process_cioc(struct spdk_nvmf_bcm_fc_nport *tgtport,
 		} else { // alloc IO q (i.e. connection)
 			if (assoc->conn_count >= assoc->host->max_connections_allowed) {
 				errmsg_ind = VERR_CONN_TOO_MANY;
+				rc = FCNVME_RJT_RC_INV_PARAM;
+				ec =  FCNVME_RJT_EXP_INV_Q_ID;
+			} else if (nvmf_fc_io_qid_is_invalid(assoc, from_be16(&rqst->connect_cmd.qid))) {
+				assert(!"Invalid IOQ ID");
+				errmsg_ind = VERR_CONN_ID;
 				rc = FCNVME_RJT_RC_INV_PARAM;
 				ec =  FCNVME_RJT_EXP_INV_Q_ID;
 			} else if (!(spdk_nvmf_validate_sqsize(assoc->host,
