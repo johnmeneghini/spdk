@@ -592,7 +592,7 @@ __submit_request(struct spdk_bdev *bdev, struct spdk_bdev_io *bdev_io)
 {
 	struct spdk_io_channel *ch;
 
-	assert(bdev_io->status == SPDK_BDEV_IO_STATUS_PENDING);
+	assert(bdev_io->status == SPDK_BDEV_IO_STATUS_INIT);
 
 	ch = bdev_io->ch->channel;
 
