@@ -48,6 +48,7 @@
 #include "spdk_internal/log.h"
 #include "bcm_fc.h"
 #include "nvmf/nvmf_internal.h"
+#include "spdk/fault_injects.h"
 
 char *fc_req_state_strs[] = {
 	"SPDK_NVMF_BCM_FC_REQ_INIT",
@@ -2259,7 +2260,11 @@ nvmf_fc_process_frame(struct spdk_nvmf_bcm_fc_hwqp *hwqp, uint32_t buff_idx, fc_
 			hwqp->reg_counters.ls_commands_processed++;
 		}
 
-		ls_rqst->xri = spdk_nvmf_bcm_fc_get_xri(hwqp);
+		if (SPDK_NVMF_FAULT(SPDK_FC_PUT_LS_PENDING_Q)) {
+			ls_rqst->xri = 0;
+		} else {
+			ls_rqst->xri = spdk_nvmf_bcm_fc_get_xri(hwqp);
+		}
 		if (!ls_rqst->xri) {
 			/* No XRI available. Add to pending list. */
 			TAILQ_INSERT_TAIL(&hwqp->ls_pending_queue, ls_rqst, ls_pending_link);
@@ -2452,6 +2457,9 @@ nvmf_fc_process_pending_ls_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst = NULL, *tmp;
 	struct spdk_nvmf_bcm_fc_nport *nport = NULL;
 	struct spdk_nvmf_bcm_fc_remote_port_info *rport = NULL;
+	if (SPDK_NVMF_FAULT(SPDK_FC_PUT_LS_PENDING_Q)) {
+		return;
+	}
 
 	TAILQ_FOREACH_SAFE(ls_rqst, &hwqp->ls_pending_queue, ls_pending_link, tmp) {
 		/* lookup nport and rport again - make sure they are still valid */
@@ -2566,6 +2574,7 @@ spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	}
 
 	if (!pending_req_processed) {
+		nvmf_fc_process_pending_ls_rqst(hwqp);
 		nvmf_fc_process_pending_req(hwqp);
 	}
 

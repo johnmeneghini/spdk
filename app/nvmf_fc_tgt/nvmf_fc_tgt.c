@@ -40,6 +40,7 @@
 #include "spdk/event.h"
 #include "spdk/log.h"
 #include "spdk/nvme.h"
+#include "spdk/spdk_nvmf_fault_injects.h"
 
 #include "nvmf/nvmf_internal.h"
 #include "nvmf_fc_tgt.h"
@@ -232,6 +233,7 @@ nvmf_fc_startup(void *arg1, void *arg2)
 {
 	int rc;
 
+	spdk_nvmf_fault_init();
 	rc = spdk_nvmf_bcm_fc_parse_conf();
 	if (rc < 0) {
 		SPDK_ERRLOG("spdk_nvmf_parse_conf() failed\n");
