@@ -457,6 +457,10 @@ void spdk_bdev_get_io_stat(struct spdk_bdev *bdev, struct spdk_io_channel *ch,
 
 uint8_t spdk_bdev_get_ana_state(struct spdk_bdev *bdev, uint16_t cntlid);
 
+bool spdk_bdev_is_write_protected(struct spdk_bdev *bdev);
+
+void spdk_bdev_modify(struct spdk_bdev *bdev, struct nwpc wp_flags);
+
 int spdk_bdev_read_init(struct spdk_bdev_desc *desc,
 			struct spdk_io_channel *ch,
 			struct spdk_mempool *bdev_io_pool,

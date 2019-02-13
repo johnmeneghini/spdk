@@ -859,7 +859,7 @@ spdk_nvmf_subsystem_add_ns(struct spdk_nvmf_subsystem *subsystem, struct spdk_bd
 		}
 	}
 
-	rc = spdk_bdev_open(bdev, true, NULL, NULL,
+	rc = spdk_bdev_open(bdev, !spdk_bdev_is_write_protected(bdev), NULL, NULL,
 			    &subsystem->dev.virt.desc[i]);
 	if (rc != 0) {
 		SPDK_ERRLOG("Subsystem %s: bdev %s cannot be opened, error=%d\n",
@@ -912,7 +912,7 @@ spdk_nvmf_update_ns_attr_write_protect(struct spdk_nvmf_subsystem *subsystem, ui
 	}
 
 	changed = (bdev->write_protect_flags.write_protect != wp_flags.write_protect);
-	bdev->write_protect_flags = wp_flags;
+	spdk_bdev_modify(bdev, wp_flags);
 	/* Set an AEN only if write_protect flag have been changed */
 	if (changed) {
 		spdk_nvmf_subsystem_set_ns_changed(subsystem, nsid);

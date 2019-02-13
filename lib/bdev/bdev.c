@@ -1530,6 +1530,31 @@ spdk_bdev_module_examine_done(struct spdk_bdev_module_if *module)
 	}
 }
 
+bool
+spdk_bdev_is_write_protected(struct spdk_bdev *bdev)
+{
+	if (bdev->write_protect_flags.write_protect) {
+		return true;
+	} else {
+		return false;
+	}
+}
+
+void
+spdk_bdev_modify(struct spdk_bdev *bdev, struct nwpc wp_flags)
+{
+	pthread_mutex_lock(&bdev->mutex);
+
+	bdev->write_protect_flags = wp_flags;
+	if (spdk_bdev_is_write_protected(bdev)) {
+		bdev->bdev_opened_for_write = false;
+	} else {
+		bdev->bdev_opened_for_write = true;
+	}
+	pthread_mutex_unlock(&bdev->mutex);
+}
+
+
 int
 spdk_bdev_open(struct spdk_bdev *bdev, bool write, spdk_bdev_remove_cb_t remove_cb,
 	       void *remove_ctx, struct spdk_bdev_desc **_desc)

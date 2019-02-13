@@ -87,7 +87,6 @@ struct spdk_bdev_desc {
 	struct spdk_bdev		*bdev;
 	spdk_bdev_remove_cb_t		remove_cb;
 	void				*remove_ctx;
-	bool				write;
 	TAILQ_ENTRY(spdk_bdev_desc)	link;
 };
 
@@ -868,6 +867,30 @@ spdk_bdev_unregister(struct spdk_bdev *bdev)
 	if (rc < 0) {
 		SPDK_ERRLOG("destruct failed\n");
 	}
+}
+
+bool
+spdk_bdev_is_write_protected(struct spdk_bdev *bdev)
+{
+	if (bdev->write_protect_flags.write_protect) {
+		return true;
+	} else {
+		return false;
+	}
+}
+
+void
+spdk_bdev_modify(struct spdk_bdev *bdev, struct nwpc wp_flags)
+{
+	pthread_mutex_lock(&bdev->mutex);
+
+	bdev->write_protect_flags = wp_flags;
+	if (spdk_bdev_is_write_protected(bdev)) {
+		bdev->bdev_opened_for_write = false;
+	} else {
+		bdev->bdev_opened_for_write = true;
+	}
+	pthread_mutex_unlock(&bdev->mutex);
 }
 
 int

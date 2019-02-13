@@ -425,6 +425,18 @@ spdk_nvmf_session_get_ana_status(struct spdk_nvmf_session *session)
 	return false;
 }
 
+bool
+spdk_bdev_is_write_protected(struct spdk_bdev *bdev)
+{
+	return false;
+}
+
+void
+spdk_bdev_modify(struct spdk_bdev *bdev, struct nwpc wp_flags)
+{
+	return;
+}
+
 static void
 test_changed_ns_log(void)
 {

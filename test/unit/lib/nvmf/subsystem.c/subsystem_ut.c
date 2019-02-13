@@ -198,6 +198,18 @@ spdk_bdev_get_ana_state(struct spdk_bdev *bdev, uint16_t cntlid)
 	return 1;
 }
 
+bool
+spdk_bdev_is_write_protected(struct spdk_bdev *bdev)
+{
+	return false;
+}
+
+void
+spdk_bdev_modify(struct spdk_bdev *bdev, struct nwpc wp_flags)
+{
+	return;
+}
+
 static void
 test_spdk_nvmf_tgt_listen(void)
 {
