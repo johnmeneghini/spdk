@@ -276,6 +276,7 @@ struct spdk_nvmf_bcm_fc_port {
 	spdk_fc_port_state_t hw_port_status;
 	uint32_t xri_base;
 	uint32_t xri_count;
+	uint32_t xri_used;
 	uint16_t fcp_rq_id;
 	bool is_sgl_preregistered;
 	struct spdk_ring *xri_ring;

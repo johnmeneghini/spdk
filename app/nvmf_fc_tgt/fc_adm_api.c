@@ -254,6 +254,7 @@ nvmf_fc_tgt_hw_port_data_init(struct spdk_nvmf_bcm_fc_port *fc_port,
 	fc_port->hw_port_status = SPDK_FC_PORT_OFFLINE;
 	fc_port->xri_base       = args->xri_base;
 	fc_port->xri_count      = args->xri_count;
+	fc_port->xri_used      = 0;
 	fc_port->fcp_rq_id      = args->fcp_rq_id;
 
 	while (poweroftwo <= fc_port->xri_count) {

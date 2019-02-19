@@ -468,7 +468,6 @@ nvmf_fc_ls_free_connection(struct spdk_nvmf_bcm_fc_port *fc_port,
 	spdk_nvmf_bcm_fc_free_conn_req_ring(fc_conn);
 
 	if ((fc_conn->conn_id & SPDK_NVMF_FC_BCM_MRQ_CONNID_QUEUE_MASK) != 0) {
-		fc_conn->hwqp->num_conns--;
 
 		if (fc_conn->fc_assoc->aq_conn != fc_conn) {
 			/* Give back the queue slots for this IO connection to hwqp */
@@ -485,6 +484,7 @@ nvmf_fc_ls_free_connection(struct spdk_nvmf_bcm_fc_port *fc_port,
 			TAILQ_INSERT_TAIL(&fc_conn->fc_assoc->avail_fc_conns, fc_conn, assoc_avail_link);
 		}
 	}
+	fc_conn->hwqp->num_conns--;
 
 	memset(fc_conn, 0, sizeof(struct spdk_nvmf_bcm_fc_conn));
 }

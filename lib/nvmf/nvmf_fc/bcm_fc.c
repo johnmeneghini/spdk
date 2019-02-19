@@ -437,12 +437,13 @@ struct spdk_nvmf_bcm_fc_xri *
 spdk_nvmf_bcm_fc_get_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 {
 	struct spdk_nvmf_bcm_fc_xri *xri;
+	uint32_t shared_xris = hwqp->fc_port->xri_count - hwqp->fc_port->rsvd_scsi_xri;
 
 	/* Get the physical port from the hwqp and dequeue an XRI from the
 	 * corresponding ring. Send this back.
 	 */
-	/* Use SCSI gaurdrails to stop from reaching into SCSI reserved XRIs */
-	if (spdk_ring_count(hwqp->fc_port->xri_ring) > hwqp->fc_port->rsvd_scsi_xri) {
+	/* Use SCSI guardrails to stop from reaching into SCSI reserved XRIs */
+	if (hwqp->fc_port->xri_used < shared_xris) {
 
 		if (0 == spdk_ring_dequeue(hwqp->fc_port->xri_ring, (void **)&xri, 1)) {
 			hwqp->counters.no_xri++;
@@ -450,6 +451,7 @@ spdk_nvmf_bcm_fc_get_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 		}
 
 		xri->is_active = false;
+		__sync_fetch_and_add(&hwqp->fc_port->xri_used, 1);
 		return xri;
 	} else {
 		/* This code path can be hit thousands of times.  This is not an error */
@@ -464,6 +466,7 @@ spdk_nvmf_bcm_fc_get_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 int
 spdk_nvmf_bcm_fc_put_xri(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct spdk_nvmf_bcm_fc_xri *xri)
 {
+	__sync_fetch_and_sub(&hwqp->fc_port->xri_used, 1);
 	return spdk_ring_enqueue(hwqp->fc_port->xri_ring, (void **)&xri, 1) == 1 ? 0 : 1;
 }
 
