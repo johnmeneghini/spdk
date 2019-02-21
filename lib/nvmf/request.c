@@ -60,8 +60,9 @@ spdk_nvmf_request_complete(struct spdk_nvmf_request *req)
 		      response->cid, response->cdw0, response->rsvd1,
 		      *(uint16_t *)&response->status);
 
-	/* Check if this is fused command_1 and if it failed */
-	if (req->cmd->nvme_cmd.fuse == SPDK_NVME_FUSED_CMD1
+	/* Check if this is fused command_1 and if it is the first one to fail */
+	if (req->fused_partner &&
+	    req->cmd->nvme_cmd.fuse == SPDK_NVME_FUSED_CMD1
 	    && req->rsp->nvme_cpl.status.sc) {
 		/* Let the fused write partner req know this */
 		req->fused_partner->is_fused_partner_failed = true;
@@ -72,6 +73,16 @@ spdk_nvmf_request_complete(struct spdk_nvmf_request *req)
 		}
 	}
 
+	if (spdk_nvmf_is_fused_command(&req->cmd->nvme_cmd)) {
+		/*
+		 * We are completing a fused command, so uncouple
+		 * both the commands, if they are coupled
+		 */
+		if (req->fused_partner) {
+			req->fused_partner->fused_partner = NULL;
+			req->fused_partner = NULL;
+		}
+	}
 
 	if (req->conn->transport->req_complete(req)) {
 		SPDK_ERRLOG("Transport request completion error!\n");
