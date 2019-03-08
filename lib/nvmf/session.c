@@ -265,7 +265,7 @@ nvmf_init_aer_response(struct spdk_nvmf_session *session)
 	session->aer_ctxt.ns_attr_aer_cdw0.raw = 0;
 	session->aer_ctxt.ns_attr_aer_cdw0.bits.event_type = 0x2;
 	session->aer_ctxt.ns_attr_aer_cdw0.bits.event_info = 0;
-	session->aer_ctxt.ns_attr_aer_cdw0.bits.log_page = 0;
+	session->aer_ctxt.ns_attr_aer_cdw0.bits.log_page = 0x4;
 
 	/* Initialize cdw0 rsp for ANA change AER */
 	session->aer_ctxt.ana_change_aer_cdw0.raw = 0;
