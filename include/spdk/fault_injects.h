@@ -15,6 +15,7 @@
 enum spdk_nvmf_fault_injects {
 	/* FC-Transport Fault Codes */
 	SPDK_FC_PUT_LS_PENDING_Q = 0,
+	SPDK_FC_PUT_IO_PENDING_Q = 1,
 	/* RDMA-Transport Fault Codes */
 	SPDK_RDMA_DUMMY_FAULT_CODE = 50,
 	/* NVMeoF Protocol Fault Codes */

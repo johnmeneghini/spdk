@@ -644,6 +644,9 @@ nvmf_fc_process_pending_req(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	struct spdk_nvme_cmd *cmd = NULL;
 	int budget = 64;
 
+	if (SPDK_NVMF_FAULT(SPDK_FC_PUT_IO_PENDING_Q)) {
+		return;
+	}
 	last_conn = TAILQ_LAST(&hwqp->connection_list, hwqp_conn);
 
 	TAILQ_FOREACH_SAFE(fc_conn, &hwqp->connection_list, link, tmp_conn) {
@@ -2150,7 +2153,14 @@ nvmf_fc_handle_nvme_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_frame_hdr
 	if (spdk_nvmf_is_fused_command(&fc_req->req.cmd->nvme_cmd)) {
 		nvmf_fc_process_fused_command(fc_req);
 	} else {
-		if (nvmf_fc_execute_nvme_rqst(fc_req)) {
+		/* If there are commands in the pending queue, then don't call
+		 * the nvmf_fc_execute_nvme_rqst. Put this one in the Pending
+		 * queue and give fairness to those commands. We come on this path
+		 * when we get commands from the RQ/firmware.
+		 */
+		if ((SPDK_NVMF_FAULT(SPDK_FC_PUT_IO_PENDING_Q)) ||
+		    (fc_req->hwqp->reg_counters.num_of_commands_in_pending_q)
+		    || (nvmf_fc_execute_nvme_rqst(fc_req))) {
 			fc_req->hwqp->reg_counters.pending_queue_ticks++;
 			fc_req->hwqp->reg_counters.num_of_commands_in_pending_q++;
 			TAILQ_INSERT_TAIL(&fc_conn->pending_queue, fc_req, pending_link);
@@ -3157,14 +3167,15 @@ spdk_nvmf_fc_delete_ls_pending(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 	}
 
 	TAILQ_FOREACH_SAFE(ls_rqst, &hwqp->ls_pending_queue, ls_pending_link, tmp) {
-		int rc = nvmf_fc_find_nport_and_rport(hwqp, ls_rqst->d_id, &nport, ls_rqst->s_id, &rport);
-		if (rc == 0) {
-			TAILQ_REMOVE(&hwqp->ls_pending_queue, ls_rqst, ls_pending_link);
-			num_deleted++;
-
-			/* Return buffer to chip */
-			nvmf_fc_rqpair_buffer_release(hwqp, ls_rqst->rqstbuf.buf_index);
+		if (ls_rqst->d_id == nport->d_id) {
+			/* If rport is NULL or matches with requested */
+			if (!rport || (ls_rqst->s_id == rport->s_id)) {
+				TAILQ_REMOVE(&hwqp->ls_pending_queue, ls_rqst, ls_pending_link);
+				num_deleted++;
+				nvmf_fc_rqpair_buffer_release(hwqp, ls_rqst->rqstbuf.buf_index);
+			}
 		}
 	}
+
 	return num_deleted;
 }
