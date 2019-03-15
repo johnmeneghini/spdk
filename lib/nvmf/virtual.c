@@ -850,7 +850,6 @@ nvmf_virtual_ctrlr_handle_bdev_rc(int rc, struct spdk_nvmf_request *req)
 		break;
 	case -EPERM:
 		response->status.dnr = 1;
-	case -ENOMEM:
 		response->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
 		status = SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		break;
@@ -859,6 +858,8 @@ nvmf_virtual_ctrlr_handle_bdev_rc(int rc, struct spdk_nvmf_request *req)
 		response->status.sc = SPDK_NVME_SC_NAMESPACE_IS_WRITE_PROTECTED;
 		status = SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		break;
+	case -ENOMEM:
+	/* fall through */
 	case -EAGAIN:
 		status = SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING;
 		break;
