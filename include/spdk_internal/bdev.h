@@ -188,7 +188,7 @@ enum spdk_bdev_io_status {
 	SPDK_BDEV_IO_STATUS_PENDING = 0,
 	SPDK_BDEV_IO_STATUS_SUCCESS = 1,
 	SPDK_BDEV_IO_STATUS_INIT = 2,
-
+	SPDK_BDEV_IO_STATUS_FUSED_PARKED = 3,
 };
 
 struct spdk_bdev {
