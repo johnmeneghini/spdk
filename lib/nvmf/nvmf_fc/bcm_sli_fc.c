@@ -342,6 +342,7 @@ nvmf_fc_record_req_trace_point(struct spdk_nvmf_bcm_fc_request *fc_req,
 	switch (state) {
 	case SPDK_NVMF_BCM_FC_REQ_INIT:
 		/* Start IO tracing */
+		fc_req->req.req_state_trace[state] = spdk_get_ticks();
 		spdk_trace_record(TRACE_NVMF_IO_START, fc_req->poller_lcore,
 				  0, (uint64_t)(&fc_req->req), 0);
 		tpoint_id = TRACE_FC_REQ_INIT;
