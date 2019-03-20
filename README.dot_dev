@@ -1,4 +1,4 @@
-This is the main NetApp SPDK integration branch for DOT:dev/Dayblazer.
+This is the main NetApp SPDK integration branch for DOT:dev.
 
   - All modifications made to SPDK by NetApp should be made in a sub-branch off
     of this branch.
