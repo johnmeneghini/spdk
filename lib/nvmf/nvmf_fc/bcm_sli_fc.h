@@ -96,6 +96,9 @@
 #define SLI4_FC_COALESCE_RQ_SUCCESS		0x10
 #define SLI4_FC_COALESCE_RQ_INSUFF_XRI_NEEDED	0x18
 
+#define SLI4_IF_TYPE_LANCER_G6			2
+#define SLI4_IF_TYPE_LANCER_G7			6
+
 
 /* DI_ERROR Extended Status */
 #define BCM_FC_DI_ERROR_GE     (1 << 0) /* Guard Error */
@@ -276,8 +279,10 @@ typedef enum {
 
 typedef enum  {
 	BCM_FC_QUEUE_TYPE_EQ,
+	BCM_FC_QUEUE_TYPE_IF6_EQ,
 	BCM_FC_QUEUE_TYPE_CQ_WQ,
 	BCM_FC_QUEUE_TYPE_CQ_RQ,
+	BCM_FC_QUEUE_TYPE_IF6_CQ,
 	BCM_FC_QUEUE_TYPE_WQ,
 	BCM_FC_QUEUE_TYPE_RQ_HDR,
 	BCM_FC_QUEUE_TYPE_RQ_DATA,
@@ -372,6 +377,10 @@ typedef struct bcm_sli_queue {
 	uint16_t  qid;           /* f/w Q_ID */
 	uint16_t  size;          /* size of each entry */
 	uint16_t  max_entries;   /* number of entries */
+	uint32_t  if_type;	 /* Differentiates the eq/cq version */
+	uint16_t  phase;	 /* For if_type = 6, this value toggle for each iteration
+                                    of the queue, a queue entry is valid when a cqe valid
+                                    bit matches this value */
 	void 	  *address;      /* queue address */
 	void 	  *doorbell_reg; /* queue doorbell register address */
 } bcm_sli_queue_t;
@@ -457,6 +466,15 @@ typedef struct eqdoorbell {
 	uint32_t solicit_enable   : 1;
 } eqdoorbell_t;
 
+typedef struct eqdoorbell_if6 {
+	uint32_t eq_id		  : 12;
+	uint32_t rsvd1	  	  : 4;
+	uint32_t num_popped	  : 13;
+	uint32_t arm		  : 1;
+	uint32_t rsvd2	          : 1;
+	uint32_t io		  : 1;
+} eqdoorbell_if6_t;
+
 typedef struct cqdoorbell {
 	uint32_t cq_id            : 10;
 	uint32_t qt               : 1;
@@ -466,6 +484,14 @@ typedef struct cqdoorbell {
 	uint32_t rsvd             : 1;
 	uint32_t solicit_enable   : 1;
 } cqdoorbell_t;
+
+typedef struct cqdoorbell_if6 {
+	uint32_t cq_id		: 16;
+	uint32_t num_popped	: 13;
+	uint32_t arm		: 1;
+	uint32_t rsvd		: 1;
+	uint32_t se		: 1;
+} cqdoorbell_if6_t;
 
 typedef struct wqdoorbell {
 	uint32_t wq_id          : 16;
@@ -484,6 +510,8 @@ typedef union doorbell_u {
 	cqdoorbell_t cqdoorbell;
 	wqdoorbell_t wqdoorbell;
 	rqdoorbell_t rqdoorbell;
+	eqdoorbell_if6_t eqdoorbell_if6;
+	cqdoorbell_if6_t cqdoorbell_if6;
 	uint32_t     doorbell;
 } doorbell_t;
 

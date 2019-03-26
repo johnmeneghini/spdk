@@ -920,6 +920,11 @@ nvmf_fc_bcm_notify_queue(bcm_sli_queue_t *q, bool arm_queue, uint16_t num_entrie
 		entry.eqdoorbell.eq_id_ext = ((q->qid >> 9) & 0x1f);
 		entry.eqdoorbell.arm = arm_queue;
 		break;
+	case BCM_FC_QUEUE_TYPE_IF6_EQ:
+		entry.eqdoorbell_if6.eq_id = q->qid;
+		entry.eqdoorbell_if6.num_popped = num_entries;
+		entry.eqdoorbell_if6.arm = arm_queue;
+		break;
 	case BCM_FC_QUEUE_TYPE_CQ_WQ:
 	case BCM_FC_QUEUE_TYPE_CQ_RQ:
 		entry.cqdoorbell.num_popped = num_entries;
@@ -928,9 +933,17 @@ nvmf_fc_bcm_notify_queue(bcm_sli_queue_t *q, bool arm_queue, uint16_t num_entrie
 		entry.cqdoorbell.solicit_enable = 0;
 		entry.cqdoorbell.arm = arm_queue;
 		break;
+	case BCM_FC_QUEUE_TYPE_IF6_CQ:
+		entry.cqdoorbell_if6.cq_id = q->qid;
+		entry.cqdoorbell_if6.num_popped = num_entries;
+		entry.cqdoorbell_if6.arm = arm_queue;
+		break;
 	case BCM_FC_QUEUE_TYPE_WQ:
 		entry.wqdoorbell.wq_id = (q->qid & 0xffff);
-		entry.wqdoorbell.wq_index = (q->head & 0x00ff);
+		if (q->if_type == SLI4_IF_TYPE_LANCER_G7)
+			entry.wqdoorbell.wq_index = 0;
+		else
+			entry.wqdoorbell.wq_index = (q->head & 0x00ff);
 		entry.wqdoorbell.num_posted = num_entries;
 		break;
 	case BCM_FC_QUEUE_TYPE_RQ_HDR:
@@ -950,6 +963,7 @@ nvmf_fc_queue_entry_is_valid(bcm_sli_queue_t *q, uint8_t *qe, uint8_t clear)
 
 	switch (q->type) {
 	case BCM_FC_QUEUE_TYPE_EQ:
+	case BCM_FC_QUEUE_TYPE_IF6_EQ:
 		valid = ((eqe_t *)qe)->valid;
 		if (valid & clear) {
 			((eqe_t *)qe)->valid = 0;
@@ -957,6 +971,7 @@ nvmf_fc_queue_entry_is_valid(bcm_sli_queue_t *q, uint8_t *qe, uint8_t clear)
 		break;
 	case BCM_FC_QUEUE_TYPE_CQ_WQ:
 	case BCM_FC_QUEUE_TYPE_CQ_RQ:
+	case BCM_FC_QUEUE_TYPE_IF6_CQ:
 		/*
 		 * For both WCQE and RCQE, the valid bit
 		 * is bit 31 of dword 3 (0 based)
@@ -970,18 +985,22 @@ nvmf_fc_queue_entry_is_valid(bcm_sli_queue_t *q, uint8_t *qe, uint8_t clear)
 		SPDK_ERRLOG("%s doesn't handle type=%#x\n", __func__, q->type);
 	}
 
-	return valid;
+	return (valid == q->phase) ? 1 : 0;
 }
 
 static int
 nvmf_fc_read_queue_entry(bcm_sli_queue_t *q, uint8_t *entry)
 {
 	uint8_t	*qe;
+	uint8_t clear = (q->if_type == SLI4_IF_TYPE_LANCER_G7) ? 0 : 1;
+	uint8_t update_phase = (q->if_type == SLI4_IF_TYPE_LANCER_G7) ? 1 : 0;
 
 	switch (q->type) {
 	case BCM_FC_QUEUE_TYPE_EQ:
+	case BCM_FC_QUEUE_TYPE_IF6_EQ:
 	case BCM_FC_QUEUE_TYPE_CQ_WQ:
 	case BCM_FC_QUEUE_TYPE_CQ_RQ:
+	case BCM_FC_QUEUE_TYPE_IF6_CQ:
 		break;
 	default:
 		SPDK_ERRLOG("%s read not handled for queue type=%#x\n",
@@ -993,7 +1012,7 @@ nvmf_fc_read_queue_entry(bcm_sli_queue_t *q, uint8_t *entry)
 	qe = nvmf_fc_queue_tail_node(q);
 
 	/* Check if entry is valid */
-	if (!nvmf_fc_queue_entry_is_valid(q, qe, true)) {
+	if (!nvmf_fc_queue_entry_is_valid(q, qe, clear)) {
 		return -1;
 	}
 
@@ -1003,6 +1022,8 @@ nvmf_fc_read_queue_entry(bcm_sli_queue_t *q, uint8_t *entry)
 	}
 
 	nvmf_fc_queue_tail_inc(q);
+	if (update_phase && !q->tail)
+		q->phase ^= (uint16_t) 0x1;
 
 	return 0;
 }
@@ -1404,10 +1425,21 @@ spdk_nvmf_bcm_fc_init_rqpair_buffers(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	hwqp->queues.cq_wq.auto_arm_flag = true;
 	hwqp->queues.cq_rq.auto_arm_flag = true;
 
-	hwqp->queues.eq.q.type = BCM_FC_QUEUE_TYPE_EQ;
-	hwqp->queues.cq_wq.q.type = BCM_FC_QUEUE_TYPE_CQ_WQ;
+	if (hwqp->queues.eq.q.if_type == SLI4_IF_TYPE_LANCER_G7)
+		hwqp->queues.eq.q.type = BCM_FC_QUEUE_TYPE_IF6_EQ;
+	else
+		hwqp->queues.eq.q.type = BCM_FC_QUEUE_TYPE_EQ;
+
+	if (hwqp->queues.cq_wq.q.if_type == SLI4_IF_TYPE_LANCER_G7)
+		hwqp->queues.cq_wq.q.type = BCM_FC_QUEUE_TYPE_IF6_CQ;
+	else
+		hwqp->queues.cq_wq.q.type = BCM_FC_QUEUE_TYPE_CQ_WQ;
 	hwqp->queues.wq.q.type = BCM_FC_QUEUE_TYPE_WQ;
-	hwqp->queues.cq_rq.q.type = BCM_FC_QUEUE_TYPE_CQ_RQ;
+
+	if (hwqp->queues.cq_wq.q.if_type == SLI4_IF_TYPE_LANCER_G7)
+		hwqp->queues.cq_rq.q.type = BCM_FC_QUEUE_TYPE_IF6_CQ;
+	else
+		hwqp->queues.cq_rq.q.type = BCM_FC_QUEUE_TYPE_CQ_RQ;
 	hwqp->queues.rq_hdr.q.type = BCM_FC_QUEUE_TYPE_RQ_HDR;
 	hwqp->queues.rq_payload.q.type = BCM_FC_QUEUE_TYPE_RQ_DATA;
 
