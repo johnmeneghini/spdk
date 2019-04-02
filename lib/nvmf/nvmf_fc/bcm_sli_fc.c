@@ -185,8 +185,10 @@ process_fused:
 	/* Add these commands to pending queue in order */
 	TAILQ_INSERT_TAIL(&fc_conn->pending_queue, command_1, pending_link);
 	fc_req->hwqp->reg_counters.num_of_commands_in_pending_q++;
+	spdk_nvmf_bcm_fc_req_set_state(command_1, SPDK_NVMF_BCM_FC_REQ_PENDING);
 	TAILQ_INSERT_TAIL(&fc_conn->pending_queue, command_2, pending_link);
 	fc_req->hwqp->reg_counters.num_of_commands_in_pending_q++;
+	spdk_nvmf_bcm_fc_req_set_state(command_2, SPDK_NVMF_BCM_FC_REQ_PENDING);
 
 	/* Remove the commands from fused_waiting_queue */
 	TAILQ_REMOVE(&fc_conn->fused_waiting_queue, command_1, fused_link);
@@ -661,7 +663,8 @@ nvmf_fc_process_pending_req(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 			if (cmd->fuse == SPDK_NVME_FUSED_CMD2) {
 				command_1 = spdk_nvmf_bcm_fc_get_fc_req(fc_req->req.fused_partner);
 				/* Note: command_1 ptr is only valid if is_fused_partner_failed is not set */
-				if (!fc_req->req.is_fused_partner_failed && !command_1->transfered_len) {
+				if (!fc_req->req.is_fused_partner_failed &&
+				    !(command_1->state == SPDK_NVMF_BCM_FC_REQ_WRITE_BDEV)) {
 					continue;
 				}
 			}
