@@ -36,6 +36,7 @@ display_help() {
 	echo " Examples:"
 	echo
 	echo "  $0 -x http://user:password@host:port fedora27"
+	echo "  $0 -b none fedora28"
 	echo "  $0 -s 2048 -n 2 ubuntu16"
 	echo "  $0 -rv freebsd"
 	echo "  $0 fedora26 "
