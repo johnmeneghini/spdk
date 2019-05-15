@@ -130,6 +130,9 @@ enum spdk_nvmf_trtype {
 	/** Fibre Channel */
 	SPDK_NVMF_TRTYPE_FC		= 0x2,
 
+	/** TCP */
+	SPDK_NVMF_TRTYPE_TCP		= 0x3,
+
 	/** Intra-host transport (loopback) */
 	SPDK_NVMF_TRTYPE_INTRA_HOST	= 0xfe,
 };

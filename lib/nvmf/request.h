@@ -35,6 +35,7 @@
 #define NVMF_REQUEST_H
 
 #include "spdk/nvmf.h"
+#include "spdk/nvme.h"
 #include "spdk/nvmf_spec.h"
 #include "spdk/queue.h"
 #include "spdk/bdev.h"
@@ -67,6 +68,7 @@ SPDK_STATIC_ASSERT(sizeof(union nvmf_c2h_msg) == 16, "Incorrect size");
 #define MAX_REQ_STATES       16
 
 struct spdk_nvmf_request {
+	enum spdk_nvme_transport_type	transport_type;
 	struct spdk_nvmf_conn		*conn;
 	uint32_t			length;
 	enum spdk_nvme_data_transfer	xfer;

@@ -50,6 +50,7 @@ nvme_transport_unknown(enum spdk_nvme_transport_type trtype)
 #endif
 
 #define TRANSPORT_PCIE(func_name, args)	case SPDK_NVME_TRANSPORT_PCIE: return nvme_pcie_ ## func_name args;
+#define TRANSPORT_FABRICS_TCP(func_name, args)	case SPDK_NVME_TRANSPORT_TCP: SPDK_UNREACHABLE();
 #ifdef SPDK_CONFIG_RDMA
 #define TRANSPORT_FABRICS_RDMA(func_name, args)	case SPDK_NVME_TRANSPORT_RDMA: return nvme_rdma_ ## func_name args;
 #define TRANSPORT_RDMA_AVAILABLE		true
@@ -57,10 +58,14 @@ nvme_transport_unknown(enum spdk_nvme_transport_type trtype)
 #define TRANSPORT_FABRICS_RDMA(func_name, args)	case SPDK_NVME_TRANSPORT_RDMA: SPDK_UNREACHABLE();
 #define TRANSPORT_RDMA_AVAILABLE		false
 #endif
+#define TRANSPORT_FABRICS_FC(func_name, args)	case SPDK_NVME_TRANSPORT_FC: SPDK_UNREACHABLE();
+
 #define NVME_TRANSPORT_CALL(trtype, func_name, args) 	\
 	do {							\
 		switch (trtype) {				\
 		TRANSPORT_PCIE(func_name, args)			\
+		TRANSPORT_FABRICS_TCP(func_name, args)		\
+		TRANSPORT_FABRICS_FC(func_name, args)		\
 		TRANSPORT_FABRICS_RDMA(func_name, args)		\
 		TRANSPORT_DEFAULT(trtype)			\
 		}						\
@@ -73,7 +78,10 @@ spdk_nvme_transport_available(enum spdk_nvme_transport_type trtype)
 	switch (trtype) {
 	case SPDK_NVME_TRANSPORT_PCIE:
 		return true;
-
+	/* Change this to true once we enable it ? */
+	case SPDK_NVME_TRANSPORT_FC:
+	case SPDK_NVME_TRANSPORT_TCP:
+		return false;
 	case SPDK_NVME_TRANSPORT_RDMA:
 		return TRANSPORT_RDMA_AVAILABLE;
 	}

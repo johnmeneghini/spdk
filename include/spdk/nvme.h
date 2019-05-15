@@ -137,6 +137,16 @@ enum spdk_nvme_transport_type {
 	 * RDMA Transport (RoCE, iWARP, etc.)
 	 */
 	SPDK_NVME_TRANSPORT_RDMA = SPDK_NVMF_TRTYPE_RDMA,
+
+	/**
+	 * Fibre Channel (FC) Transport
+	 */
+	SPDK_NVME_TRANSPORT_FC = SPDK_NVMF_TRTYPE_FC,
+
+	/*
+	 * TCP Transport
+	 */
+	SPDK_NVME_TRANSPORT_TCP = SPDK_NVMF_TRTYPE_TCP,
 };
 
 /**
