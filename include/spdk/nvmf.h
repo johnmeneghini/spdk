@@ -259,7 +259,7 @@ struct spdk_nvmf_tgt_opts {
 	uint16_t				awupf;
 	uint32_t				sgls;
 	uint16_t				oncs;
-	uint8_t                                 mn[SPDK_NVME_SPEC_MPDEL_NUMBER_SIZE];
+	uint8_t                                 mn[SPDK_NVME_CTRLR_MN_LEN];
 	bool                                    allow_any_host;
 	bool                                    allow_any_listener;
 	uint8_t					anatt;

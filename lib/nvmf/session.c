@@ -103,7 +103,7 @@ nvmf_init_discovery_session_properties(struct spdk_nvmf_session *session)
 	session->vcprop.cap.bits.mqes = (session->vcdata.maxcmd - 1);	/* max queue depth */
 	session->vcprop.cap.bits.ams = 0;	/* optional arb mechanisms */
 	session->vcprop.cap.bits.dstrd = 0;	/* fixed to 0 for NVMf */
-	session->vcprop.cap.bits.css_nvm = 1; /* NVM command set */
+	session->vcprop.cap.bits.css = SPDK_NVME_CAP_CSS_NVM; /* NVM command set */
 	session->vcprop.cap.bits.mpsmin = spdk_u32log2((SPDK_NVMF_PAGE_SIZE >> 12)); /* 2 ^ (12 + mpsmin) */
 	session->vcprop.cap.bits.mpsmax = spdk_u32log2((SPDK_NVMF_PAGE_SIZE >> 12)); /* 2 ^ (12 + mpsmax) */
 
@@ -185,7 +185,7 @@ nvmf_init_nvme_session_properties(struct spdk_nvmf_session *session)
 	session->vcprop.cap.bits.ams = 0;	/* optional arb mechanisms */
 	session->vcprop.cap.bits.to = 1;	/* ready timeout - 500 msec units */
 	session->vcprop.cap.bits.dstrd = 0;	/* fixed to 0 for NVMf */
-	session->vcprop.cap.bits.css_nvm = 1; /* NVM command set */
+	session->vcprop.cap.bits.css = SPDK_NVME_CAP_CSS_NVM; /* NVM command set */
 	session->vcprop.cap.bits.mpsmin = 0; /* 2 ^ 12 + mpsmin == 4k */
 	session->vcprop.cap.bits.mpsmax = 0; /* 2 ^ 12 + mpsmax == 4k */
 
