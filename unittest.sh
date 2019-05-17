@@ -44,11 +44,6 @@ fi
 $valgrind test/unit/lib/bdev/bdev.c/bdev_ut
 $valgrind test/unit/lib/bdev/scsi_nvme.c/scsi_nvme_ut
 
-$valgrind test/unit/lib/blob/blob.c/blob_ut
-
-$valgrind test/lib/blobfs/blobfs_async_ut/blobfs_async_ut
-# blobfs_sync_ut hangs when run under valgrind, so don't use $valgrind
-test/lib/blobfs/blobfs_sync_ut/blobfs_sync_ut
 
 $valgrind test/unit/lib/nvme/nvme.c/nvme_ut
 $valgrind test/unit/lib/nvme/nvme_ctrlr.c/nvme_ctrlr_ut
@@ -92,10 +87,6 @@ if [ -x test/lib/nvmf/nvmf_fc/ls/nvmf_fc_ls_ut ]; then
      $valgrind test/lib/nvmf/nvmf_fc/ls/nvmf_fc_ls_ut
 fi
 
-if [ $(uname -s) = Linux ]; then
-$valgrind test/unit/lib/vhost/vhost.c/vhost_ut
-fi
-
 # local unit test coverage
 if [ "$cov_avail" = "yes" ]; then
 	$LCOV -q -d . -c -t "$(hostname)" -o $UT_COVERAGE/ut_cov_test.info
@@ -104,7 +95,6 @@ if [ "$cov_avail" = "yes" ]; then
 	$LCOV -q -r $UT_COVERAGE/ut_cov_unit.info 'app/*' -o $UT_COVERAGE/ut_cov_unit.info
 	$LCOV -q -r $UT_COVERAGE/ut_cov_unit.info 'examples/*' -o $UT_COVERAGE/ut_cov_unit.info
 	$LCOV -q -r $UT_COVERAGE/ut_cov_unit.info 'include/*' -o $UT_COVERAGE/ut_cov_unit.info
-	$LCOV -q -r $UT_COVERAGE/ut_cov_unit.info 'lib/vhost/rte_vhost/*' -o $UT_COVERAGE/ut_cov_unit.info
 	$LCOV -q -r $UT_COVERAGE/ut_cov_unit.info 'test/*' -o $UT_COVERAGE/ut_cov_unit.info
 	rm -f $UT_COVERAGE/ut_cov_base.info $UT_COVERAGE/ut_cov_test.info
 	genhtml $UT_COVERAGE/ut_cov_unit.info --output-directory $UT_COVERAGE

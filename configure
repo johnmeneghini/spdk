@@ -31,8 +31,6 @@ function usage()
 	echo "                           example: /usr/share/dpdk/x86_64-default-linuxapp-gcc"
 	echo " fio                       Required to build fio_plugin."
 	echo "                           example: /usr/src/fio"
-	echo " rbd                       [disabled]"
-	echo "                           No path required."
 	echo " rdma                      [disabled]"
 	echo "                           No path required."
 	echo " vtune                     Required to profile I/O under Intel VTune Amplifier XE."
@@ -90,12 +88,6 @@ for i in "$@"; do
 			;;
 		--with-env=*)
 			CONFIG_ENV="${i#*=}"
-			;;
-		--with-rbd)
-			CONFIG_RBD=y
-			;;
-		--without-rbd)
-			CONFIG_RBD=n
 			;;
 		--with-rdma)
 			CONFIG_RDMA=y

@@ -11,16 +11,15 @@ This will provide a general overview of what is where in the repository.
 The `app` top-level directory contains four applications:
  - `app/iscsi_tgt`: An iSCSI target
  - `app/nvmf_tgt`: An NVMe-oF target
+ - `app/nvmf_fc_tgt`: An FC-NVMe target
  - `app/iscsi_top`: Informational tool (like `top`) that tracks activity in the
     iSCSI target.
  - `app/trace`: A tool for processing trace points output from the iSCSI and
     NVMe-oF targets.
- - `app/vhost`:  A vhost application that presents virtio controllers to
-    QEMU-based VMs and process I/O submitted to those controllers.
 
 The application binaries will be in their respective directories after compiling and all
 can be run with no arguments to print out their command line arguments. For the iSCSI
-and NVMe-oF targets, they both need a configuration file (-c option). Fully commented
+FC-NVMe, and NVMe-oF targets, they both need a configuration file (-c option). Fully commented
 examples of the configuration files live in the `etc/spdk` directory.
 
 ## Build Collateral {#dir_build}
@@ -84,8 +83,7 @@ its own directory under `lib`.
 The `bdev` directory contains a block device abstraction layer that is currently used
 within the iSCSI and NVMe-oF targets. The public interface is `include/spdk/bdev.h`.
 This library lacks clearly defined responsibilities as of this writing and instead does a
-number of
-things:
+number of things:
  - Translates from a common `block` protocol to specific protocols like NVMe or to system
   calls like libaio. There are currently three block device backend modules that can be
   plugged in - libaio, SPDK NVMe, CephRBD, and a RAM-based backend called malloc.

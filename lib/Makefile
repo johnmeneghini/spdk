@@ -35,13 +35,10 @@ SPDK_ROOT_DIR := $(abspath $(CURDIR)/..)
 include $(SPDK_ROOT_DIR)/mk/spdk.common.mk
 
 ifeq ($(origin TARGET_LIBS), undefined)
-TARGET_LIBS := bdev blob blobfs conf copy cunit event json jsonrpc log env_dpdk net rpc trace util nvme nvmf scsi ioat ut_mock
+TARGET_LIBS := bdev conf copy cunit event json jsonrpc log env_dpdk net rpc trace util nvme nvmf scsi ioat ut_mock
 endif
 ifeq ($(OS),Linux)
 TARGET_LIBS += iscsi
-ifeq ($(CONFIG_VHOST),y)
-TARGET_LIBS += vhost
-endif
 endif
 
 ifeq ($(CONFIG_BCM_FC_DRV),y)

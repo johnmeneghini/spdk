@@ -40,7 +40,6 @@ DIRS-y += iscsi_top
 ifeq ($(OS),Linux)
 
   DIRS-y += iscsi_tgt
-  DIRS-$(CONFIG_VHOST) += vhost
 
   # The BCM FC library and driver/app are only supported on Linux.
   # The nvmf_tgt app only links when the RDMA library is build with

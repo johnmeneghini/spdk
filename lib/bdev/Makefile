@@ -44,12 +44,10 @@ C_SRCS-$(CONFIG_VTUNE) += vtune.c
 
 LIBNAME = bdev
 
-DIRS-y += error gpt malloc null nvme rpc split
+DIRS-y += malloc null nvme rpc 
 
 ifeq ($(OS),Linux)
 DIRS-y += aio
 endif
-
-DIRS-$(CONFIG_RBD) += rbd
 
 include $(SPDK_ROOT_DIR)/mk/spdk.lib.mk
