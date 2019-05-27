@@ -272,4 +272,6 @@ SPDK_TRACE_REGISTER_FN(nvmf_trace)
 					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
 	spdk_trace_register_description("NVMF_FC_REQ_PENDING", "", TRACE_FC_REQ_PENDING,
 					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
+	spdk_trace_register_description("NVMF_FC_REQ_FUSED_WAITING", "", TRACE_FC_REQ_FUSED_WAITING,
+					OWNER_NONE, OBJECT_NVMF_IO, 0, 0, 0, "");
 }

@@ -773,6 +773,28 @@ spdk_nvmf_bcm_fc_req_abort_complete(void *arg1, void *arg2)
 	}
 }
 
+/*
+ * This function fails the partner of a fused command that has
+ * not been submitted to bdev yet
+ */
+static void
+spdk_nvmf_bcm_fc_fail_fused_partner(struct spdk_nvmf_bcm_fc_request *fc_req)
+{
+	if (!fc_req) {
+		return;
+	}
+
+	if (fc_req->req.cmd->nvme_cmd.fuse == SPDK_NVME_FUSED_CMD1) {
+		if (fc_req->req.fused_partner) {
+			fc_req->req.fused_partner->is_fused_partner_failed = true;
+			fc_req->req.fused_partner->fail_with_fused_aborted = true;
+			fc_req->req.fused_partner->rsp->nvme_cpl.status.dnr = 0;
+			fc_req->req.fused_partner->rsp->nvme_cpl.status.sc = SPDK_NVME_SC_ABORTED_FAILED_FUSED;
+		}
+	}
+	return;
+}
+
 void
 spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 			   bool send_abts, spdk_nvmf_bcm_fc_caller_cb cb,
@@ -823,10 +845,12 @@ spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 		/* Notify hw */
 		spdk_nvmf_bcm_fc_issue_abort(fc_req->hwqp, fc_req->xri,
 					     send_abts, NULL, NULL);
+		spdk_nvmf_bcm_fc_fail_fused_partner(fc_req);
 	} else if (nvmf_fc_req_in_pending(fc_req)) {
 		/* Remove from pending */
 		TAILQ_REMOVE(&fc_req->fc_conn->pending_queue, fc_req, pending_link);
 		fc_req->hwqp->reg_counters.num_of_commands_in_pending_q--;
+		spdk_nvmf_bcm_fc_fail_fused_partner(fc_req);
 		goto complete;
 	} else if (nvmf_fc_req_in_fused_waiting(fc_req)) {
 		if (cmd->opc == SPDK_NVME_OPC_COMPARE) {
@@ -835,6 +859,7 @@ spdk_nvmf_bcm_fc_req_abort(struct spdk_nvmf_bcm_fc_request *fc_req,
 			fc_req->hwqp->counters.num_abts_fused_write++;
 		}
 		TAILQ_REMOVE(&fc_req->fc_conn->fused_waiting_queue, fc_req, fused_link);
+		spdk_nvmf_bcm_fc_fail_fused_partner(fc_req);
 		goto complete;
 	} else {
 		/* Should never happen */

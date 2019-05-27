@@ -1310,6 +1310,26 @@ nvmf_virtual_ctrlr_io_init(struct spdk_nvmf_request *req)
 	uint16_t nr;
 	int rc;
 
+	if (spdk_nvmf_is_fused_command(&req->cmd->nvme_cmd)) {
+		/* Rules for fused command:
+		   1) Whenever CMD1 fails, it will explicitly set
+		   the status for CMD2 also.
+		   2) CMD2 will be failed with a status of SPDK_NVME_SC_ABORTED_FAILED_FUSED
+		   in most of the cases (whenever fail_with_fused_aborted flag is set).
+		   3) There are a few scenarios where CMD2 will need to be failed with
+		   a different status. In such cases fail_with_fused_aborted shall be unset
+		   and CMD1 will set the status of CMD2 explicitly
+		   */
+		if (cmd->fuse == SPDK_NVME_FUSED_CMD1) {
+			req->fused_partner->fail_with_fused_aborted = true;
+		} else if (req->is_fused_partner_failed) {
+			/* This is CMD2 and our partner CMD1 failed, fail CMD_2 also.
+			   CMD1 would have set the right status for CMD2
+			   during CMD1's completion */
+			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+		}
+	}
+
 	/* pre-set response details for this command */
 	response->status.sct = SPDK_NVME_SCT_GENERIC;
 	response->status.sc = SPDK_NVME_SC_SUCCESS;
