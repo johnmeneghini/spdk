@@ -197,54 +197,34 @@ spdk_bdev_read(struct spdk_bdev_desc *bdev_desc, struct spdk_mempool *pool,
 	return 0;
 }
 
-int
-spdk_bdev_readv(struct spdk_bdev_io *bdev_io)
+int spdk_bdev_readv(struct spdk_bdev_desc *desc,
+		    struct spdk_mempool *bdev_io_pool,
+		    struct spdk_io_channel *ch,
+		    struct iovec *iov,
+		    int *iovcnt,
+		    uint64_t offset,
+		    uint64_t nbytes,
+		    spdk_bdev_io_completion_cb cb, void *cb_arg,
+		    struct spdk_bdev_io **bdev_io_ctx)
 {
 	return 0;
 }
 
 int
-spdk_bdev_writev(struct spdk_bdev_io *bdev_io)
+spdk_bdev_writev(struct spdk_bdev_desc *desc,
+		 struct spdk_mempool *bdev_io_pool,
+		 struct spdk_io_channel *ch,
+		 struct iovec *iov,
+		 int *iovcnt,
+		 uint64_t offset,
+		 uint64_t length,
+		 spdk_bdev_io_completion_cb cb, void *cb_arg,
+		 struct spdk_bdev_io **bdev_io_ctx)
 {
 	return 0;
 }
 
 struct spdk_bdev_io bdev_io;
-
-int
-spdk_bdev_read_init(struct spdk_bdev_desc *desc,
-		    struct spdk_io_channel *ch,
-		    struct spdk_mempool *bdev_io_pool,
-		    spdk_bdev_io_completion_cb cb,
-		    void *cb_arg,
-		    struct iovec *iov,
-		    int *iovcnt,
-		    uint32_t length,
-		    uint64_t offset,
-		    struct spdk_bdev_io **bdev_io_ctx)
-{
-	memset(&bdev_io, 0, sizeof(bdev_io));
-	*bdev_io_ctx = &bdev_io;
-	return 0;
-}
-
-int
-spdk_bdev_write_init(struct spdk_bdev_desc *desc,
-		     struct spdk_io_channel *ch,
-		     struct spdk_mempool *bdev_io_pool,
-		     spdk_bdev_io_completion_cb cb,
-		     void *cb_arg,
-		     struct iovec *iov,
-		     int32_t *iovcnt,
-		     uint32_t length,
-		     uint64_t offset,
-		     bool is_write,
-		     struct spdk_bdev_io **bdev_io_ctx)
-{
-	memset(&bdev_io, 0, sizeof(bdev_io));
-	*bdev_io_ctx = &bdev_io;
-	return 0;
-}
 
 int
 spdk_bdev_unmap(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,

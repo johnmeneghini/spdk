@@ -1,4 +1,4 @@
-/*-
+/*
  *   BSD LICENSE
  *
  *   Copyright (C) 2008-2012 Daisuke Aoyama <aoyama@peach.ne.jp>.
@@ -189,22 +189,16 @@ __blockdev_write(void *arg1, void *arg2)
 {
 	struct bdevio_request *req = arg1;
 	struct io_target *target = req->target;
-	struct spdk_bdev_io *bdev_io;
 	int rc = 0;
 
 	if (req->iovcnt) {
-		rc = spdk_bdev_write_init(target->bdev_desc, target->ch, NULL, quick_test_complete,
-					  NULL,
-					  req->iov,
-					  &req->iovcnt, req->data_len, req->offset, true, &bdev_io);
-		if (bdev_io) {
-			if (spdk_bdev_writev(bdev_io) < 0) {
-				bdev_io = NULL;
-			}
-		}
+		rc = spdk_bdev_writev(target->bdev_desc, NULL, target->ch,
+				      req->iov,
+				      &req->iovcnt, req->offset, req->data_len,
+				      quick_test_complete, NULL, NULL);
 	} else {
 		rc = spdk_bdev_write(target->bdev_desc, NULL, target->ch, req->buf, req->offset,
-				     req->data_len, quick_test_complete, NULL, &bdev_io);
+				     req->data_len, quick_test_complete, NULL, NULL);
 	}
 
 	if (rc) {
@@ -259,21 +253,19 @@ __blockdev_read(void *arg1, void *arg2)
 {
 	struct bdevio_request *req = arg1;
 	struct io_target *target = req->target;
-	struct spdk_bdev_io  *bdev_io;
 	int rc = 0;
 
 	if (req->iovcnt) {
-		rc = spdk_bdev_read_init(target->bdev_desc, target->ch, NULL, quick_test_complete, NULL,
-					 req->iov,
-					 &req->iovcnt, req->data_len, req->offset, &bdev_io);
-		if (rc == 0) {
-			if (spdk_bdev_readv(bdev_io) < 0) {
-				bdev_io = NULL;
-			}
-		}
+		rc = spdk_bdev_readv(target->bdev_desc, NULL, target->ch,
+				     req->iov,
+				     &req->iovcnt,
+				     req->offset,
+				     req->data_len,
+				     quick_test_complete, NULL,
+				     NULL);
 	} else {
 		rc = spdk_bdev_read(target->bdev_desc, NULL, target->ch, req->buf, req->offset,
-				    req->data_len, quick_test_complete, NULL, &bdev_io);
+				    req->data_len, quick_test_complete, NULL, NULL);
 	}
 
 	if (rc) {

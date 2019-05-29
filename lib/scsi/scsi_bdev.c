@@ -1329,29 +1329,27 @@ spdk_bdev_scsi_read(struct spdk_bdev *bdev,
 		      "Read: lba=%"PRIu64", len=%"PRIu64"\n",
 		      lba, (uint64_t)task->length / blen);
 
-	rc = spdk_bdev_read_init(task->desc, task->ch, NULL, spdk_bdev_scsi_task_complete_cmd,
-				 task,
-				 task->iovs, &task->iovcnt, nbytes, offset, &bdev_io);
-
-	task->bdev_io = bdev_io;
+	rc = spdk_bdev_readv(task->desc, NULL, task->ch,
+			     task->iovs, &task->iovcnt, offset, nbytes,
+			     spdk_bdev_scsi_task_complete_cmd, task,
+			     &bdev_io);
 
 	if (rc == 0) {
-		if (spdk_bdev_readv(task->bdev_io) >= 0) {
-			task->data_transferred = nbytes;
-			task->status = SPDK_SCSI_STATUS_GOOD;
-
-			return SPDK_SCSI_TASK_PENDING;
-		}
-	} else {
-		SPDK_ERRLOG("task->bdev_io NULL\n");
-
+		task->data_transferred = nbytes;
+		task->status = SPDK_SCSI_STATUS_GOOD;
+		task->bdev_io = bdev_io;
+		return SPDK_SCSI_TASK_PENDING;
 	}
+
+	SPDK_ERRLOG("task->bdev_io NULL\n");
+	task->bdev_io = NULL;
 
 	SPDK_ERRLOG("spdk_bdev_readv() failed, rc: %d\n", rc);
 	spdk_scsi_task_set_status(task, SPDK_SCSI_STATUS_CHECK_CONDITION,
 				  SPDK_SCSI_SENSE_NO_SENSE,
 				  SPDK_SCSI_ASC_NO_ADDITIONAL_SENSE,
 				  SPDK_SCSI_ASCQ_CAUSE_NOT_REPORTABLE);
+
 	return SPDK_SCSI_TASK_COMPLETE;
 }
 
@@ -1394,30 +1392,32 @@ spdk_bdev_scsi_write(struct spdk_bdev *bdev,
 	}
 
 	offset += task->offset;
-	rc = spdk_bdev_write_init(task->desc, task->ch, NULL, spdk_bdev_scsi_task_complete_cmd,
-				  task,
-				  task->iovs, &task->iovcnt, task->length, offset, true, &bdev_io);
-	task->bdev_io = bdev_io;
+
+	rc = spdk_bdev_writev(task->desc, NULL, task->ch,
+			      task->iovs, &task->iovcnt, offset, task->length,
+			      spdk_bdev_scsi_task_complete_cmd, task, &bdev_io);
 
 	if (rc == 0) {
-		if (spdk_bdev_writev(task->bdev_io) >= 0) {
-			if (!primary) {
-				task->data_transferred += task->length;
-			} else {
-				primary->data_transferred += task->length;
-			}
-			SPDK_TRACELOG(SPDK_TRACE_SCSI, "Wrote %"PRIu64"/%"PRIu64" bytes\n",
-				      (uint64_t)task->length, nbytes);
-
-			task->status = SPDK_SCSI_STATUS_GOOD;
-			return SPDK_SCSI_TASK_PENDING;
+		task->bdev_io = bdev_io;
+		if (!primary) {
+			task->data_transferred += task->length;
+		} else {
+			primary->data_transferred += task->length;
 		}
+		SPDK_TRACELOG(SPDK_TRACE_SCSI, "Wrote %"PRIu64"/%"PRIu64" bytes\n",
+			      (uint64_t)task->length, nbytes);
+
+		task->status = SPDK_SCSI_STATUS_GOOD;
+		return SPDK_SCSI_TASK_PENDING;
 	}
+
+	task->bdev_io = NULL;
 	SPDK_ERRLOG("spdk_bdev_writev failed\n");
 	spdk_scsi_task_set_status(task, SPDK_SCSI_STATUS_CHECK_CONDITION,
 				  SPDK_SCSI_SENSE_NO_SENSE,
 				  SPDK_SCSI_ASC_NO_ADDITIONAL_SENSE,
 				  SPDK_SCSI_ASCQ_CAUSE_NOT_REPORTABLE);
+
 	return SPDK_SCSI_TASK_COMPLETE;
 }
 

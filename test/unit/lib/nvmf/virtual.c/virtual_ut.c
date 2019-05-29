@@ -304,8 +304,16 @@ spdk_bdev_nvme_io_passthru(struct spdk_bdev_desc *desc,
 {
 	return 0;
 }
-
-int spdk_bdev_writev(struct spdk_bdev_io *bdev_io)
+int
+spdk_bdev_writev(struct spdk_bdev_desc *desc,
+		 struct spdk_mempool *bdev_io_pool,
+		 struct spdk_io_channel *ch,
+		 struct iovec *iov,
+		 int *iovcnt,
+		 uint64_t offset,
+		 uint64_t length,
+		 spdk_bdev_io_completion_cb cb, void *cb_arg,
+		 struct spdk_bdev_io **bdev_io_ctx)
 {
 	return 0;
 }
@@ -316,7 +324,15 @@ spdk_bdev_submit_io(struct spdk_bdev_io *bdev_io)
 	return 0;
 }
 
-int spdk_bdev_readv(struct spdk_bdev_io *bdev_io)
+int spdk_bdev_readv(struct spdk_bdev_desc *desc,
+		    struct spdk_mempool *bdev_io_pool,
+		    struct spdk_io_channel *ch,
+		    struct iovec *iov,
+		    int *iovcnt,
+		    uint64_t offset,
+		    uint64_t nbytes,
+		    spdk_bdev_io_completion_cb cb, void *cb_arg,
+		    struct spdk_bdev_io **bdev_io_ctx)
 {
 	return 0;
 }
@@ -379,50 +395,6 @@ spdk_bdev_init_ioctx(void **bdev_ctx,
 		     void *arg2,
 		     uint32_t length,
 		     uint64_t offset)
-{
-	return 0;
-}
-
-int
-spdk_bdev_read_init(struct spdk_bdev_desc *desc,
-		    struct spdk_io_channel *ch,
-		    struct spdk_mempool *bdev_io_pool,
-		    spdk_bdev_io_completion_cb cb,
-		    void *cb_arg,
-		    struct iovec *iov,
-		    int *iovcnt,
-		    uint32_t length,
-		    uint64_t offset,
-		    struct spdk_bdev_io **bdev_io_ctx)
-{
-	return 0;
-}
-
-int
-spdk_bdev_read_fini(struct spdk_bdev_io *bdev_io)
-{
-	return 0;
-}
-
-int
-spdk_bdev_write_init(struct spdk_bdev_desc *desc,
-		     struct spdk_io_channel *ch,
-		     struct spdk_mempool *bdev_io_pool,
-		     spdk_bdev_io_completion_cb cb,
-		     void *cb_arg,
-		     struct iovec *iov,
-		     int *iovcnt,
-		     uint32_t length,
-		     uint64_t offset,
-		     bool is_write,
-		     struct spdk_bdev_io **bdev_io_ctx)
-{
-	return 0;
-}
-
-
-int
-spdk_bdev_write_fini(struct spdk_bdev_io *bdev_io)
 {
 	return 0;
 }

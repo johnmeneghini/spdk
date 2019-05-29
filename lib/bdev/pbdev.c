@@ -489,22 +489,113 @@ spdk_bdev_read(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
 	       void *buf, uint64_t offset, uint64_t nbytes,
 	       spdk_bdev_io_completion_cb cb, void *cb_arg, struct spdk_bdev_io **result_bdev_io)
 {
-#ifdef NETAPP
-	/* Netapp uses Readv */
-	assert(0);
-#endif
+	struct spdk_bdev *bdev = desc->bdev;
+	struct spdk_bdev_io *bdev_io;
+	struct spdk_bdev_channel *channel = spdk_io_channel_get_ctx(ch);
+	int rc;
+
+	if (spdk_bdev_io_valid(bdev, offset, nbytes) != 0) {
+		return -EINVAL;
+	}
+
+	bdev_io = spdk_bdev_get_io(bdev_io_pool);
+	if (!bdev_io) {
+		SPDK_ERRLOG("spdk_bdev_io memory allocation failed duing read\n");
+		return -ENOMEM;
+	}
+
+	bdev_io->ch = channel;
+	bdev_io->type = SPDK_BDEV_IO_TYPE_READ;
+	bdev_io->u.read.iov.iov_base = buf;
+	bdev_io->u.read.iov.iov_len = nbytes;
+	bdev_io->u.read.iovs = &bdev_io->u.read.iov;
+	bdev_io->u.read.iovcnt = 1;
+	bdev_io->u.read.len = nbytes;
+	bdev_io->u.read.offset = offset;
+	bdev_io->bdev_io_pool = bdev_io_pool;
+	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb, NULL, NULL);
+
+	rc = spdk_bdev_io_submit(bdev_io);
+	if (rc < 0) {
+		spdk_bdev_put_io(bdev_io);
+		return rc;
+	}
+
+	if (result_bdev_io) {
+		*result_bdev_io = bdev_io;
+	}
+
 	return 0;
 }
 
-int
-spdk_bdev_readv(struct spdk_bdev_io *bdev_io)
+static int
+spdk_bdev_fill_iovec(uint64_t offset,
+		     uint32_t length,
+		     struct iovec *iov,
+		     int *iovcnt,
+		     struct spdk_bdev_io *bdev_io)
 {
-	int rc;
-
-	rc = spdk_bdev_io_submit(bdev_io);
-
-	return rc;
+	struct spdk_bdev *bdev = bdev_io->bdev;
+	if (bdev->fn_table->init_io) {
+		return (bdev->fn_table->init_io(bdev_io, offset, length, iov, iovcnt));
+	} else {
+		return (spdk_bdev_get_buff(iov, iovcnt, length));
+	}
 }
+
+int
+spdk_bdev_readv(struct spdk_bdev_desc *desc,
+		struct spdk_mempool *bdev_io_pool,
+		struct spdk_io_channel *ch,
+		struct iovec *iov,
+		int *iovcnt,
+		uint64_t offset,
+		uint64_t length,
+		spdk_bdev_io_completion_cb cb, void *cb_arg,
+		struct spdk_bdev_io **bdev_io_ctx)
+{
+	int rc = 0;
+	struct spdk_bdev_io *bdev_io = NULL;
+	struct spdk_bdev_channel *channel = spdk_io_channel_get_ctx(ch);
+	struct spdk_bdev *bdev = desc->bdev;
+
+	assert(bdev->status != SPDK_BDEV_STATUS_INVALID);
+	if ((rc = spdk_bdev_io_valid(bdev, offset, length)) != 0) {
+		return rc;
+	}
+
+	bdev_io = spdk_bdev_get_io(bdev_io_pool);
+
+	if (!bdev_io) {
+		SPDK_ERRLOG("spdk_bdev_io memory allocation failed during readv\n");
+		return -EAGAIN;
+	}
+
+	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb, NULL, NULL);
+
+	if (!(*iovcnt)) {
+		if ((rc = spdk_bdev_fill_iovec(offset, length, iov, iovcnt, bdev_io)) != 0) {
+			*iovcnt = 0;
+			spdk_bdev_put_io(bdev_io);
+			return rc;
+		}
+	}
+
+	bdev_io->ch = channel;
+	bdev_io->type = SPDK_BDEV_IO_TYPE_READ;
+	bdev_io->u.read.iovs = iov;
+	bdev_io->u.read.iovcnt = *iovcnt;
+	bdev_io->u.read.len = length;
+	bdev_io->u.read.offset = offset;
+	bdev_io->u.read.put_rbuf = false;
+
+	if (bdev_io_ctx) {
+		*bdev_io_ctx = bdev_io;
+	}
+
+	return spdk_bdev_io_submit(bdev_io);
+}
+
 
 int
 spdk_bdev_submit_io(struct spdk_bdev_io *bdev_io)
@@ -582,10 +673,6 @@ spdk_bdev_write(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
 	struct spdk_bdev_channel *channel = spdk_io_channel_get_ctx(ch);
 	int rc;
 
-#ifdef NETAPP
-	/* Netapp uses writev */
-	assert(0);
-#endif
 	if (bdev->write_protect_flags.write_protect) {
 		return -EBADF;
 	}
@@ -622,16 +709,6 @@ spdk_bdev_write(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
 	}
 
 	return 0;
-}
-
-int
-spdk_bdev_writev(struct spdk_bdev_io *bdev_io)
-{
-	int rc;
-
-	rc = spdk_bdev_io_submit(bdev_io);
-
-	return rc;
 }
 
 int
@@ -1083,76 +1160,6 @@ spdk_bdev_desc_get_bdev(struct spdk_bdev_desc *desc)
 }
 
 int
-spdk_bdev_read_init(struct spdk_bdev_desc *desc,
-		    struct spdk_io_channel *ch,
-		    struct spdk_mempool *bdev_io_pool,
-		    spdk_bdev_io_completion_cb cb,
-		    void *cb_arg,
-		    struct iovec *iov,
-		    int *iovcnt,
-		    uint32_t length,
-		    uint64_t offset,
-		    struct spdk_bdev_io **bdev_io_ctx)
-{
-	int rc = 0;
-	struct spdk_bdev_io *bdev_io = NULL;
-	struct spdk_bdev_channel *channel = spdk_io_channel_get_ctx(ch);
-	struct spdk_bdev *bdev = desc->bdev;
-
-	assert(bdev->status != SPDK_BDEV_STATUS_INVALID);
-	if ((rc = spdk_bdev_io_valid(bdev, offset, length)) != 0) {
-		return rc;
-	}
-
-	bdev_io = spdk_bdev_get_io(bdev_io_pool);
-
-	if (!bdev_io) {
-		SPDK_ERRLOG("spdk_bdev_io memory allocation failed during readv\n");
-		return -EAGAIN;
-	}
-
-	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb, NULL, NULL);
-
-	if (!(*iovcnt)) {
-		if (bdev->fn_table->init_read) {
-			rc = bdev->fn_table->init_read(offset, length, iov, iovcnt, bdev_io);
-		} else {
-			rc = spdk_bdev_get_buff(iov, iovcnt, length);
-		}
-	}
-
-	if (rc) {
-		/* In case of failure reset iovcnt */
-		*iovcnt = 0;
-		spdk_bdev_put_io(bdev_io);
-		bdev_io = NULL;
-	} else {
-		bdev_io->ch = channel;
-		bdev_io->type = SPDK_BDEV_IO_TYPE_READ;
-		bdev_io->u.read.iovs = iov;
-		bdev_io->u.read.iovcnt = *iovcnt;
-		bdev_io->u.read.len = length;
-		bdev_io->u.read.offset = offset;
-		bdev_io->u.read.put_rbuf = false;
-	}
-
-	*bdev_io_ctx = bdev_io;
-	return rc;
-}
-
-int
-spdk_bdev_read_fini(struct spdk_bdev_io *bdev_io)
-{
-	struct spdk_bdev *bdev = bdev_io->bdev;
-	assert(bdev->fn_table->fini_read);
-	if (bdev->fn_table->fini_read) {
-		return bdev->fn_table->fini_read(bdev_io);
-	} else {
-		return -1;
-	}
-}
-
-int
 spdk_bdev_fini_io(struct spdk_bdev_io *bdev_io)
 {
 	struct spdk_bdev *bdev = bdev_io->bdev;
@@ -1205,21 +1212,6 @@ spdk_bdev_nvme_opcode_to_bdev_io_type(enum spdk_nvme_nvm_opcode opcode, struct s
 	}
 
 	return io_type;
-}
-
-static int
-spdk_bdev_fill_iovec(uint64_t offset,
-		     uint32_t length,
-		     struct iovec *iov,
-		     int *iovcnt,
-		     struct spdk_bdev_io *bdev_io)
-{
-	struct spdk_bdev *bdev = bdev_io->bdev;
-	if (bdev->fn_table->init_io) {
-		return (bdev->fn_table->init_io(bdev_io, offset, length, iov, iovcnt));
-	} else {
-		return (spdk_bdev_get_buff(iov, iovcnt, length));
-	}
 }
 
 void
@@ -1531,17 +1523,15 @@ spdk_bdev_init_ioctx(void **bdev_ctx,
 }
 
 int
-spdk_bdev_write_init(struct spdk_bdev_desc *desc,
-		     struct spdk_io_channel *ch,
-		     struct spdk_mempool *bdev_io_pool,
-		     spdk_bdev_io_completion_cb cb,
-		     void *cb_arg,
-		     struct iovec *iov,
-		     int *iovcnt,
-		     uint32_t length,
-		     uint64_t offset,
-		     bool is_write,
-		     struct spdk_bdev_io **bdev_io_ctx)
+spdk_bdev_writev(struct spdk_bdev_desc *desc,
+		 struct spdk_mempool *bdev_io_pool,
+		 struct spdk_io_channel *ch,
+		 struct iovec *iov,
+		 int *iovcnt,
+		 uint64_t offset,
+		 uint64_t length,
+		 spdk_bdev_io_completion_cb cb, void *cb_arg,
+		 struct spdk_bdev_io **bdev_io_ctx)
 {
 	int rc = 0;
 	struct spdk_bdev_io *bdev_io;
@@ -1556,53 +1546,32 @@ spdk_bdev_write_init(struct spdk_bdev_desc *desc,
 	bdev_io = spdk_bdev_get_io(bdev_io_pool);
 
 	if (!bdev_io) {
-		SPDK_ERRLOG("bdev_io memory allocation failed during %s\n", is_write ? "write" : "compare");
+		SPDK_ERRLOG("bdev_io memory allocation failed during %s\n", "write");
 		return -EAGAIN;
 	}
 
 	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb, NULL, NULL);
 
-	/*
-	 * set IO type BEFORE calling into application
-	 */
-	if (is_write) {
-		bdev_io->type = SPDK_BDEV_IO_TYPE_WRITE;
-	} else {
-		bdev_io->type = SPDK_BDEV_IO_TYPE_COMPARE;
+	if (!(*iovcnt)) {
+		if ((rc = spdk_bdev_fill_iovec(offset, length, iov, iovcnt, bdev_io)) != 0) {
+			*iovcnt = 0;
+			spdk_bdev_put_io(bdev_io);
+			return rc;
+		}
 	}
 
-	if (bdev->fn_table->init_write) {
-		rc = bdev->fn_table->init_write(offset, length, iov, iovcnt, bdev_io);
+	bdev_io->ch = channel;
+	bdev_io->type = SPDK_BDEV_IO_TYPE_WRITE;
+	bdev_io->u.write.iovs = iov;
+	bdev_io->u.write.iovcnt = *iovcnt;
+	bdev_io->u.write.len = length;
+	bdev_io->u.write.offset = offset;
+
+	if (bdev_io_ctx) {
+		*bdev_io_ctx = bdev_io;
 	}
 
-	if (rc) {
-		/* In case of failure reset iovcnt */
-		*iovcnt = 0;
-		spdk_bdev_put_io(bdev_io);
-		bdev_io = NULL;
-	} else {
-		bdev_io->ch = channel;
-		bdev_io->type = SPDK_BDEV_IO_TYPE_WRITE;
-		bdev_io->u.write.iovs = iov;
-		bdev_io->u.write.iovcnt = *iovcnt;
-		bdev_io->u.write.len = length;
-		bdev_io->u.write.offset = offset;
-	}
-
-	*bdev_io_ctx = bdev_io;
-	return rc;
-}
-
-int
-spdk_bdev_write_fini(struct spdk_bdev_io *bdev_io)
-{
-	struct spdk_bdev *bdev = bdev_io->bdev;
-	assert(bdev->fn_table->fini_write);
-	if (bdev->fn_table->fini_write) {
-		return bdev->fn_table->fini_write(bdev_io);
-	} else {
-		return -1;
-	}
+	return spdk_bdev_io_submit(bdev_io);
 }
 
 void

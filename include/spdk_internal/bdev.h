@@ -144,20 +144,6 @@ struct spdk_bdev_fn_table {
 	/** Get an I/O channel for the specific bdev for the calling thread. */
 	struct spdk_io_channel *(*get_io_channel)(void *ctx);
 
-	/** API to acquire/init vector of I/O Buffers for read */
-	int (*init_read)(uint64_t offset, uint32_t length, struct iovec *iov, int *iovcnt,
-			 struct spdk_bdev_io *bdev_io);
-
-	/** API to release vector of I/O Buffers  acquired for read */
-	int (*fini_read)(struct spdk_bdev_io *bdev_io);
-
-	/** API to acquire vector of I/O Buffers for write or compare */
-	int (*init_write)(uint64_t offset, uint32_t length, struct iovec *iov, int *iovcnt,
-			  struct spdk_bdev_io *bdev_io);
-
-	/** API to release vector of I/O Buffers  acquired for write or compare */
-	int (*fini_write)(struct spdk_bdev_io *bdev_io);
-
 	/** API to acquire/init vector of I/O Buffers */
 	int (*init_io)(struct spdk_bdev_io *bdev_io, uint64_t offset, uint32_t length, void *arg1,
 		       void *arg2);
@@ -458,7 +444,6 @@ void spdk_bdev_poller_start(struct spdk_bdev_poller **ppoller,
 void spdk_bdev_poller_stop(struct spdk_bdev_poller **ppoller);
 
 void spdk_bdev_io_get_buf(struct spdk_bdev_io *bdev_io, spdk_bdev_io_get_buf_cb cb);
-void spdk_bdev_io_resubmit(struct spdk_bdev_io *bdev_io, struct spdk_bdev_desc *new_bdev_desc);
 void spdk_bdev_io_complete(struct spdk_bdev_io *bdev_io,
 			   enum spdk_bdev_io_status status);
 void bdev_io_deferred_completion(void *arg1, void *arg2);

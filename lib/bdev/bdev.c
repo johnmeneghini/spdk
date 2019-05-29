@@ -590,13 +590,13 @@ spdk_bdev_put_io(struct spdk_bdev_io *bdev_io)
 static void
 __submit_request(struct spdk_bdev *bdev, struct spdk_bdev_io *bdev_io)
 {
-	struct spdk_io_channel *ch;
+	struct spdk_io_channel *ch = (bdev_io->ch) ? bdev_io->ch->channel : NULL;
 
 	assert(bdev_io->status == SPDK_BDEV_IO_STATUS_INIT);
 
-	ch = bdev_io->ch->channel;
-
-	bdev_io->ch->io_outstanding++;
+	if (bdev_io->ch) {
+		bdev_io->ch->io_outstanding++;
+	}
 	bdev_io->in_submit_request = true;
 	bdev->fn_table->submit_request(ch, bdev_io);
 	bdev_io->in_submit_request = false;
@@ -609,29 +609,6 @@ spdk_bdev_io_submit(struct spdk_bdev_io *bdev_io)
 
 	__submit_request(bdev, bdev_io);
 	return 0;
-}
-
-void
-spdk_bdev_io_resubmit(struct spdk_bdev_io *bdev_io, struct spdk_bdev_desc *new_bdev_desc)
-{
-	struct spdk_bdev *new_bdev = new_bdev_desc->bdev;
-
-	assert(bdev_io->status == SPDK_BDEV_IO_STATUS_INIT);
-	bdev_io->bdev = new_bdev;
-
-	/*
-	 * These fields are normally set during spdk_bdev_io_init(), but since bdev is
-	 * being switched, they need to be reinitialized.
-	 */
-	bdev_io->gencnt = new_bdev->gencnt;
-
-	/*
-	 * This bdev_io was already submitted so decrement io_outstanding to ensure it
-	 *  does not get double-counted.
-	 */
-	assert(bdev_io->ch->io_outstanding > 0);
-	bdev_io->ch->io_outstanding--;
-	__submit_request(new_bdev, bdev_io);
 }
 
 static void
@@ -857,16 +834,6 @@ spdk_bdev_read(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
 }
 
 int
-spdk_bdev_readv(struct spdk_bdev_io *bdev_io)
-{
-	int rc;
-
-	rc = spdk_bdev_io_submit(bdev_io);
-
-	return rc;
-}
-
-int
 spdk_bdev_submit_io(struct spdk_bdev_io *bdev_io)
 {
 	int rc;
@@ -978,16 +945,6 @@ spdk_bdev_write(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
 	}
 
 	return 0;
-}
-
-int
-spdk_bdev_writev(struct spdk_bdev_io *bdev_io)
-{
-	int rc;
-
-	rc = spdk_bdev_io_submit(bdev_io);
-
-	return rc;
 }
 
 int
@@ -1294,9 +1251,10 @@ void
 spdk_bdev_io_complete(struct spdk_bdev_io *bdev_io, enum spdk_bdev_io_status status)
 {
 	bdev_io->status = status;
-
-	assert(bdev_io->ch->io_outstanding > 0);
-	bdev_io->ch->io_outstanding--;
+	if (bdev_io->ch) {
+		assert(bdev_io->ch->io_outstanding > 0);
+		bdev_io->ch->io_outstanding--;
+	}
 	if (bdev_io->type == SPDK_BDEV_IO_TYPE_RESET) {
 		/* Successful reset */
 		if (status == SPDK_BDEV_IO_STATUS_SUCCESS) {
@@ -1765,52 +1723,30 @@ error:
 }
 
 static int
-spdk_bdev_put_buff(struct spdk_bdev_io *bdev_io, struct iovec *iov, int32_t iovcnt)
+spdk_bdev_fill_iovec(uint64_t offset,
+		     uint32_t length,
+		     struct iovec *iov,
+		     int *iovcnt,
+		     struct spdk_bdev_io *bdev_io)
 {
-	struct spdk_mempool *pool;
-	need_buf_tailq_t *tailq;
-	struct spdk_bdev_io *tmp;
-	int32_t i;
-	struct spdk_bdev_mgmt_channel *ch;
-
-	assert(spdk_bdev_g_use_global_pools);
-
-	if (!iov) {
-		return -1;
+	struct spdk_bdev *bdev = bdev_io->bdev;
+	if (bdev->fn_table->init_io) {
+		return (bdev->fn_table->init_io(bdev_io, offset, length, iov, iovcnt));
+	} else {
+		return (spdk_bdev_get_buff(iov, iovcnt, length));
 	}
-
-	ch = spdk_io_channel_get_ctx(bdev_io->ch->mgmt_channel);
-
-	for (i = 0; i < iovcnt; i++) {
-		pool = g_bdev_mgr.buf_small_pool;
-		tailq = &ch->need_buf_small;
-
-		if (TAILQ_EMPTY(tailq)) {
-			spdk_mempool_put(pool, iov[i].iov_base);
-		} else {
-			/* give the buffer to others on pending list. */
-			tmp = TAILQ_FIRST(tailq);
-			TAILQ_REMOVE(tailq, tmp, buf_link);
-			spdk_bdev_io_set_buf(tmp, iov[i].iov_base);
-		}
-		iov[i].iov_base = NULL;
-		iov[i].iov_len = 0;
-	}
-
-	return 0;
 }
 
 int
-spdk_bdev_read_init(struct spdk_bdev_desc *desc,
-		    struct spdk_io_channel *ch,
-		    struct spdk_mempool *bdev_io_pool,
-		    spdk_bdev_io_completion_cb cb,
-		    void *cb_arg,
-		    struct iovec *iov,
-		    int *iovcnt,
-		    uint32_t length,
-		    uint64_t offset,
-		    struct spdk_bdev_io **bdev_io_ctx)
+spdk_bdev_readv(struct spdk_bdev_desc *desc,
+		struct spdk_mempool *bdev_io_pool,
+		struct spdk_io_channel *ch,
+		struct iovec *iov,
+		int *iovcnt,
+		uint64_t offset,
+		uint64_t length,
+		spdk_bdev_io_completion_cb cb, void *cb_arg,
+		struct spdk_bdev_io **bdev_io_ctx)
 {
 	int rc = 0;
 	struct spdk_bdev_io *bdev_io = NULL;
@@ -1832,41 +1768,26 @@ spdk_bdev_read_init(struct spdk_bdev_desc *desc,
 	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb, NULL, NULL);
 
 	if (!(*iovcnt)) {
-		if (bdev->fn_table->init_read) {
-			rc = bdev->fn_table->init_read(offset, length, iov, iovcnt, bdev_io);
-		} else {
-			rc = spdk_bdev_get_buff(iov, iovcnt, length);
+		if ((rc = spdk_bdev_fill_iovec(offset, length, iov, iovcnt, bdev_io)) != 0) {
+			*iovcnt = 0;
+			spdk_bdev_put_io(bdev_io);
+			return rc;
 		}
 	}
 
-	if (rc) {
-		/* In case of failure reset iovcnt */
-		*iovcnt = 0;
-		spdk_bdev_put_io(bdev_io);
-		bdev_io = NULL;
-	} else {
-		bdev_io->ch = channel;
-		bdev_io->type = SPDK_BDEV_IO_TYPE_READ;
-		bdev_io->u.read.iovs = iov;
-		bdev_io->u.read.iovcnt = *iovcnt;
-		bdev_io->u.read.len = length;
-		bdev_io->u.read.offset = offset;
-		bdev_io->u.read.put_rbuf = false;
+	bdev_io->ch = channel;
+	bdev_io->type = SPDK_BDEV_IO_TYPE_READ;
+	bdev_io->u.read.iovs = iov;
+	bdev_io->u.read.iovcnt = *iovcnt;
+	bdev_io->u.read.len = length;
+	bdev_io->u.read.offset = offset;
+	bdev_io->u.read.put_rbuf = false;
+
+	if (bdev_io_ctx) {
+		*bdev_io_ctx = bdev_io;
 	}
 
-	*bdev_io_ctx = bdev_io;
-	return rc;
-}
-
-int
-spdk_bdev_read_fini(struct spdk_bdev_io *bdev_io)
-{
-	struct spdk_bdev *bdev = bdev_io->bdev;
-	if (bdev->fn_table->fini_read) {
-		return bdev->fn_table->fini_read(bdev_io);
-	} else {
-		return spdk_bdev_put_buff(bdev_io, bdev_io->u.read.iovs, bdev_io->u.read.iovcnt);
-	}
+	return spdk_bdev_io_submit(bdev_io);
 }
 
 int
@@ -1924,20 +1845,7 @@ spdk_bdev_nvme_opcode_to_bdev_io_type(enum spdk_nvme_nvm_opcode opcode, struct s
 	return io_type;
 }
 
-static int
-spdk_bdev_fill_iovec(uint64_t offset,
-		     uint32_t length,
-		     struct iovec *iov,
-		     int *iovcnt,
-		     struct spdk_bdev_io *bdev_io)
-{
-	struct spdk_bdev *bdev = bdev_io->bdev;
-	if (bdev->fn_table->init_io) {
-		return (bdev->fn_table->init_io(bdev_io, offset, length, iov, iovcnt));
-	} else {
-		return (spdk_bdev_get_buff(iov, iovcnt, length));
-	}
-}
+
 
 void
 spdk_bdev_put_ioctx(void **bdev_ctx)
@@ -2244,17 +2152,15 @@ spdk_bdev_init_ioctx(void **bdev_ctx,
 }
 
 int
-spdk_bdev_write_init(struct spdk_bdev_desc *desc,
-		     struct spdk_io_channel *ch,
-		     struct spdk_mempool *bdev_io_pool,
-		     spdk_bdev_io_completion_cb cb,
-		     void *cb_arg,
-		     struct iovec *iov,
-		     int *iovcnt,
-		     uint32_t length,
-		     uint64_t offset,
-		     bool is_write,
-		     struct spdk_bdev_io **bdev_io_ctx)
+spdk_bdev_writev(struct spdk_bdev_desc *desc,
+		 struct spdk_mempool *bdev_io_pool,
+		 struct spdk_io_channel *ch,
+		 struct iovec *iov,
+		 int *iovcnt,
+		 uint64_t offset,
+		 uint64_t length,
+		 spdk_bdev_io_completion_cb cb, void *cb_arg,
+		 struct spdk_bdev_io **bdev_io_ctx)
 {
 	int rc = 0;
 	struct spdk_bdev_io *bdev_io;
@@ -2269,54 +2175,32 @@ spdk_bdev_write_init(struct spdk_bdev_desc *desc,
 	bdev_io = spdk_bdev_get_io(bdev_io_pool);
 
 	if (!bdev_io) {
-		SPDK_ERRLOG("bdev_io memory allocation failed during %s\n", is_write ? "write" : "compare");
+		SPDK_ERRLOG("bdev_io memory allocation failed during %s\n", "write");
 		return -EAGAIN;
 	}
 
 	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb, NULL, NULL);
 
-	/*
-	 * set IO type BEFORE calling into application
-	 */
-	if (is_write) {
-		bdev_io->type = SPDK_BDEV_IO_TYPE_WRITE;
-	} else {
-		bdev_io->type = SPDK_BDEV_IO_TYPE_COMPARE;
+	if (!(*iovcnt)) {
+		if ((rc = spdk_bdev_fill_iovec(offset, length, iov, iovcnt, bdev_io)) != 0) {
+			*iovcnt = 0;
+			spdk_bdev_put_io(bdev_io);
+			return rc;
+		}
 	}
 
-	if (bdev->fn_table->init_write) {
-		rc = bdev->fn_table->init_write(offset, length, iov, iovcnt, bdev_io);
-	} else {
-		rc = spdk_bdev_get_buff(iov, iovcnt, length);
+	bdev_io->ch = channel;
+	bdev_io->type = SPDK_BDEV_IO_TYPE_WRITE;
+	bdev_io->u.write.iovs = iov;
+	bdev_io->u.write.iovcnt = *iovcnt;
+	bdev_io->u.write.len = length;
+	bdev_io->u.write.offset = offset;
+
+	if (bdev_io_ctx) {
+		*bdev_io_ctx = bdev_io;
 	}
 
-	if (rc) {
-		/* In case of failure reset iovcnt */
-		*iovcnt = 0;
-		spdk_bdev_put_io(bdev_io);
-		bdev_io = NULL;
-	} else {
-		bdev_io->ch = channel;
-		bdev_io->type = SPDK_BDEV_IO_TYPE_WRITE;
-		bdev_io->u.write.iovs = iov;
-		bdev_io->u.write.iovcnt = *iovcnt;
-		bdev_io->u.write.len = length;
-		bdev_io->u.write.offset = offset;
-	}
-
-	*bdev_io_ctx = bdev_io;
-	return rc;
-}
-
-int
-spdk_bdev_write_fini(struct spdk_bdev_io *bdev_io)
-{
-	struct spdk_bdev *bdev = bdev_io->bdev;
-	if (bdev->fn_table->fini_write) {
-		return bdev->fn_table->fini_write(bdev_io);
-	} else {
-		return spdk_bdev_put_buff(bdev_io, bdev_io->u.write.iovs, bdev_io->u.write.iovcnt);
-	}
+	return spdk_bdev_io_submit(bdev_io);
 }
 
 void

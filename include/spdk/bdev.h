@@ -301,11 +301,28 @@ int spdk_bdev_read(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_poo
  * data and may not be able to directly transfer into the buffers provided. In
  * this case, the request may fail.
  *
- * \param bdev_io io descriptor
+ * \param bdev Block device
+ * \param bdev_io_pool I/O request pool used to obtain a bdev_io  NULL to use global pool.
+ * \param ch I/O channel. Obtained by calling spdk_bdev_get_io_channel().
+ * \param iovec address of struct iovec
+ * \param iovcnt address of iov count
+ * \param offset The offset, in bytes, from the start of the block device.
+ * \param nbytes The number of bytes to read.
+ * \param cb Called when the request is complete.
+ * \param cb_arg Argument passed to cb.
+ * \param **bdev_io_ctx returns handle to bdevio
  *
  * \return 0 on success.
  */
-int spdk_bdev_readv(struct spdk_bdev_io *bdev_io);
+int spdk_bdev_readv(struct spdk_bdev_desc *desc,
+		    struct spdk_mempool *bdev_io_pool,
+		    struct spdk_io_channel *ch,
+		    struct iovec *iov,
+		    int *iovcnt,
+		    uint64_t offset,
+		    uint64_t nbytes,
+		    spdk_bdev_io_completion_cb cb, void *cb_arg,
+		    struct spdk_bdev_io **bdev_io_ctx);
 
 /**
  * Submit an io request to the bdev for processing. The bdev_io has already been
@@ -370,7 +387,6 @@ spdk_bdev_compare_and_write(enum spdk_nvme_nvm_opcode opcode,
 			    void *buf, uint64_t offset, uint64_t nbytes,
 			    spdk_bdev_io_completion_cb cb, void *cb_arg, struct spdk_bdev_io **result_bdev_io, bool fused);
 
-
 /**
  * Submit a write request to the bdev on the given channel. This differs from
  * spdk_bdev_write by allowing the data buffer to be described in a scatter
@@ -378,11 +394,29 @@ spdk_bdev_compare_and_write(enum spdk_nvme_nvm_opcode opcode,
  * data and may not be able to directly transfer out of the buffers provided. In
  * this case, the request may fail.
  *
- * \param bdev_io io descriptor
+ * \param bdev Block device
+ * \param bdev_io_pool I/O request pool used to obtain a bdev_io  NULL to use global pool.
+ * \param ch I/O channel. Obtained by calling spdk_bdev_get_io_channel().
+ * \param iovec address of struct iovec
+ * \param iovcnt address of iov count
+ * \param offset The offset, in bytes, from the start of the block device.
+ * \param nbytes The number of bytes to read.
+ * \param cb Called when the request is complete.
+ * \param cb_arg Argument passed to cb.
+ * \param **bdev_io_ctx returns handle to bdevio
  *
  * \return 0 on success.
  */
-int spdk_bdev_writev(struct spdk_bdev_io *bdev_io);
+int
+spdk_bdev_writev(struct spdk_bdev_desc *desc,
+		 struct spdk_mempool *bdev_io_pool,
+		 struct spdk_io_channel *ch,
+		 struct iovec *iov,
+		 int *iovcnt,
+		 uint64_t offset,
+		 uint64_t length,
+		 spdk_bdev_io_completion_cb cb, void *cb_arg,
+		 struct spdk_bdev_io **bdev_io_ctx);
 
 /**
  * Submit an unmap request to the block device. Unmap is sometimes also called trim or
@@ -598,24 +632,6 @@ spdk_bdev_init_ioctx(void **bdev_ctx,
 enum spdk_bdev_io_type
 spdk_bdev_nvme_opcode_to_bdev_io_type(enum spdk_nvme_nvm_opcode opcode,
 				      struct spdk_bdev *bdev);
-
-int spdk_bdev_read_fini(struct spdk_bdev_io *bdev_io);
-
-/* Initialize a write or compare request */
-int spdk_bdev_write_init(struct spdk_bdev_desc *desc,
-			 struct spdk_io_channel *ch,
-			 struct spdk_mempool *bdev_io_pool,
-			 spdk_bdev_io_completion_cb io_complete_cb,
-			 void *io_complete_cb_arg,
-			 struct iovec *iov,
-			 int32_t *iovcnt,
-			 uint32_t length,
-			 uint64_t offset,
-			 bool is_write,
-			 struct spdk_bdev_io **bdev_io_ctx);
-
-/* Cleanup a write or compare request */
-int spdk_bdev_write_fini(struct spdk_bdev_io *bdev_io);
 
 void spdk_bdev_io_abort(struct spdk_bdev_io *bdev_io);
 
