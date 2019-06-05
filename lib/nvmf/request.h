@@ -86,6 +86,7 @@ struct spdk_nvmf_request {
 	bool                            fail_with_fused_aborted;
 	spdk_nvmf_set_sge		set_sge;
 	bool				sgl_filled;
+	bool                qos_rewind;
 };
 
 spdk_nvmf_request_exec_status spdk_nvmf_request_init(struct spdk_nvmf_request *req);

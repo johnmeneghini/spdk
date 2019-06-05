@@ -535,6 +535,7 @@ nvmf_fc_alloc_req_buf(struct spdk_nvmf_bcm_fc_conn *fc_conn)
 	fc_req->req.fused_partner 	    = NULL;
 	fc_req->req.is_fused_partner_failed = false;
 	fc_req->req.fail_with_fused_aborted = false;
+	fc_req->req.qos_rewind = false;
 	for (int i = 0; i < MAX_REQ_STATES; i ++) {
 		fc_req->req.req_state_trace[i] = 0;
 	}
