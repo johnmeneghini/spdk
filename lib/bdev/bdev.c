@@ -358,35 +358,6 @@ spdk_bdev_io_get_scsi_status(const struct spdk_bdev_io *bdev_io,
 	}
 }
 
-void
-spdk_bdev_module_examine_done(struct spdk_bdev_module_if *module)
-{
-	struct spdk_bdev_module_if *m;
-
-	assert(module->examine_in_progress > 0);
-	module->examine_in_progress--;
-
-	/*
-	 * Check all bdev modules for an examinations in progress.  If any
-	 * exist, return immediately since we cannot finish bdev subsystem
-	 * initialization until all are completed.
-	 */
-	TAILQ_FOREACH(m, &g_bdev_mgr.bdev_modules, tailq) {
-		if (m->examine_in_progress > 0) {
-			return;
-		}
-	}
-
-	if (g_bdev_mgr.module_init_complete && !g_bdev_mgr.init_complete) {
-		/*
-		 * Modules already finished initialization - now that all
-		 * the bdev moduless have finished their asynchronous I/O
-		 * processing, the entire bdev layer can be marked as complete.
-		 */
-		spdk_bdev_init_complete(0);
-	}
-}
-
 int
 spdk_bdev_module_claim_bdev(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 			    struct spdk_bdev_module_if *module)

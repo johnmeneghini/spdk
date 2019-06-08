@@ -205,23 +205,10 @@ spdk_bdev_init_complete(int rc)
 static void
 spdk_bdev_module_init_complete(int rc)
 {
-	struct spdk_bdev_module_if *m;
-
 	g_bdev_mgr.module_init_complete = true;
 
 	if (rc != 0) {
 		spdk_bdev_init_complete(rc);
-	}
-
-	/*
-	 * Check all bdev modules for an examinations in progress.  If any
-	 * exist, return immediately since we cannot finish bdev subsystem
-	 * initialization until all are completed.
-	 */
-	TAILQ_FOREACH(m, &g_bdev_mgr.bdev_modules, tailq) {
-		if (m->examine_in_progress > 0) {
-			return;
-		}
 	}
 
 	spdk_bdev_init_complete(0);
@@ -736,8 +723,6 @@ spdk_bdev_io_get_nvme_status(const struct spdk_bdev_io *bdev_io, int *sct, int *
 static void
 _spdk_bdev_register(struct spdk_bdev *bdev)
 {
-	struct spdk_bdev_module_if *module;
-
 	assert(bdev->module != NULL);
 
 	bdev->status = SPDK_BDEV_STATUS_READY;
@@ -760,13 +745,6 @@ _spdk_bdev_register(struct spdk_bdev *bdev)
 	pthread_mutex_init(&bdev->mutex, NULL);
 	SPDK_TRACELOG(SPDK_TRACE_DEBUG, "Inserting bdev %s into list\n", bdev->name);
 	TAILQ_INSERT_TAIL(&g_bdev_mgr.bdevs, bdev, link);
-
-	TAILQ_FOREACH(module, &g_bdev_mgr.bdev_modules, tailq) {
-		if (module->examine) {
-			module->examine_in_progress++;
-			module->examine(bdev);
-		}
-	}
 }
 
 void
@@ -1377,16 +1355,7 @@ spdk_bdev_io_get_iovec(struct spdk_bdev_io *bdev_io, struct iovec **iovp, int *i
 void
 spdk_bdev_module_list_add(struct spdk_bdev_module_if *bdev_module)
 {
-	/*
-	 * Modules with examine callbacks must be initialized first, so they are
-	 *  ready to handle examine callbacks from later modules that will
-	 *  register physical bdevs.
-	 */
-	if (bdev_module->examine != NULL) {
-		TAILQ_INSERT_HEAD(&g_bdev_mgr.bdev_modules, bdev_module, tailq);
-	} else {
-		TAILQ_INSERT_TAIL(&g_bdev_mgr.bdev_modules, bdev_module, tailq);
-	}
+	TAILQ_INSERT_TAIL(&g_bdev_mgr.bdev_modules, bdev_module, tailq);
 }
 
 void

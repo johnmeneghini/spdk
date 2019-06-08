@@ -41,8 +41,6 @@
 #include "bdev.c"
 #include "pbdev.c"
 
-SPDK_DECLARE_BDEV_MODULE(vbdev_ut);
-
 void *
 spdk_io_channel_get_ctx(struct spdk_io_channel *ch)
 {
@@ -116,14 +114,7 @@ static struct spdk_bdev_fn_table fn_table = {
 	.destruct = stub_destruct,
 };
 
-static void
-vbdev_ut_examine(struct spdk_bdev *bdev)
-{
-	spdk_bdev_module_examine_done(SPDK_GET_BDEV_MODULE(vbdev_ut));
-}
-
-SPDK_BDEV_MODULE_REGISTER(bdev_ut, NULL, NULL, NULL, NULL, NULL)
-SPDK_BDEV_MODULE_REGISTER(vbdev_ut, NULL, NULL, NULL, NULL, vbdev_ut_examine)
+SPDK_BDEV_MODULE_REGISTER(bdev_ut, NULL, NULL, NULL, NULL)
 
 static struct spdk_bdev *
 allocate_bdev(char *name)
