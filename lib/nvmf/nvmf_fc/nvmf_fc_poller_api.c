@@ -275,13 +275,17 @@ nvmf_fc_poller_api_abts_received(void *arg1, void *arg2)
 	struct spdk_nvmf_bcm_fc_poller_api_abts_recvd_args *args = arg1;
 	struct spdk_nvmf_bcm_fc_request *fc_req = NULL;
 	struct spdk_nvmf_bcm_fc_hwqp *hwqp = args->hwqp;
+	struct spdk_nvmf_bcm_fc_conn *fc_conn;
 
-	TAILQ_FOREACH(fc_req, &hwqp->in_use_reqs, link) {
-		if ((fc_req->rpi == args->ctx->rpi) &&
-		    (fc_req->oxid == args->ctx->oxid)) {
-			spdk_nvmf_bcm_fc_req_abort(fc_req, false,
-						   nvmf_fc_poller_abts_done, args);
-			return;
+	TAILQ_FOREACH(fc_conn, &hwqp->connection_list, link) {
+		if (fc_conn->rpi == args->ctx->rpi) {
+			TAILQ_FOREACH(fc_req, &fc_conn->in_use_reqs, conn_link) {
+				if (fc_req->oxid == args->ctx->oxid) {
+					spdk_nvmf_bcm_fc_req_abort(fc_req, false,
+								   nvmf_fc_poller_abts_done, args);
+					return;
+				}
+			}
 		}
 	}
 

@@ -389,6 +389,7 @@ struct spdk_nvmf_bcm_fc_request {
 	uint32_t csn;
 
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_request) link;
+	TAILQ_ENTRY(spdk_nvmf_bcm_fc_request) conn_link;
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_request) pending_link;
 	TAILQ_ENTRY(spdk_nvmf_bcm_fc_request) fused_link;
 
@@ -459,6 +460,8 @@ struct spdk_nvmf_bcm_fc_conn {
 	uint32_t pool_size;
 	/* Current free elem in pool */
 	uint32_t pool_free_elems;
+
+	TAILQ_HEAD(, spdk_nvmf_bcm_fc_request) in_use_reqs;
 };
 
 /*

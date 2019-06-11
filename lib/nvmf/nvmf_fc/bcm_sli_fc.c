@@ -541,6 +541,7 @@ nvmf_fc_alloc_req_buf(struct spdk_nvmf_bcm_fc_conn *fc_conn)
 	}
 
 	TAILQ_INSERT_TAIL(&hwqp->in_use_reqs, fc_req, link);
+	TAILQ_INSERT_TAIL(&fc_conn->in_use_reqs, fc_req, conn_link);
 	fc_conn->cur_queue_depth++;
 	hwqp->reg_counters.num_of_commands_total++;
 
@@ -561,6 +562,7 @@ nvmf_fc_free_req_buf(struct spdk_nvmf_bcm_fc_conn *fc_conn, struct spdk_nvmf_bcm
 	fc_req->magic = 0xDEADBEEF;
 
 	TAILQ_REMOVE(&hwqp->in_use_reqs, fc_req, link);
+	TAILQ_REMOVE(&fc_conn->in_use_reqs, fc_req, conn_link);
 
 	/* Put the free element at head of queue for better cache */
 	TAILQ_INSERT_HEAD(&fc_conn->pool_queue, fc_req, pool_link);
