@@ -224,6 +224,8 @@ struct spdk_nvmf_bcm_fc_hwqp {
 
 	/* Sync req list */
 	TAILQ_HEAD(, spdk_nvmf_bcm_fc_poller_api_queue_sync_args) sync_cbs;
+
+	bool is_ls_queue;
 };
 
 /*

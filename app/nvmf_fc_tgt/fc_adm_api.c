@@ -323,6 +323,7 @@ nvmf_fc_tgt_hw_port_data_init(struct spdk_nvmf_bcm_fc_port *fc_port,
 	fc_port->ls_queue.queues    = args->ls_queue;
 	fc_port->ls_queue.lcore_id  = spdk_env_get_master_lcore();
 	fc_port->ls_queue.hwqp_id   = FC_LS_HWQP_ID;
+	fc_port->ls_queue.is_ls_queue = true;
 	fc_port->ls_queue.send_frame_xri  = fc_port->xri_base;
 	TAILQ_INIT(&fc_port->ls_queue.pending_xri_list);
 

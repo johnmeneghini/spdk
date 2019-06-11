@@ -2495,6 +2495,20 @@ nvmf_fc_process_cq_entry(struct spdk_nvmf_bcm_fc_hwqp *hwqp, struct fc_eventq *c
 	return rc;
 }
 
+static void
+nvmf_fc_release_pending_ls_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
+				struct spdk_nvmf_bcm_fc_ls_rqst *ls_rqst)
+{
+	assert(ls_rqst);
+
+	TAILQ_REMOVE(&hwqp->ls_pending_queue, ls_rqst, ls_pending_link);
+	ls_rqst->pending_queue_remove = spdk_get_ticks();
+	hwqp->reg_counters.ls_commands_pending_q--;
+
+	/* Return buffer to chip */
+	nvmf_fc_rqpair_buffer_release(hwqp, ls_rqst->rqstbuf.buf_index);
+
+}
 static inline void
 nvmf_fc_process_pending_ls_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 {
@@ -2518,12 +2532,7 @@ nvmf_fc_process_pending_ls_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 				/* increment invalid rport counter */
 				hwqp->counters.rport_invalid++;
 			}
-			TAILQ_REMOVE(&hwqp->ls_pending_queue, ls_rqst, ls_pending_link);
-			ls_rqst->pending_queue_remove = spdk_get_ticks();
-			hwqp->reg_counters.ls_commands_pending_q--;
-
-			/* Return buffer to chip */
-			nvmf_fc_rqpair_buffer_release(hwqp, ls_rqst->rqstbuf.buf_index);
+			nvmf_fc_release_pending_ls_rqst(hwqp, ls_rqst);
 			continue;
 		}
 		if (nport->nport_state != SPDK_NVMF_BCM_FC_OBJECT_CREATED ||
@@ -2531,12 +2540,7 @@ nvmf_fc_process_pending_ls_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 			SPDK_ERRLOG("%s: %s state not created. Dropping\n", __func__,
 				    nport->nport_state != SPDK_NVMF_BCM_FC_OBJECT_CREATED ?
 				    "Nport" : "Rport");
-			TAILQ_REMOVE(&hwqp->ls_pending_queue, ls_rqst, ls_pending_link);
-			ls_rqst->pending_queue_remove = spdk_get_ticks();
-			hwqp->reg_counters.ls_commands_pending_q--;
-
-			/* Return buffer to chip */
-			nvmf_fc_rqpair_buffer_release(hwqp, ls_rqst->rqstbuf.buf_index);
+			nvmf_fc_release_pending_ls_rqst(hwqp, ls_rqst);
 			continue;
 		}
 
@@ -2552,6 +2556,16 @@ nvmf_fc_process_pending_ls_rqst(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 			/* No more XRI. Stop processing. */
 			return;
 		}
+	}
+}
+
+static void
+nvmf_fc_process_pending(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
+{
+	if (hwqp->is_ls_queue) {
+		nvmf_fc_process_pending_ls_rqst(hwqp);
+	} else {
+		nvmf_fc_process_pending_req(hwqp);
 	}
 }
 
@@ -2595,8 +2609,7 @@ spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 				 * There might be some buffers/xri freed.
 				 * First give chance for pending frames
 				 */
-				nvmf_fc_process_pending_ls_rqst(hwqp);
-				nvmf_fc_process_pending_req(hwqp);
+				nvmf_fc_process_pending(hwqp);
 				pending_req_processed = true;
 			} else if (cq_id == hwqp->queues.cq_rq.q.qid) {
 				nvmf_fc_process_cq_entry(hwqp, &hwqp->queues.cq_rq);
@@ -2618,8 +2631,7 @@ spdk_nvmf_bcm_fc_process_queues(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 	}
 
 	if (!pending_req_processed) {
-		nvmf_fc_process_pending_ls_rqst(hwqp);
-		nvmf_fc_process_pending_req(hwqp);
+		nvmf_fc_process_pending(hwqp);
 	}
 
 	if (n_processed) {
@@ -3205,9 +3217,8 @@ spdk_nvmf_fc_delete_ls_pending(struct spdk_nvmf_bcm_fc_hwqp *hwqp,
 		if (ls_rqst->d_id == nport->d_id) {
 			/* If rport is NULL or matches with requested */
 			if (!rport || (ls_rqst->s_id == rport->s_id)) {
-				TAILQ_REMOVE(&hwqp->ls_pending_queue, ls_rqst, ls_pending_link);
+				nvmf_fc_release_pending_ls_rqst(hwqp, ls_rqst);
 				num_deleted++;
-				nvmf_fc_rqpair_buffer_release(hwqp, ls_rqst->rqstbuf.buf_index);
 			}
 		}
 	}
