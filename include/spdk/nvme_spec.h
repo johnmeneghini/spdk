@@ -1938,7 +1938,7 @@ enum spdk_nvme_log_page {
 	/* 0x81-0xBF - I/O command set specific */
 
 	/* 0xC0-0xFF - vendor specific */
-	SPDK_NVME_LOG_VENDOR_SPECIFIC   = 0xC0,
+	SPDK_NVME_LOG_VENDOR_SPECIFIC   = 0xC2,
 };
 
 /**
