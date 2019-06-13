@@ -176,6 +176,7 @@ struct spdk_nvmf_bcm_fc_reg_counters {
 	uint32_t num_of_commands_in_pending_q; /* The snapshot of the number of commands on the pending q */
 	uint32_t num_of_commands_total; /* This represents the total number of commands on the HWQP in progress */
 	uint32_t ls_commands_pending_q; /* This represents the LS commands on the pending q */
+	uint32_t num_of_conns; /* Number of connections on this HWQP */
 };
 
 /*
@@ -204,7 +205,6 @@ struct spdk_nvmf_bcm_fc_hwqp {
 	void *context;			/* Vendor Context */
 
 	TAILQ_HEAD(hwqp_conn, spdk_nvmf_bcm_fc_conn) connection_list;
-	uint32_t num_conns; /* number of connections to queue */
 	uint16_t cid_cnt;   /* used to generate unique conn. id for RQ */
 	uint32_t used_q_slots; /* used q slots for connections  */
 	spdk_fc_hwqp_state_t state;  /* Poller state (e.g. online, offline) */

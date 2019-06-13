@@ -2364,7 +2364,7 @@ spdk_nvmf_bcm_fc_tgt_print_port(void *arg1, void *arg2)
 	struct spdk_nvmf_bcm_fc_nport *nport;
 	struct spdk_nvmf_bcm_fc_conn *fc_conn = NULL;
 	int i;
-	int assoc_count = 0, conn_count = 0;
+	int assoc_count = 0;
 
 	SPDK_NOTICELOG("\nDump port details\n");
 	SPDK_NOTICELOG("\n*******************************\n");
@@ -2384,14 +2384,14 @@ spdk_nvmf_bcm_fc_tgt_print_port(void *arg1, void *arg2)
 	SPDK_NOTICELOG("FCP RQ ID: %d\n", port->fcp_rq_id);
 	SPDK_NOTICELOG("LS Queue:\n");
 	SPDK_NOTICELOG("\tLcore ID: %d, HWQP ID: %d\n", ls->lcore_id, ls->hwqp_id);
-	SPDK_NOTICELOG("\tNum of Conns: %d, State: %d\n", ls->num_conns, ls->state);
+	SPDK_NOTICELOG("\State: %d\n", ls->state);
 	SPDK_NOTICELOG("Max IO Queues: %d\n", port->max_io_queues);
 	SPDK_NOTICELOG("HWQP IO Queues:\n");
 	SPDK_NOTICELOG("\n");
 	for (i = 0; i < NVMF_FC_MAX_IO_QUEUES; i++) {
 		io = &(port->io_queues[i]);
 		SPDK_NOTICELOG("\tLcore ID: %d, HWQP ID: %d\n", io->lcore_id, io->hwqp_id);
-		SPDK_NOTICELOG("\tNum of Conns: %d, State: %d\n", io->num_conns, io->state);
+		SPDK_NOTICELOG("\State: %d\n", io->state);
 		TAILQ_FOREACH(fc_conn, &io->connection_list, link) {
 			if (fc_conn->pool_memory) {
 				SPDK_NOTICELOG("\t\tRequest Pool Max Count: %d Avail Count: %d\n",
@@ -2400,7 +2400,6 @@ spdk_nvmf_bcm_fc_tgt_print_port(void *arg1, void *arg2)
 				SPDK_NOTICELOG("\t\tIO Queue %d Request Pool not present\n", i);
 			}
 		}
-		conn_count += io->num_conns;
 		SPDK_NOTICELOG("\n");
 	}
 	SPDK_NOTICELOG("Num of Nports: %d\n", port->num_nports);
@@ -2409,8 +2408,7 @@ spdk_nvmf_bcm_fc_tgt_print_port(void *arg1, void *arg2)
 		assoc_count += nport->assoc_count;
 	}
 	SPDK_NOTICELOG("LS Resource Pool:\n");
-	SPDK_NOTICELOG("\tAssociation Count: %d, Connection Count: %d\n", assoc_count,
-		       conn_count);
+	SPDK_NOTICELOG("\tAssociation Count: %d\n", assoc_count);
 	SPDK_NOTICELOG("\tXRI Ring Avail Count: %d\n", spdk_ring_count(port->xri_ring));
 	if (port->io_rsrc_pool) {
 		SPDK_NOTICELOG("\tIO Resource Pool Avail Count: %d\n",
@@ -2517,8 +2515,7 @@ spdk_nvmf_bcm_fc_tgt_print_hwqp(void *arg1, void *arg2)
 	SPDK_NOTICELOG("\nHWQP Details. Port Hdl: %d, HWQP ID: %d\n", hwqp->fc_port->port_hdl,
 		       *hwqp_id);
 	SPDK_NOTICELOG("\n*******************************\n");
-	SPDK_NOTICELOG("Lcore ID: %d, Num of Conns: %d, Cid Cnt: %d\n", hwqp->lcore_id,
-		       hwqp->num_conns, hwqp->cid_cnt);
+	SPDK_NOTICELOG("Lcore ID: %d, Cid Cnt: %d\n", hwqp->lcore_id, hwqp->cid_cnt);
 	SPDK_NOTICELOG("Used Q slots: %d, State: %d,\n", hwqp->used_q_slots, hwqp->state);
 	SPDK_NOTICELOG("Request Tag Pool Avail Count: %d Used Count: %d\n",
 		       spdk_ring_count(hwqp->queues.wq.reqtag_ring), spdk_ring_free_count(hwqp->queues.wq.reqtag_ring));

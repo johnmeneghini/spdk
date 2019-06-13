@@ -485,7 +485,7 @@ nvmf_fc_ls_free_connection(struct spdk_nvmf_bcm_fc_port *fc_port,
 			TAILQ_INSERT_TAIL(&fc_conn->fc_assoc->avail_fc_conns, fc_conn, assoc_avail_link);
 		}
 	}
-	fc_conn->hwqp->num_conns--;
+	fc_conn->hwqp->reg_counters.num_of_conns--;
 
 	memset(fc_conn, 0, sizeof(struct spdk_nvmf_bcm_fc_conn));
 }
@@ -631,7 +631,7 @@ nvmf_fc_ls_assign_conn_to_q(struct spdk_nvmf_bcm_fc_association *assoc,
 		spdk_nvmf_qslots_update(NVMF_QSLOTS_ADDED, sq_size, fc_port->port_ctx);
 	}
 
-	fc_port->io_queues[sel_qind].num_conns++;
+	fc_port->io_queues[sel_qind].reg_counters.num_of_conns++;
 
 	/* create connection ID */
 	*conn_id = nvmf_fc_gen_conn_id(sel_qind,

@@ -564,7 +564,6 @@ spdk_nvmf_bcm_fc_hwqp_port_set_online(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 		hwqp->state = SPDK_FC_HWQP_ONLINE;
 		/* reset some queue counters */
 		hwqp->used_q_slots = 0;
-		hwqp->num_conns = 0;
 		return SPDK_SUCCESS;
 	} else {
 		return SPDK_ERR_INTERNAL;

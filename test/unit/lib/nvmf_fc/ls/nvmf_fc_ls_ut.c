@@ -863,7 +863,6 @@ ls_tests_init(void)
 	for (i = 0; i < fcport.max_io_queues; i++) {
 		fcport.io_queues[i].lcore_id = i;
 		fcport.io_queues[i].fc_port = &fcport;
-		fcport.io_queues[i].num_conns = 0;
 		fcport.io_queues[i].cid_cnt = 0;
 		fcport.io_queues[i].queues.rq_payload.num_buffers = g_io_queue_depth;
 		fcport.io_queues[i].used_q_slots = 0;
