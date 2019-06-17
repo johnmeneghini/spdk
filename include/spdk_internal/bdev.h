@@ -269,6 +269,60 @@ struct spdk_bdev {
 	TAILQ_HEAD(, spdk_bdev_io) queued_resets;
 };
 
+struct spdk_bdev_desc {
+	struct spdk_bdev                *bdev;
+	spdk_bdev_remove_cb_t           remove_cb;
+	void                            *remove_ctx;
+	TAILQ_ENTRY(spdk_bdev_desc)     link;
+};
+
+struct spdk_bdev_mgr {
+
+	TAILQ_HEAD(, spdk_bdev_module_if) bdev_modules;
+
+	TAILQ_HEAD(, spdk_bdev) bdevs;
+
+	struct spdk_mempool *bdev_io_pool;
+
+	struct spdk_mempool *buf_small_pool;
+	struct spdk_mempool *buf_large_pool;
+
+	spdk_bdev_poller_start_cb start_poller_fn;
+	spdk_bdev_poller_stop_cb stop_poller_fn;
+
+	bool init_complete;
+	bool module_init_complete;
+
+#ifdef SPDK_CONFIG_VTUNE
+	__itt_domain    *domain;
+#endif
+};
+
+struct spdk_bdev_channel {
+	struct spdk_bdev        *bdev;
+
+	/* The channel for the underlying device */
+	struct spdk_io_channel  *channel;
+
+	/* Channel for the bdev manager */
+	struct spdk_io_channel *mgmt_channel;
+
+	struct spdk_bdev_io_stat stat;
+
+	/*
+	 * Count of I/O submitted to bdev module and waiting for completion.
+	 * Incremented before submit_request() is called on an spdk_bdev_io.
+	 */
+	uint64_t                io_outstanding;
+
+#ifdef SPDK_CONFIG_VTUNE
+	uint64_t                start_tsc;
+	uint64_t                interval_tsc;
+	__itt_string_handle     *handle;
+#endif
+
+};
+
 typedef void (*spdk_bdev_io_get_buf_cb)(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_io);
 
 struct spdk_bdev_io {
@@ -428,6 +482,18 @@ void spdk_bdev_unregister(struct spdk_bdev *bdev);
 void spdk_vbdev_register(struct spdk_bdev *vbdev, struct spdk_bdev **base_bdevs,
 			 int base_bdev_count);
 void spdk_vbdev_unregister(struct spdk_bdev *vbdev);
+
+struct spdk_bdev_io *spdk_bdev_get_io(struct spdk_mempool *pool);
+void spdk_bdev_put_io(struct spdk_bdev_io *bdev_io);
+
+void spdk_bdev_io_init(struct spdk_bdev_io *bdev_io,
+		       struct spdk_bdev *bdev, void *cb_arg,
+		       spdk_bdev_io_completion_cb cb,
+		       spdk_nvmf_set_sge set_sge_fn,
+		       void *sge_ctx);
+
+void spdk_bdev_init_complete(int rc);
+int spdk_bdev_io_valid(struct spdk_bdev *bdev, uint64_t offset, uint64_t nbytes);
 
 void spdk_bdev_module_examine_done(struct spdk_bdev_module_if *module);
 

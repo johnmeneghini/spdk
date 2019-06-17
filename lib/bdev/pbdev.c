@@ -1,6 +1,8 @@
 /*-
  *   BSD LICENSE
  *
+ *   Copyright (C) 2008-2012 Daisuke Aoyama <aoyama@peach.ne.jp>.
+ *   Copyright (c) Intel Corporation.
  *   Copyright (c) Netapp.
  *   All rights reserved.
  *
@@ -52,25 +54,11 @@
  */
 #include "../nvmf/nvmf_fc/bcm_fc.h"
 
-typedef TAILQ_HEAD(, spdk_bdev_io) need_buf_tailq_t;
+#define SPDK_BDEV_IO_POOL_SIZE	(64 * 1024)
+#define BUF_SMALL_POOL_SIZE	8192
+#define BUF_LARGE_POOL_SIZE	1024
 
-struct spdk_bdev_mgr {
-
-	TAILQ_HEAD(, spdk_bdev_module_if) bdev_modules;
-
-	TAILQ_HEAD(, spdk_bdev) bdevs;
-
-	struct spdk_mempool *buf_small_pool;
-
-	spdk_bdev_poller_start_cb start_poller_fn;
-	spdk_bdev_poller_stop_cb stop_poller_fn;
-
-	bool init_complete;
-	bool module_init_complete;
-
-};
-
-static struct spdk_bdev_mgr g_bdev_mgr = {
+struct spdk_bdev_mgr g_bdev_mgr = {
 	.bdev_modules = TAILQ_HEAD_INITIALIZER(g_bdev_mgr.bdev_modules),
 	.bdevs = TAILQ_HEAD_INITIALIZER(g_bdev_mgr.bdevs),
 	.start_poller_fn = NULL,
@@ -82,32 +70,11 @@ static struct spdk_bdev_mgr g_bdev_mgr = {
 static spdk_bdev_init_cb	g_cb_fn = NULL;
 static void			*g_cb_arg = NULL;
 
-
-struct spdk_bdev_desc {
-	struct spdk_bdev		*bdev;
-	spdk_bdev_remove_cb_t		remove_cb;
-	void				*remove_ctx;
-	TAILQ_ENTRY(spdk_bdev_desc)	link;
-};
-
-struct spdk_bdev_channel {
-	struct spdk_bdev	*bdev;
-
-	/* The channel for the underlying device */
-	struct spdk_io_channel	*channel;
-
-	/* Channel for the bdev manager */
-	struct spdk_io_channel *mgmt_channel;
-
-	struct spdk_bdev_io_stat stat;
-
-	/*
-	 * Count of I/O submitted to bdev module and waiting for completion.
-	 * Incremented before submit_request() is called on an spdk_bdev_io.
-	 */
-	uint64_t		io_outstanding;
-
-};
+#ifdef NETAPP
+bool spdk_bdev_g_use_global_pools = false;
+#else
+bool spdk_bdev_g_use_global_pools = true;
+#endif
 
 struct spdk_bdev *
 spdk_bdev_first(void)
@@ -222,7 +189,7 @@ error:
 	return -ENOMEM;
 }
 
-static void
+void
 spdk_bdev_init_complete(int rc)
 {
 	spdk_bdev_init_cb cb_fn = g_cb_fn;
@@ -276,7 +243,40 @@ spdk_bdev_modules_init(void)
 	return 0;
 }
 
-#define BUF_SMALL_POOL_SIZE     8192
+static int
+_spdk_bdev_initialize_global(void)
+{
+	int cache_size;
+
+	assert(spdk_bdev_g_use_global_pools);
+
+	g_bdev_mgr.bdev_io_pool = spdk_mempool_create("bdev_io",
+				  SPDK_BDEV_IO_POOL_SIZE,
+				  sizeof(struct spdk_bdev_io) +
+				  spdk_bdev_module_get_max_ctx_size(),
+				  64,
+				  SPDK_ENV_SOCKET_ID_ANY);
+
+	if (g_bdev_mgr.bdev_io_pool == NULL) {
+		SPDK_ERRLOG("could not allocate spdk_bdev_io pool");
+		return (-1);
+	}
+
+	cache_size = BUF_LARGE_POOL_SIZE / (2 * spdk_env_get_core_count());
+	g_bdev_mgr.buf_large_pool = spdk_mempool_create("buf_large_pool",
+				    BUF_LARGE_POOL_SIZE,
+				    SPDK_BDEV_LARGE_BUF_MAX_SIZE + 512,
+				    cache_size,
+				    SPDK_ENV_SOCKET_ID_ANY);
+
+	if (!g_bdev_mgr.buf_large_pool) {
+		SPDK_ERRLOG("create rbuf large pool failed\n");
+		spdk_mempool_free(g_bdev_mgr.bdev_io_pool);
+		return (-1);
+	}
+
+	return 0;
+}
 
 void
 spdk_bdev_initialize(spdk_bdev_init_cb cb_fn, void *cb_arg,
@@ -288,6 +288,11 @@ spdk_bdev_initialize(spdk_bdev_init_cb cb_fn, void *cb_arg,
 
 	assert(cb_fn != NULL);
 
+	/**
+	 * Ensure no more than half of the total buffers end up local caches, by
+	 *   using spdk_env_get_core_count() to determine how many local caches we need
+	 *   to account for.
+	 */
 	cache_size = BUF_SMALL_POOL_SIZE / (2 * spdk_env_get_core_count());
 	g_bdev_mgr.buf_small_pool = spdk_mempool_create("buf_small_pool",
 				    BUF_SMALL_POOL_SIZE,
@@ -301,11 +306,24 @@ spdk_bdev_initialize(spdk_bdev_init_cb cb_fn, void *cb_arg,
 		return;
 	}
 
+	if (spdk_bdev_g_use_global_pools) {
+		if (_spdk_bdev_initialize_global()) {
+			spdk_mempool_free(g_bdev_mgr.buf_small_pool);
+			spdk_bdev_module_init_complete(-1);
+			return;
+		}
+	}
+
 	g_cb_fn = cb_fn;
 	g_cb_arg = cb_arg;
 
 	g_bdev_mgr.start_poller_fn = start_poller_fn;
 	g_bdev_mgr.stop_poller_fn = stop_poller_fn;
+
+
+#ifndef NETAPP
+	spdk_bdev_mgr_register_channel();
+#endif
 
 	rc = spdk_bdev_modules_init();
 	spdk_bdev_module_init_complete(rc);
@@ -322,20 +340,46 @@ spdk_bdev_finish(void)
 		}
 	}
 
+	if (spdk_bdev_g_use_global_pools) {
+		if (spdk_mempool_count(g_bdev_mgr.bdev_io_pool) != SPDK_BDEV_IO_POOL_SIZE) {
+			SPDK_ERRLOG("bdev IO pool count is %zu but should be %u\n",
+				    spdk_mempool_count(g_bdev_mgr.bdev_io_pool),
+				    SPDK_BDEV_IO_POOL_SIZE);
+			assert(false);
+		}
+		spdk_mempool_free(g_bdev_mgr.bdev_io_pool);
+
+		if (spdk_mempool_count(g_bdev_mgr.buf_large_pool) != BUF_LARGE_POOL_SIZE) {
+			SPDK_ERRLOG("Large buffer pool count is %zu but should be %u\n",
+				    spdk_mempool_count(g_bdev_mgr.buf_large_pool),
+				    BUF_LARGE_POOL_SIZE);
+			assert(false);
+		}
+		spdk_mempool_free(g_bdev_mgr.buf_large_pool);
+	}
+
 	spdk_mempool_free(g_bdev_mgr.buf_small_pool);
+
+#ifndef NETAPP
+	spdk_bdev_mgr_unregister_channel();
+#endif
 
 	return 0;
 }
 
-static struct spdk_bdev_io *
+struct spdk_bdev_io *
 spdk_bdev_get_io(struct spdk_mempool *pool)
 {
 	struct spdk_bdev_io *bdev_io = NULL;
 
 	if (pool == NULL) {
-		assert(0);
+		assert(spdk_bdev_g_use_global_pools);
 	}
-	bdev_io = spdk_mempool_get(pool);
+	if (spdk_bdev_g_use_global_pools) {
+		bdev_io = spdk_mempool_get(g_bdev_mgr.bdev_io_pool);
+	} else {
+		bdev_io = spdk_mempool_get(pool);
+	}
 
 	if (!bdev_io) {
 		SPDK_ERRLOG("Unable to get spdk_bdev_io\n");
@@ -351,22 +395,36 @@ out:
 	return bdev_io;
 }
 
-static void
+void
 spdk_bdev_put_io(struct spdk_bdev_io *bdev_io)
 {
 	if (!bdev_io) {
 		return;
 	}
-	spdk_mempool_put(bdev_io->bdev_io_pool, (void *)bdev_io);
+
+	if (bdev_io->bdev_io_pool == NULL) {
+		assert(spdk_bdev_g_use_global_pools);
+	}
+
+	if (spdk_bdev_g_use_global_pools) {
+		spdk_mempool_put(g_bdev_mgr.bdev_io_pool, (void *)bdev_io);
+	} else {
+		spdk_mempool_put(bdev_io->bdev_io_pool, (void *)bdev_io);
+	}
+
+	bdev_io->bdev_io_pool = NULL;
 }
 
 static void
 __submit_request(struct spdk_bdev *bdev, struct spdk_bdev_io *bdev_io)
 {
-	struct spdk_io_channel *ch = NULL;
+	struct spdk_io_channel *ch = (bdev_io->ch) ? bdev_io->ch->channel : NULL;
 
 	assert(bdev_io->status == SPDK_BDEV_IO_STATUS_INIT);
 
+	if (bdev_io->ch) {
+		bdev_io->ch->io_outstanding++;
+	}
 	bdev_io->in_submit_request = true;
 	bdev->fn_table->submit_request(ch, bdev_io);
 	bdev_io->in_submit_request = false;
@@ -381,7 +439,7 @@ spdk_bdev_io_submit(struct spdk_bdev_io *bdev_io)
 	return 0;
 }
 
-static void
+void
 spdk_bdev_io_init(struct spdk_bdev_io *bdev_io,
 		  struct spdk_bdev *bdev, void *cb_arg,
 		  spdk_bdev_io_completion_cb cb,
@@ -461,7 +519,7 @@ spdk_bdev_has_write_cache(const struct spdk_bdev *bdev)
 	return bdev->write_cache;
 }
 
-static int
+int
 spdk_bdev_io_valid(struct spdk_bdev *bdev, uint64_t offset, uint64_t nbytes)
 {
 	/* Return failure if nbytes is not a multiple of bdev->blocklen */
@@ -478,51 +536,6 @@ spdk_bdev_io_valid(struct spdk_bdev *bdev, uint64_t offset, uint64_t nbytes)
 	/* Return failure if offset + nbytes exceeds the size of the bdev */
 	if (offset + nbytes > bdev->blockcnt * bdev->blocklen) {
 		return -ERANGE;
-	}
-
-	return 0;
-}
-
-int
-spdk_bdev_read(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
-	       struct spdk_io_channel *ch,
-	       void *buf, uint64_t offset, uint64_t nbytes,
-	       spdk_bdev_io_completion_cb cb, void *cb_arg, struct spdk_bdev_io **result_bdev_io)
-{
-	struct spdk_bdev *bdev = desc->bdev;
-	struct spdk_bdev_io *bdev_io;
-	struct spdk_bdev_channel *channel = spdk_io_channel_get_ctx(ch);
-	int rc;
-
-	if (spdk_bdev_io_valid(bdev, offset, nbytes) != 0) {
-		return -EINVAL;
-	}
-
-	bdev_io = spdk_bdev_get_io(bdev_io_pool);
-	if (!bdev_io) {
-		SPDK_ERRLOG("spdk_bdev_io memory allocation failed duing read\n");
-		return -ENOMEM;
-	}
-
-	bdev_io->ch = channel;
-	bdev_io->type = SPDK_BDEV_IO_TYPE_READ;
-	bdev_io->u.read.iov.iov_base = buf;
-	bdev_io->u.read.iov.iov_len = nbytes;
-	bdev_io->u.read.iovs = &bdev_io->u.read.iov;
-	bdev_io->u.read.iovcnt = 1;
-	bdev_io->u.read.len = nbytes;
-	bdev_io->u.read.offset = offset;
-	bdev_io->bdev_io_pool = bdev_io_pool;
-	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb, NULL, NULL);
-
-	rc = spdk_bdev_io_submit(bdev_io);
-	if (rc < 0) {
-		spdk_bdev_put_io(bdev_io);
-		return rc;
-	}
-
-	if (result_bdev_io) {
-		*result_bdev_io = bdev_io;
 	}
 
 	return 0;
@@ -608,274 +621,6 @@ spdk_bdev_submit_io(struct spdk_bdev_io *bdev_io)
 }
 
 int
-spdk_bdev_compare_and_write(enum spdk_nvme_nvm_opcode opcode,
-			    struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
-			    struct spdk_io_channel *ch,
-			    void *buf, uint64_t offset, uint64_t nbytes,
-			    spdk_bdev_io_completion_cb cb, void *cb_arg, struct spdk_bdev_io **result_bdev_io, bool fused)
-{
-	struct spdk_bdev *bdev = desc->bdev;
-	struct spdk_bdev_io *bdev_io;
-	struct spdk_bdev_channel *channel = spdk_io_channel_get_ctx(ch);
-	int rc;
-
-	if ((opcode == SPDK_NVME_OPC_WRITE) && bdev->write_protect_flags.write_protect) {
-		return -EBADF;
-	}
-
-	if ((opcode == SPDK_NVME_OPC_WRITE) && !fused) {
-		return -EINVAL;
-	}
-
-	if (spdk_bdev_io_valid(bdev, offset, nbytes) != 0) {
-		return -EINVAL;
-	}
-
-	bdev_io = spdk_bdev_get_io(bdev_io_pool);
-	if (!bdev_io) {
-		SPDK_ERRLOG("bdev_io memory allocation failed duing %s\n",
-			    (opcode == SPDK_NVME_OPC_WRITE) ? "compare and write" : "compare");
-		return -ENOMEM;
-	}
-
-	bdev_io->ch = channel;
-	bdev_io->type = (opcode == SPDK_NVME_OPC_COMPARE) ? SPDK_BDEV_IO_TYPE_COMPARE :
-			SPDK_BDEV_IO_TYPE_WRITE;
-	bdev_io->u.write.iov.iov_base = buf;
-	bdev_io->u.write.iov.iov_len = nbytes;
-	bdev_io->u.write.iovs = &bdev_io->u.write.iov;
-	bdev_io->u.write.iovcnt = 1;
-	bdev_io->u.write.len = nbytes;
-	bdev_io->u.write.offset = offset;
-	bdev_io->bdev_io_pool = bdev_io_pool;
-	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb, NULL, NULL);
-
-	rc = spdk_bdev_io_submit(bdev_io);
-	if (rc < 0) {
-		spdk_bdev_put_io(bdev_io);
-		return rc;
-	}
-
-	if (result_bdev_io) {
-		*result_bdev_io = bdev_io;
-	}
-
-	return 0;
-}
-int
-spdk_bdev_write(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
-		struct spdk_io_channel *ch,
-		void *buf, uint64_t offset, uint64_t nbytes,
-		spdk_bdev_io_completion_cb cb, void *cb_arg, struct spdk_bdev_io **result_bdev_io)
-{
-	struct spdk_bdev *bdev = desc->bdev;
-	struct spdk_bdev_io *bdev_io;
-	struct spdk_bdev_channel *channel = spdk_io_channel_get_ctx(ch);
-	int rc;
-
-	if (bdev->write_protect_flags.write_protect) {
-		return -EBADF;
-	}
-
-	if (spdk_bdev_io_valid(bdev, offset, nbytes) != 0) {
-		return -EINVAL;
-	}
-
-	bdev_io = spdk_bdev_get_io(bdev_io_pool);
-	if (!bdev_io) {
-		SPDK_ERRLOG("bdev_io memory allocation failed duing %s\n",  "write");
-		return -ENOMEM;
-	}
-
-	bdev_io->ch = channel;
-	bdev_io->type = SPDK_BDEV_IO_TYPE_WRITE;
-	bdev_io->u.write.iov.iov_base = buf;
-	bdev_io->u.write.iov.iov_len = nbytes;
-	bdev_io->u.write.iovs = &bdev_io->u.write.iov;
-	bdev_io->u.write.iovcnt = 1;
-	bdev_io->u.write.len = nbytes;
-	bdev_io->u.write.offset = offset;
-	bdev_io->bdev_io_pool = bdev_io_pool;
-	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb, NULL, NULL);
-
-	rc = spdk_bdev_io_submit(bdev_io);
-	if (rc < 0) {
-		spdk_bdev_put_io(bdev_io);
-		return rc;
-	}
-
-	if (result_bdev_io) {
-		*result_bdev_io = bdev_io;
-	}
-
-	return 0;
-}
-
-int
-spdk_bdev_unmap(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
-		struct spdk_scsi_unmap_bdesc *unmap_d,
-		uint16_t bdesc_count,
-		spdk_bdev_io_completion_cb cb, void *cb_arg)
-{
-	struct spdk_bdev *bdev = desc->bdev;
-	struct spdk_bdev_io *bdev_io;
-	struct spdk_bdev_channel *channel = spdk_io_channel_get_ctx(ch);
-	int rc;
-
-	if (bdev->write_protect_flags.write_protect) {
-		return -EBADF;
-	}
-
-	if (bdesc_count == 0) {
-		SPDK_ERRLOG("Invalid bdesc_count 0\n");
-		return -EINVAL;
-	}
-
-	if (bdesc_count > bdev->max_unmap_bdesc_count) {
-		SPDK_ERRLOG("Invalid bdesc_count %u > max_unmap_bdesc_count %u\n",
-			    bdesc_count, bdev->max_unmap_bdesc_count);
-		return -EINVAL;
-	}
-
-	bdev_io = spdk_bdev_get_io(NULL);
-	if (!bdev_io) {
-		SPDK_ERRLOG("bdev_io memory allocation failed duing unmap\n");
-		return -ENOMEM;
-	}
-
-	bdev_io->ch = channel;
-	bdev_io->type = SPDK_BDEV_IO_TYPE_UNMAP;
-	bdev_io->u.unmap.unmap_bdesc = unmap_d;
-	bdev_io->u.unmap.bdesc_count = bdesc_count;
-	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb, NULL, NULL);
-
-	rc = spdk_bdev_io_submit(bdev_io);
-	if (rc < 0) {
-		spdk_bdev_put_io(bdev_io);
-		return rc;
-	}
-
-	return 0;
-}
-
-int
-spdk_bdev_flush(struct spdk_bdev_desc *desc, struct spdk_mempool *bdev_io_pool,
-		struct spdk_io_channel *ch,
-		uint64_t offset, uint64_t length,
-		spdk_bdev_io_completion_cb cb, void *cb_arg)
-{
-	struct spdk_bdev *bdev = desc->bdev;
-	struct spdk_bdev_io *bdev_io;
-	struct spdk_bdev_channel *channel = spdk_io_channel_get_ctx(ch);
-	int rc;
-
-	if (bdev->write_protect_flags.write_protect) {
-		return -EBADF;
-	}
-
-	assert(bdev->status != SPDK_BDEV_STATUS_INVALID);
-	bdev_io = spdk_bdev_get_io(bdev_io_pool);
-	if (!bdev_io) {
-		SPDK_ERRLOG("bdev_io memory allocation failed duing flush\n");
-		return -ENOMEM;
-	}
-
-	bdev_io->ch = channel;
-	bdev_io->type = SPDK_BDEV_IO_TYPE_FLUSH;
-	bdev_io->u.flush.offset = offset;
-	bdev_io->u.flush.length = length;
-	bdev_io->bdev_io_pool = bdev_io_pool;
-	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb, NULL, NULL);
-
-	rc = spdk_bdev_io_submit(bdev_io);
-	if (rc < 0) {
-		spdk_bdev_put_io(bdev_io);
-		return rc;
-	}
-
-	return 0;
-}
-
-int
-spdk_bdev_nvme_admin_passthru(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
-			      const struct spdk_nvme_cmd *cmd, void *buf, size_t nbytes,
-			      spdk_bdev_io_completion_cb cb, void *cb_arg)
-{
-	struct spdk_bdev *bdev = desc->bdev;
-	struct spdk_bdev_io *bdev_io;
-	struct spdk_bdev_channel *channel = spdk_io_channel_get_ctx(ch);
-	int rc;
-
-	if (bdev->write_protect_flags.write_protect) {
-		return -EBADF;
-	}
-
-	bdev_io = spdk_bdev_get_io(NULL);
-	if (!bdev_io) {
-		SPDK_ERRLOG("bdev_io memory allocation failed during nvme_admin_passthru\n");
-		return -ENOMEM;
-	}
-
-	bdev_io->ch = channel;
-	bdev_io->type = SPDK_BDEV_IO_TYPE_NVME_ADMIN;
-	bdev_io->u.nvme_passthru.cmd = *cmd;
-	bdev_io->u.nvme_passthru.buf = buf;
-	bdev_io->u.nvme_passthru.nbytes = nbytes;
-
-	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb, NULL, NULL);
-
-	rc = spdk_bdev_io_submit(bdev_io);
-	if (rc < 0) {
-		spdk_bdev_put_io(bdev_io);
-		return rc;
-	}
-
-	return 0;
-}
-
-int
-spdk_bdev_nvme_io_passthru(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
-			   const struct spdk_nvme_cmd *cmd, void *buf, size_t nbytes,
-			   spdk_bdev_io_completion_cb cb, void *cb_arg)
-{
-	struct spdk_bdev *bdev = desc->bdev;
-	struct spdk_bdev_io *bdev_io;
-	struct spdk_bdev_channel *channel = spdk_io_channel_get_ctx(ch);
-	int rc;
-
-	if (bdev->write_protect_flags.write_protect) {
-		/*
-		 * Do not try to parse the NVMe command - we could maybe use bits in the opcode
-		 *  to easily determine if the command is a read or write, but for now just
-		 *  do not allow io_passthru with a read-only descriptor.
-		 */
-		return -EBADF;
-	}
-
-	bdev_io = spdk_bdev_get_io(NULL);
-	if (!bdev_io) {
-		SPDK_ERRLOG("bdev_io memory allocation failed during nvme_admin_passthru\n");
-		return -ENOMEM;
-	}
-
-	bdev_io->ch = channel;
-	bdev_io->type = SPDK_BDEV_IO_TYPE_NVME_IO;
-	bdev_io->u.nvme_passthru.cmd = *cmd;
-	bdev_io->u.nvme_passthru.buf = buf;
-	bdev_io->u.nvme_passthru.nbytes = nbytes;
-
-	spdk_bdev_io_init(bdev_io, bdev, cb_arg, cb, NULL, NULL);
-
-	rc = spdk_bdev_io_submit(bdev_io);
-	if (rc < 0) {
-		spdk_bdev_put_io(bdev_io);
-		return rc;
-	}
-
-	return 0;
-}
-
-int
 spdk_bdev_free_io(struct spdk_bdev_io *bdev_io)
 {
 	if (!bdev_io) {
@@ -899,6 +644,7 @@ bdev_io_deferred_completion(void *arg1, void *arg2)
 	spdk_bdev_io_complete(bdev_io, status);
 }
 
+#ifdef NETAPP
 static void
 _spdk_bdev_io_complete(void *ctx, void *arg2)
 {
@@ -945,6 +691,8 @@ spdk_bdev_io_complete(struct spdk_bdev_io *bdev_io, enum spdk_bdev_io_status sta
 		_spdk_bdev_io_complete(bdev_io, NULL);
 	}
 }
+
+#endif /* NETAPP */
 
 void
 spdk_bdev_io_complete_nvme_status(struct spdk_bdev_io *bdev_io, int sct, int sc)
@@ -1005,6 +753,9 @@ _spdk_bdev_register(struct spdk_bdev *bdev)
 	bdev->reset_in_progress = false;
 	TAILQ_INIT(&bdev->queued_resets);
 
+#ifndef NETAPP
+	spdk_bdev_register_channel(bdev);
+#endif
 
 	pthread_mutex_init(&bdev->mutex, NULL);
 	SPDK_TRACELOG(SPDK_TRACE_DEBUG, "Inserting bdev %s into list\n", bdev->name);
@@ -1055,6 +806,10 @@ spdk_bdev_unregister(struct spdk_bdev *bdev)
 	pthread_mutex_unlock(&bdev->mutex);
 
 	pthread_mutex_destroy(&bdev->mutex);
+
+#ifndef NETAPP
+	spdk_bdev_unregister_channel(bdev);
+#endif
 
 	rc = bdev->fn_table->destruct(bdev->ctxt);
 	if (rc < 0) {
@@ -1632,4 +1387,11 @@ spdk_bdev_module_list_add(struct spdk_bdev_module_if *bdev_module)
 	} else {
 		TAILQ_INSERT_TAIL(&g_bdev_mgr.bdev_modules, bdev_module, tailq);
 	}
+}
+
+void
+spdk_bdev_set_use_global_pools(bool value)
+{
+	spdk_bdev_g_use_global_pools = value;
+	SPDK_TRACELOG(SPDK_TRACE_DEBUG, "Using bdev global pools: %s\n", (value) ? "true" : "false");
 }
