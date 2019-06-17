@@ -109,7 +109,7 @@ bdevio_construct_targets(void)
 
 	printf("I/O targets:\n");
 
-	bdev = spdk_bdev_first_leaf();
+	bdev = spdk_bdev_first();
 	while (bdev != NULL) {
 		uint64_t num_blocks = spdk_bdev_get_num_blocks(bdev);
 		uint32_t block_size = spdk_bdev_get_block_size(bdev);
@@ -123,7 +123,7 @@ bdevio_construct_targets(void)
 		if (rc != 0) {
 			free(target);
 			SPDK_ERRLOG("Could not open leaf bdev %s, error=%d\n", spdk_bdev_get_name(bdev), rc);
-			bdev = spdk_bdev_next_leaf(bdev);
+			bdev = spdk_bdev_next(bdev);
 			continue;
 		}
 
@@ -137,7 +137,7 @@ bdevio_construct_targets(void)
 		execute_spdk_function(__get_io_channel, target, NULL);
 		g_io_targets = target;
 
-		bdev = spdk_bdev_next_leaf(bdev);
+		bdev = spdk_bdev_next(bdev);
 	}
 
 	return 0;

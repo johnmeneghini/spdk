@@ -39,6 +39,7 @@
 #undef SPDK_CONFIG_VTUNE
 
 #include "bdev.c"
+#include "pbdev.c"
 
 SPDK_DECLARE_BDEV_MODULE(vbdev_ut);
 
@@ -138,33 +139,6 @@ allocate_bdev(char *name)
 
 	spdk_bdev_register(bdev);
 	CU_ASSERT(TAILQ_EMPTY(&bdev->base_bdevs));
-	CU_ASSERT(TAILQ_EMPTY(&bdev->vbdevs));
-
-	return bdev;
-}
-
-static struct spdk_bdev *
-allocate_vbdev(char *name, struct spdk_bdev *base1, struct spdk_bdev *base2)
-{
-	struct spdk_bdev *bdev;
-	struct spdk_bdev *array[2];
-
-	bdev = calloc(1, sizeof(*bdev));
-	SPDK_CU_ASSERT_FATAL(bdev != NULL);
-
-	bdev->name = name;
-	bdev->fn_table = &fn_table;
-	bdev->module = SPDK_GET_BDEV_MODULE(vbdev_ut);
-
-	/* vbdev must have at least one base bdev */
-	CU_ASSERT(base1 != NULL);
-
-	array[0] = base1;
-	array[1] = base2;
-
-	spdk_vbdev_register(bdev, array, base2 == NULL ? 1 : 2);
-	CU_ASSERT(!TAILQ_EMPTY(&bdev->base_bdevs));
-	CU_ASSERT(TAILQ_EMPTY(&bdev->vbdevs));
 
 	return bdev;
 }
@@ -173,13 +147,6 @@ static void
 free_bdev(struct spdk_bdev *bdev)
 {
 	spdk_bdev_unregister(bdev);
-	free(bdev);
-}
-
-static void
-free_vbdev(struct spdk_bdev *bdev)
-{
-	spdk_vbdev_unregister(bdev);
 	free(bdev);
 }
 
@@ -196,22 +163,6 @@ open_write_test(void)
 	 * bdev0 through bdev2 are physical block devices, such as NVMe
 	 * namespaces or Ceph block devices.
 	 *
-	 * bdev3 is a virtual bdev with multiple base bdevs.  This models
-	 * caching or RAID use cases.
-	 *
-	 * bdev4 through bdev6 are all virtual bdevs with the same base
-	 * bdev.  This models partitioning or logical volume use cases.
-	 *
-	 * bdev7 is a virtual bdev with multiple base bdevs, but these
-	 * base bdevs are themselves virtual bdevs.
-	 *
-	 *                bdev7
-	 *                  |
-	 *            +----------+
-	 *            |          |
-	 *          bdev3      bdev4   bdev5   bdev6
-	 *            |          |       |       |
-	 *        +---+---+      +-------+-------+
 	 *        |       |              |
 	 *      bdev0   bdev1          bdev2
 	 */
@@ -228,19 +179,6 @@ open_write_test(void)
 	rc = spdk_bdev_module_claim_bdev(bdev[2], NULL, SPDK_GET_BDEV_MODULE(bdev_ut));
 	CU_ASSERT(rc == 0);
 
-	bdev[3] = allocate_vbdev("bdev3", bdev[0], bdev[1]);
-	rc = spdk_bdev_module_claim_bdev(bdev[3], NULL, SPDK_GET_BDEV_MODULE(bdev_ut));
-	CU_ASSERT(rc == 0);
-
-	bdev[4] = allocate_vbdev("bdev4", bdev[2], NULL);
-	rc = spdk_bdev_module_claim_bdev(bdev[4], NULL, SPDK_GET_BDEV_MODULE(bdev_ut));
-	CU_ASSERT(rc == 0);
-
-	bdev[5] = allocate_vbdev("bdev5", bdev[2], NULL);
-	bdev[6] = allocate_vbdev("bdev6", bdev[2], NULL);
-
-	bdev[7] = allocate_vbdev("bdev7", bdev[3], bdev[4]);
-
 	/* Open bdev0 read-only.  This should succeed. */
 	rc = spdk_bdev_open(bdev[0], false, NULL, NULL, &desc[0]);
 	CU_ASSERT(rc == 0);
@@ -248,53 +186,12 @@ open_write_test(void)
 	spdk_bdev_close(desc[0]);
 
 	/*
-	 * Open bdev1 read/write.  This should fail since bdev1 has been claimed
-	 * by a vbdev module.
+	 * Open bdev1 read/write.
 	 */
 	rc = spdk_bdev_open(bdev[1], true, NULL, NULL, &desc[1]);
-	CU_ASSERT(rc == -EPERM);
-
-	/*
-	 * Open bdev3 read/write.  This should fail since bdev3 has been claimed
-	 * by a vbdev module.
-	 */
-	rc = spdk_bdev_open(bdev[3], true, NULL, NULL, &desc[3]);
-	CU_ASSERT(rc == -EPERM);
-
-	/* Open bdev3 read-only.  This should succeed. */
-	rc = spdk_bdev_open(bdev[3], false, NULL, NULL, &desc[3]);
 	CU_ASSERT(rc == 0);
-	CU_ASSERT(desc[3] != NULL);
-	spdk_bdev_close(desc[3]);
-
-	/*
-	 * Open bdev7 read/write.  This should succeed since it is a leaf
-	 * bdev.
-	 */
-	rc = spdk_bdev_open(bdev[7], true, NULL, NULL, &desc[7]);
-	CU_ASSERT(rc == 0);
-	CU_ASSERT(desc[7] != NULL);
-	spdk_bdev_close(desc[7]);
-
-	/*
-	 * Open bdev4 read/write.  This should fail since bdev4 has been claimed
-	 * by a vbdev module.
-	 */
-	rc = spdk_bdev_open(bdev[4], true, NULL, NULL, &desc[4]);
-	CU_ASSERT(rc == -EPERM);
-
-	/* Open bdev4 read-only.  This should succeed. */
-	rc = spdk_bdev_open(bdev[4], false, NULL, NULL, &desc[4]);
-	CU_ASSERT(rc == 0);
-	CU_ASSERT(desc[4] != NULL);
-	spdk_bdev_close(desc[4]);
-
-	free_vbdev(bdev[7]);
-
-	free_vbdev(bdev[3]);
-	free_vbdev(bdev[4]);
-	free_vbdev(bdev[5]);
-	free_vbdev(bdev[6]);
+	CU_ASSERT(desc[1] != NULL);
+	spdk_bdev_close(desc[1]);
 
 	free_bdev(bdev[0]);
 	free_bdev(bdev[1]);

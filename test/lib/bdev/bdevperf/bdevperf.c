@@ -119,12 +119,12 @@ bdevperf_construct_targets(void)
 	size_t align;
 	int rc;
 
-	bdev = spdk_bdev_first_leaf();
+	bdev = spdk_bdev_first();
 	while (bdev != NULL) {
 
 		if (g_unmap && !spdk_bdev_io_type_supported(bdev, SPDK_BDEV_IO_TYPE_UNMAP)) {
 			printf("Skipping %s because it does not support unmap\n", spdk_bdev_get_name(bdev));
-			bdev = spdk_bdev_next_leaf(bdev);
+			bdev = spdk_bdev_next(bdev);
 			continue;
 		}
 
@@ -138,7 +138,7 @@ bdevperf_construct_targets(void)
 		rc = spdk_bdev_open(bdev, true, NULL, NULL, &target->bdev_desc);
 		if (rc != 0) {
 			SPDK_ERRLOG("Could not open leaf bdev %s, error=%d\n", spdk_bdev_get_name(bdev), rc);
-			bdev = spdk_bdev_next_leaf(bdev);
+			bdev = spdk_bdev_next(bdev);
 			continue;
 		}
 
@@ -166,7 +166,7 @@ bdevperf_construct_targets(void)
 		head[index] = target;
 		g_target_count++;
 
-		bdev = spdk_bdev_next_leaf(bdev);
+		bdev = spdk_bdev_next(bdev);
 	}
 }
 

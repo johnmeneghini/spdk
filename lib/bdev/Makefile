@@ -39,7 +39,7 @@ ifeq ($(CONFIG_VTUNE),y)
 CFLAGS += -I$(VTUNE_SOURCE_DIR)/include -I$(VTUNE_SOURCE_DIR)/sdk/src/ittnotify
 endif
 
-C_SRCS = bdev.c scsi_nvme.c
+C_SRCS = bdev.c pbdev.c scsi_nvme.c
 C_SRCS-$(CONFIG_VTUNE) += vtune.c
 
 LIBNAME = bdev
