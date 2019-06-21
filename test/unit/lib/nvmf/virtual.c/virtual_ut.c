@@ -154,6 +154,13 @@ spdk_nvmf_session_get_features_ns_write_protection_config(struct spdk_nvmf_reque
 	return -1;
 }
 
+void
+spdk_nvmf_set_request_resp(struct spdk_nvmf_request *req, enum spdk_nvme_status_code_type sct,
+			   uint16_t sc, bool dnr, bool more)
+{
+	return;
+}
+
 int
 spdk_nvmf_session_async_event_request(struct spdk_nvmf_request *req)
 {

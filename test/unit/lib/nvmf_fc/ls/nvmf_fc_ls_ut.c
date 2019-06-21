@@ -95,6 +95,13 @@ uint64_t spdk_vtophys(void *buf)
 	return (uint64_t)buf;
 }
 
+void
+spdk_nvmf_set_request_resp(struct spdk_nvmf_request *req, enum spdk_nvme_status_code_type sct,
+			   uint16_t sc, bool dnr, bool more)
+{
+	return;
+}
+
 struct __spdk_mempool_entry {
 	void *ptr;
 	TAILQ_ENTRY(__spdk_mempool_entry) link;

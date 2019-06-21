@@ -155,16 +155,15 @@ nvmf_discovery_ctrlr_process_admin_cmd(struct spdk_nvmf_request *req)
 {
 	struct spdk_nvmf_session *session = req->conn->sess;
 	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
-	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
 	uint64_t log_page_offset;
 	uint32_t len;
 
 	/* pre-set response details for this command */
-	response->status.sc = SPDK_NVME_SC_SUCCESS;
+	spdk_nvmf_set_request_resp(req, SPDK_NVME_SCT_GENERIC, SPDK_NVME_SC_SUCCESS, 0, 0);
 
 	if (req->data == NULL) {
 		SPDK_ERRLOG("discovery command with no buffer\n");
-		response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+		spdk_nvmf_set_request_resp(req, SPDK_NVME_SCT_GENERIC, SPDK_NVME_SC_INVALID_FIELD, 1, 0);
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 
@@ -177,7 +176,7 @@ nvmf_discovery_ctrlr_process_admin_cmd(struct spdk_nvmf_request *req)
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		} else {
 			SPDK_ERRLOG("Unsupported identify command\n");
-			response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+			spdk_nvmf_set_request_resp(req, SPDK_NVME_SCT_GENERIC, SPDK_NVME_SC_INVALID_FIELD, 1, 0);
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		}
 		break;
@@ -185,7 +184,7 @@ nvmf_discovery_ctrlr_process_admin_cmd(struct spdk_nvmf_request *req)
 		log_page_offset = (uint64_t)cmd->cdw12 | ((uint64_t)cmd->cdw13 << 32);
 		if (log_page_offset & 3) {
 			SPDK_ERRLOG("Invalid log page offset 0x%" PRIx64 "\n", log_page_offset);
-			response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+			spdk_nvmf_set_request_resp(req, SPDK_NVME_SCT_GENERIC, SPDK_NVME_SC_INVALID_FIELD, 1, 0);
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		}
 
@@ -193,7 +192,7 @@ nvmf_discovery_ctrlr_process_admin_cmd(struct spdk_nvmf_request *req)
 		if (len > req->length) {
 			SPDK_ERRLOG("Get log page: len (%u) > buf size (%u)\n",
 				    len, req->length);
-			response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+			spdk_nvmf_set_request_resp(req, SPDK_NVME_SCT_GENERIC, SPDK_NVME_SC_INVALID_FIELD, 1, 0);
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		}
 
@@ -202,13 +201,13 @@ nvmf_discovery_ctrlr_process_admin_cmd(struct spdk_nvmf_request *req)
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		} else {
 			SPDK_ERRLOG("Unsupported log page %u\n", cmd->cdw10 & 0xFF);
-			response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+			spdk_nvmf_set_request_resp(req, SPDK_NVME_SCT_GENERIC, SPDK_NVME_SC_INVALID_FIELD, 1, 0);
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		}
 		break;
 	default:
 		SPDK_ERRLOG("Unsupported Opcode 0x%x for Discovery service\n", cmd->opc);
-		response->status.sc = SPDK_NVME_SC_INVALID_OPCODE;
+		spdk_nvmf_set_request_resp(req, SPDK_NVME_SCT_GENERIC, SPDK_NVME_SC_INVALID_OPCODE, 1, 0);
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 
@@ -218,8 +217,6 @@ nvmf_discovery_ctrlr_process_admin_cmd(struct spdk_nvmf_request *req)
 static int
 nvmf_discovery_ctrlr_process_io_cmd(struct spdk_nvmf_request *req)
 {
-	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
-
 	/*
 	 * Discovery controllers do not support I/O queues,
 	 * so this code should be unreachable.
@@ -227,7 +224,7 @@ nvmf_discovery_ctrlr_process_io_cmd(struct spdk_nvmf_request *req)
 	assert("Discovery controllers do not support I/O queues; \
 this code should be unreachable." == 0);
 
-	response->status.sc = SPDK_NVME_SC_OPERATION_DENIED;
+	spdk_nvmf_set_request_resp(req, SPDK_NVME_SCT_GENERIC, SPDK_NVME_SC_OPERATION_DENIED, 1, 0);
 	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 }
 

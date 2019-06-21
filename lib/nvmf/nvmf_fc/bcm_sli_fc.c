@@ -791,8 +791,8 @@ spdk_nvmf_bcm_fc_fail_fused_partner(struct spdk_nvmf_bcm_fc_request *fc_req)
 		if (fc_req->req.fused_partner) {
 			fc_req->req.fused_partner->is_fused_partner_failed = true;
 			fc_req->req.fused_partner->fail_with_fused_aborted = true;
-			fc_req->req.fused_partner->rsp->nvme_cpl.status.dnr = 0;
-			fc_req->req.fused_partner->rsp->nvme_cpl.status.sc = SPDK_NVME_SC_ABORTED_FAILED_FUSED;
+			spdk_nvmf_set_request_resp(fc_req->req.fused_partner, SPDK_NVME_SCT_GENERIC,
+						   SPDK_NVME_SC_ABORTED_FAILED_FUSED, 0, 0);
 		}
 	}
 	return;

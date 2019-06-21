@@ -181,6 +181,21 @@ spdk_nvmf_session_set_ns_changed(struct spdk_nvmf_session *session, uint32_t nsi
 {
 }
 
+void
+spdk_nvmf_set_request_resp(struct spdk_nvmf_request *req, enum spdk_nvme_status_code_type sct,
+			   uint16_t sc, bool dnr, bool more)
+{
+	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
+
+	response->sqid = 0;
+	response->status.p = 0;
+	response->cid = req->cmd->nvme_cmd.cid;
+	response->status.sct = sct;
+	response->status.dnr = dnr;
+	response->status.m = more;
+	response->status.sc = sc;
+}
+
 static void
 test_process_discovery_cmd(void)
 {

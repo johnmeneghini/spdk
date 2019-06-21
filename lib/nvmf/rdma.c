@@ -749,7 +749,6 @@ static spdk_nvmf_request_prep_type
 spdk_nvmf_request_prep_data(struct spdk_nvmf_request *req)
 {
 	struct spdk_nvme_cmd		*cmd = &req->cmd->nvme_cmd;
-	struct spdk_nvme_cpl		*rsp = &req->rsp->nvme_cpl;
 	struct spdk_nvmf_rdma_request	*rdma_req = get_rdma_req(req);
 	struct spdk_nvmf_rdma_session	*rdma_sess;
 	struct spdk_nvme_sgl_descriptor *sgl;
@@ -788,7 +787,8 @@ spdk_nvmf_request_prep_data(struct spdk_nvmf_request *req)
 		if (sgl->keyed.length > g_rdma.max_io_size) {
 			SPDK_ERRLOG("SGL length 0x%x exceeds max io size 0x%x\n",
 				    sgl->keyed.length, g_rdma.max_io_size);
-			rsp->status.sc = SPDK_NVME_SC_DATA_SGL_LENGTH_INVALID;
+			spdk_nvmf_set_request_resp(req, SPDK_NVME_SCT_GENERIC, SPDK_NVME_SC_DATA_SGL_LENGTH_INVALID, 0,
+						   0);
 			return SPDK_NVMF_REQUEST_PREP_ERROR;
 		}
 
@@ -851,7 +851,7 @@ spdk_nvmf_request_prep_data(struct spdk_nvmf_request *req)
 		if (offset > max_len) {
 			SPDK_ERRLOG("In-capsule offset 0x%" PRIx64 " exceeds capsule length 0x%x\n",
 				    offset, max_len);
-			rsp->status.sc = SPDK_NVME_SC_INVALID_SGL_OFFSET;
+			spdk_nvmf_set_request_resp(req, SPDK_NVME_SCT_GENERIC, SPDK_NVME_SC_INVALID_SGL_OFFSET, 0, 0);
 			return SPDK_NVMF_REQUEST_PREP_ERROR;
 		}
 		max_len -= (uint32_t)offset;
@@ -859,7 +859,8 @@ spdk_nvmf_request_prep_data(struct spdk_nvmf_request *req)
 		if (sgl->unkeyed.length > max_len) {
 			SPDK_ERRLOG("In-capsule data length 0x%x exceeds capsule length 0x%x\n",
 				    sgl->unkeyed.length, max_len);
-			rsp->status.sc = SPDK_NVME_SC_DATA_SGL_LENGTH_INVALID;
+			spdk_nvmf_set_request_resp(req, SPDK_NVME_SCT_GENERIC, SPDK_NVME_SC_DATA_SGL_LENGTH_INVALID, 0,
+						   0);
 			return SPDK_NVMF_REQUEST_PREP_ERROR;
 		}
 
@@ -876,7 +877,8 @@ spdk_nvmf_request_prep_data(struct spdk_nvmf_request *req)
 
 	SPDK_ERRLOG("Invalid NVMf I/O Command SGL:  Type 0x%x, Subtype 0x%x\n",
 		    sgl->generic.type, sgl->generic.subtype);
-	rsp->status.sc = SPDK_NVME_SC_SGL_DESCRIPTOR_TYPE_INVALID;
+	spdk_nvmf_set_request_resp(req, SPDK_NVME_SCT_GENERIC,
+				   SPDK_NVME_SC_SGL_DESCRIPTOR_TYPE_INVALID, 0, 0);
 	return SPDK_NVMF_REQUEST_PREP_ERROR;
 }
 

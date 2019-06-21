@@ -64,6 +64,13 @@ test_foobar(void)
 {
 }
 
+void
+spdk_nvmf_set_request_resp(struct spdk_nvmf_request *req, enum spdk_nvme_status_code_type sct,
+			   uint16_t sc, bool dnr, bool more)
+{
+	return;
+}
+
 int
 spdk_nvmf_request_complete(struct spdk_nvmf_request *req)
 {

@@ -41,7 +41,6 @@
 #include "spdk/assert.h"
 #include "spdk/queue.h"
 #include "spdk/util.h"
-#include "spdk/nvmf.h"
 
 #define SPDK_NVMF_DEFAULT_NUM_SESSIONS_PER_LCORE 1
 

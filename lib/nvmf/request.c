@@ -46,6 +46,26 @@
 
 #include "spdk_internal/log.h"
 
+void
+spdk_nvmf_set_request_resp(struct spdk_nvmf_request *req, enum spdk_nvme_status_code_type sct,
+			   uint16_t sc, bool dnr, bool more)
+{
+	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
+	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
+
+	response->status.sct = sct;
+	response->status.sc = sc;
+	response->status.dnr = dnr;
+	response->status.m = more;
+
+	if (response->status.sct == SPDK_NVME_SCT_GENERIC && response->status.sc == SPDK_NVME_SC_SUCCESS) {
+		return;
+	}
+
+	SPDK_ERRLOG("NVM opc 0x%02X failed: sct: 0x%x sc: 0x%x dnr: %d more: %d\n",
+		    cmd->opc, response->status.sct, response->status.sc, response->status.dnr, response->status.m);
+}
+
 int
 spdk_nvmf_request_complete(struct spdk_nvmf_request *req)
 {
@@ -68,8 +88,8 @@ spdk_nvmf_request_complete(struct spdk_nvmf_request *req)
 		req->fused_partner->is_fused_partner_failed = true;
 		if (req->fused_partner->fail_with_fused_aborted) {
 			SPDK_TRACELOG(SPDK_TRACE_NVMF, "Setting fused partner status to aborted\n");
-			req->fused_partner->rsp->nvme_cpl.status.dnr = req->rsp->nvme_cpl.status.dnr;
-			req->fused_partner->rsp->nvme_cpl.status.sc = SPDK_NVME_SC_ABORTED_FAILED_FUSED;
+			spdk_nvmf_set_request_resp(req->fused_partner, SPDK_NVME_SCT_GENERIC,
+						   SPDK_NVME_SC_ABORTED_FAILED_FUSED, req->rsp->nvme_cpl.status.dnr, 0);
 		}
 	}
 

@@ -500,4 +500,9 @@ enum spdk_nvmf_qslot_update {
  */
 void spdk_nvmf_qslots_update(enum spdk_nvmf_qslot_update qslot_update, uint32_t qslots,
 			     void *port_ctx);
+
+void
+spdk_nvmf_set_request_resp(struct spdk_nvmf_request *req, enum spdk_nvme_status_code_type sct,
+			   uint16_t sc, bool dnr, bool more);
+
 #endif

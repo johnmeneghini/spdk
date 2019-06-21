@@ -832,10 +832,9 @@ spdk_nvmf_session_poll(struct spdk_nvmf_session *session)
 int
 spdk_nvmf_session_set_features_host_identifier(struct spdk_nvmf_request *req)
 {
-	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
 
 	SPDK_ERRLOG("Set Features - Host Identifier not allowed\n");
-	response->status.sc = SPDK_NVME_SC_COMMAND_SEQUENCE_ERROR;
+	spdk_nvmf_set_request_resp(req, SPDK_NVME_SCT_GENERIC, SPDK_NVME_SC_COMMAND_SEQUENCE_ERROR, 1, 0);
 	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 }
 
@@ -844,19 +843,18 @@ spdk_nvmf_session_get_features_host_identifier(struct spdk_nvmf_request *req)
 {
 	struct spdk_nvmf_session *session = req->conn->sess;
 	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
-	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
 
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Get Features - Host Identifier\n");
 	if (!(cmd->cdw11 & 1)) {
 		/* NVMe over Fabrics requires EXHID=1 (128-bit/16-byte host ID) */
 		SPDK_ERRLOG("Get Features - Host Identifier with EXHID=0 not allowed\n");
-		response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+		spdk_nvmf_set_request_resp(req, SPDK_NVME_SCT_GENERIC, SPDK_NVME_SC_INVALID_FIELD, 1, 0);
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 
 	if (req->data == NULL || req->length < sizeof(session->hostid)) {
 		SPDK_ERRLOG("Invalid data buffer for Get Features - Host Identifier\n");
-		response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
+		spdk_nvmf_set_request_resp(req, SPDK_NVME_SCT_GENERIC, SPDK_NVME_SC_INVALID_FIELD, 1, 0);
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 
@@ -1025,16 +1023,19 @@ spdk_nvmf_session_get_features_ns_write_protection_config(struct spdk_nvmf_reque
 	uint32_t nsid = cmd->nsid;
 	if (nsid > subsystem->dev.virt.max_nsid || nsid == 0) {
 		SPDK_ERRLOG("Get Features - NS Write Protect Config for invalid nsid %u\n", nsid);
-		rsp->status.sc = SPDK_NVME_SC_INVALID_NAMESPACE_OR_FORMAT;
+		spdk_nvmf_set_request_resp(req, SPDK_NVME_SCT_GENERIC,
+					   SPDK_NVME_SC_INVALID_NAMESPACE_OR_FORMAT, 1, 0);
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 
 	bdev = subsystem->dev.virt.ns_list[nsid - 1];
 	if (bdev == NULL) {
-		SPDK_ERRLOG("Get Features - NS Write Protect Config for invalid nsid %u\n", nsid);
-		rsp->status.sc = SPDK_NVME_SC_INVALID_NAMESPACE_OR_FORMAT;
+		SPDK_ERRLOG("Get Features - No bdev for nsid %u\n", nsid);
+		spdk_nvmf_set_request_resp(req, SPDK_NVME_SCT_GENERIC,
+					   SPDK_NVME_SC_INVALID_NAMESPACE_OR_FORMAT, 1, 0);
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
+
 	rsp->cdw0 = bdev->write_protect_flags.write_protect;
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Get Features - NS Write Protect Config response %u\n", rsp->cdw0);
 
