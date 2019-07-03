@@ -202,6 +202,8 @@ nvmf_fc_tgt_hw_port_reinit_validate(struct spdk_nvmf_bcm_fc_port *fc_port,
 	/* Initialize the LS queue */
 	fc_port->ls_queue.queues = args->ls_queue;
 	spdk_nvmf_bcm_fc_init_poller_queues(&fc_port->ls_queue);
+	/* Initialize the pending xri list. */
+	TAILQ_INIT(&fc_port->ls_queue.pending_xri_list);
 
 	/* Initialize the IO queues */
 	for (i = 0; i < NVMF_FC_MAX_IO_QUEUES; i++) {
@@ -211,6 +213,8 @@ nvmf_fc_tgt_hw_port_reinit_validate(struct spdk_nvmf_bcm_fc_port *fc_port,
 		nvmf_fc_tgt_hwqp_queues_reqtag_copy(&fc_port->io_queues[i].queues, &args->io_queues[i]);
 		fc_port->io_queues[i].queues = args->io_queues[i];
 		spdk_nvmf_bcm_fc_init_poller_queues(&fc_port->io_queues[i]);
+		/* Initialize the pending xri list. */
+		TAILQ_INIT(&fc_port->io_queues[i].pending_xri_list);
 	}
 
 
