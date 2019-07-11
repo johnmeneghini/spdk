@@ -174,6 +174,23 @@ nvmf_fc_tgt_hwqp_clean_sync_cb(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
 }
 
 /*
+ * Re-init a HWQPs pending XRI list.
+ */
+static void
+nvmf_fc_tgt_reinit_xri_pending(struct spdk_nvmf_bcm_fc_hwqp *hwqp)
+{
+	struct spdk_nvmf_bcm_fc_xri *tmp;
+
+	TAILQ_FOREACH(tmp, &hwqp->pending_xri_list, link) {
+		spdk_nvmf_bcm_fc_put_xri(hwqp, tmp);
+		TAILQ_REMOVE(&hwqp->pending_xri_list, tmp, link);
+	}
+	TAILQ_INIT(&hwqp->pending_xri_list);
+	return;
+}
+
+
+/*
  * Re-initialize the FC-Port after an offline event.
  * Only the queue information needs to be populated. XRI, lcore and other hwqp information remains
  * unchanged after the first initialization.
@@ -203,7 +220,7 @@ nvmf_fc_tgt_hw_port_reinit_validate(struct spdk_nvmf_bcm_fc_port *fc_port,
 	fc_port->ls_queue.queues = args->ls_queue;
 	spdk_nvmf_bcm_fc_init_poller_queues(&fc_port->ls_queue);
 	/* Initialize the pending xri list. */
-	TAILQ_INIT(&fc_port->ls_queue.pending_xri_list);
+	nvmf_fc_tgt_reinit_xri_pending(fc_port->ls_queue);
 
 	/* Initialize the IO queues */
 	for (i = 0; i < NVMF_FC_MAX_IO_QUEUES; i++) {
@@ -214,7 +231,7 @@ nvmf_fc_tgt_hw_port_reinit_validate(struct spdk_nvmf_bcm_fc_port *fc_port,
 		fc_port->io_queues[i].queues = args->io_queues[i];
 		spdk_nvmf_bcm_fc_init_poller_queues(&fc_port->io_queues[i]);
 		/* Initialize the pending xri list. */
-		TAILQ_INIT(&fc_port->io_queues[i].pending_xri_list);
+		nvmf_fc_tgt_reinit_xri_pending(fc_port->io_queues[i]);
 	}
 
 
