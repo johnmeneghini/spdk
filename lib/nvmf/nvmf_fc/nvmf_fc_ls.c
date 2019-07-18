@@ -1387,7 +1387,6 @@ nvmf_fc_ls_process_cioc(struct spdk_nvmf_bcm_fc_nport *tgtport,
 				rc = FCNVME_RJT_RC_INV_PARAM;
 				ec =  FCNVME_RJT_EXP_INV_Q_ID;
 			} else if (nvmf_fc_io_qid_is_invalid(assoc, from_be16(&rqst->connect_cmd.qid))) {
-				assert(!"Invalid IOQ ID");
 				errmsg_ind = VERR_CONN_ID;
 				rc = FCNVME_RJT_RC_INV_PARAM;
 				ec =  FCNVME_RJT_EXP_INV_Q_ID;
