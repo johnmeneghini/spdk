@@ -105,5 +105,6 @@ spdk_nvmf_is_fused_command(struct spdk_nvme_cmd *cmd)
 #define TRACE_FC_REQ_ABORTED                    SPDK_TPOINT_ID(TRACE_GROUP_NVMF, 0x15)
 #define TRACE_FC_REQ_PENDING                    SPDK_TPOINT_ID(TRACE_GROUP_NVMF, 0x16)
 #define TRACE_FC_REQ_FUSED_WAITING              SPDK_TPOINT_ID(TRACE_GROUP_NVMF, 0x17)
+#define TRACE_NVMF_IO_BDEV_STATUS               SPDK_TPOINT_ID(TRACE_GROUP_NVMF, 0x18)
 
 #endif /* __NVMF_INTERNAL_H__ */

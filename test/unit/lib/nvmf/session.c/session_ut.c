@@ -100,6 +100,8 @@ test_process_aer_rsp(void)
 	session->aer_req = req;
 	session->async_event_config.raw = SPDK_NVME_AER_NS_ATTR_NOTICES |
 					  SPDK_NVME_AER_ANA_CHANGE_NOTICES;
+	nvmf_init_aer_response(session);
+
 	TAILQ_INIT(&subsystem->sessions);
 	TAILQ_INSERT_TAIL(&subsystem->sessions, session, link);
 

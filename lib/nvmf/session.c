@@ -1080,11 +1080,11 @@ spdk_nvmf_session_async_event_request(struct spdk_nvmf_request *req)
 		rsp->status.sct = SPDK_NVME_SCT_GENERIC;
 		rsp->status.sc = SPDK_NVME_SC_SUCCESS;
 
+		SPDK_NOTICELOG("Responding for pending AER cdw0 0x%x\n", rsp->cdw0);
+
 		/* reset other fields */
 		session->aer_req = NULL;
 
-		SPDK_TRACELOG(SPDK_TRACE_NVMF, "Responding for pending AER, cdw0 0x%08x\n",
-			      rsp->cdw0);
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
 
@@ -1230,6 +1230,7 @@ spdk_nvmf_queue_aer_rsp(struct spdk_nvmf_subsystem *subsystem,
 
 			rsp->status.sct = SPDK_NVME_SCT_GENERIC;
 			rsp->status.sc  = SPDK_NVME_SC_SUCCESS;
+			SPDK_NOTICELOG("Publishing AER cdw0 0x%x\n", rsp->cdw0);
 			(void)spdk_nvmf_request_complete(aer);
 			session->aer_req = NULL;
 		} else {

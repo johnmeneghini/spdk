@@ -80,6 +80,9 @@ spdk_nvmf_request_complete(struct spdk_nvmf_request *req)
 		      response->cid, response->cdw0, response->rsvd1,
 		      *(uint16_t *)&response->status);
 
+	spdk_trace_record(TRACE_NVMF_IO_COMPLETE, 0, 0, (uintptr_t)req,
+			  (uint64_t)(*(uint16_t *)&response->status));
+
 	/* Check if this is fused command_1 and if it is the first one to fail */
 	if (req->fused_partner &&
 	    req->cmd->nvme_cmd.fuse == SPDK_NVME_FUSED_CMD1
