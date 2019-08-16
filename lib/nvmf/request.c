@@ -56,6 +56,7 @@ spdk_nvmf_set_request_resp(struct spdk_nvmf_request *req, enum spdk_nvme_status_
 	response->status.sct = sct;
 	response->status.sc = sc;
 	response->status.dnr = dnr;
+	response->status.crd = SPDK_NVME_CRD_ZERO;
 	response->status.m = more;
 
 	if (response->status.sct == SPDK_NVME_SCT_GENERIC && response->status.sc == SPDK_NVME_SC_SUCCESS) {

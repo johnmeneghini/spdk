@@ -723,6 +723,8 @@ nvmf_virtual_ctrlr_get_features(struct spdk_nvmf_request *req)
 		return spdk_nvmf_session_get_features_host_identifier(req);
 	case SPDK_NVME_FEAT_NAMESPACE_WRITE_PROTECT_CONFIG:
 		return spdk_nvmf_session_get_features_ns_write_protection_config(req);
+	case SPDK_NVME_FEAT_HOST_BEHAVIOR_SUPPORT:
+		return spdk_nvmf_session_get_features_host_behavior_support(req);
 	default:
 		SPDK_ERRLOG("Get Features command with unsupported feature ID 0x%02x\n", feature);
 		spdk_nvmf_set_request_resp(req, SPDK_NVME_SCT_GENERIC, SPDK_NVME_SC_INVALID_FIELD, 1, 0);
@@ -748,6 +750,8 @@ nvmf_virtual_ctrlr_set_features(struct spdk_nvmf_request *req)
 		return spdk_nvmf_session_set_features_host_identifier(req);
 	case SPDK_NVME_FEAT_NAMESPACE_WRITE_PROTECT_CONFIG:
 		return spdk_nvmf_session_set_features_ns_write_protection_config(req);
+	case SPDK_NVME_FEAT_HOST_BEHAVIOR_SUPPORT:
+		return spdk_nvmf_session_set_features_host_behavior_support(req);
 	default:
 		SPDK_ERRLOG("Set Features command with unsupported feature ID 0x%02x\n", feature);
 		spdk_nvmf_set_request_resp(req, SPDK_NVME_SCT_GENERIC, SPDK_NVME_SC_INVALID_FIELD, 1, 0);
@@ -805,6 +809,8 @@ static int
 nvmf_virtual_ctrlr_handle_bdev_rc(int rc, struct spdk_nvmf_request *req)
 {
 	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
+	struct spdk_nvmf_session *session = req->conn->sess;
+	struct spdk_nvme_cpl *response = &req->rsp->nvme_cpl;
 	int status;
 
 	switch (rc) {
@@ -853,7 +859,14 @@ nvmf_virtual_ctrlr_handle_bdev_rc(int rc, struct spdk_nvmf_request *req)
 	case -ENOMEM:
 	/* fall through */
 	case -EAGAIN:
-		status = SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING;
+		if (spdk_nvmf_session_is_acre_enabled(session)) {
+			spdk_nvmf_set_request_resp(req, SPDK_NVME_SCT_GENERIC,
+						   SPDK_NVME_SC_COMMAND_INTERRUPTED, 0, 0);
+			response->status.crd = SPDK_NVME_CRD_ONE;
+			status = SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+		} else {
+			status = SPDK_NVMF_REQUEST_EXEC_STATUS_BUFF_PENDING;
+		}
 		break;
 	case 0:
 		/* Success! */

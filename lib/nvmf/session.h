@@ -112,6 +112,7 @@ struct spdk_nvmf_session {
 	struct spdk_nvmf_aer_ctxt aer_ctxt;
 	uint8_t hostid[16];
 	char hostnqn[SPDK_NVMF_NQN_MAX_LEN];
+	spdk_nvme_feat_host_behavior_support_t host_behavior_support;
 	const struct spdk_nvmf_transport	*transport;
 	uint64_t ana_log_change_count;
 	struct {
@@ -167,6 +168,10 @@ int spdk_nvmf_session_get_features_async_event_configuration(struct spdk_nvmf_re
 
 int spdk_nvmf_session_set_features_ns_write_protection_config(struct spdk_nvmf_request *req);
 int spdk_nvmf_session_get_features_ns_write_protection_config(struct spdk_nvmf_request *req);
+
+int spdk_nvmf_session_set_features_host_behavior_support(struct spdk_nvmf_request *req);
+int spdk_nvmf_session_get_features_host_behavior_support(struct spdk_nvmf_request *req);
+bool spdk_nvmf_session_is_acre_enabled(struct spdk_nvmf_session *session);
 
 int spdk_nvmf_session_async_event_request(struct spdk_nvmf_request *req);
 

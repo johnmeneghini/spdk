@@ -509,7 +509,7 @@ struct spdk_nvme_status {
 	uint16_t p	:  1;	/* phase tag */
 	uint16_t sc	:  8;	/* status code */
 	uint16_t sct	:  3;	/* status code type */
-	uint16_t rsvd2	:  2;
+	uint16_t crd	:  2;
 	uint16_t m	:  1;	/* more */
 	uint16_t dnr	:  1;	/* do not retry */
 };
@@ -610,6 +610,7 @@ enum spdk_nvme_generic_command_status_code {
 	SPDK_NVME_SC_SGL_DATA_BLOCK_GRANULARITY_INVALID	= 0x1e,
 	SPDK_NVME_SC_COMMAND_INVALID_IN_CMB		= 0x1f,
 	SPDK_NVME_SC_NAMESPACE_IS_WRITE_PROTECTED	= 0X20,
+	SPDK_NVME_SC_COMMAND_INTERRUPTED        	= 0X21,
 
 	SPDK_NVME_SC_LBA_OUT_OF_RANGE			= 0x80,
 	SPDK_NVME_SC_CAPACITY_EXCEEDED			= 0x81,
@@ -692,6 +693,16 @@ enum spdk_nvme_path_status_code {
 
 	SPDK_NVME_SC_HOST_PATH_ERROR			= 0x70,
 	SPDK_NVME_SC_ABORTED_BY_HOST			= 0x71,
+};
+
+/**
+ * Command retry delay, associated with acre, in status field
+ */
+enum spdk_nvme_command_retry_delay {
+	SPDK_NVME_CRD_ZERO                              = 0x00,
+	SPDK_NVME_CRD_ONE                               = 0x01,
+	SPDK_NVME_CRD_TWO                               = 0x02,
+	SPDK_NVME_CRD_THREE                             = 0x03,
 };
 
 /**
@@ -830,6 +841,8 @@ enum spdk_nvme_feat {
 	SPDK_NVME_FEAT_HOST_CONTROLLED_THERMAL_MANAGEMENT	= 0x10,
 	/** cdw11 layout defined by \ref spdk_nvme_feat_non_operational_power_state_config */
 	SPDK_NVME_FEAT_NON_OPERATIONAL_POWER_STATE_CONFIG	= 0x11,
+	/** data buffer contains the 512 byte host behavior support data structure */
+	SPDK_NVME_FEAT_HOST_BEHAVIOR_SUPPORT                    = 0x16,
 
 	/* 0x12-0x77 - reserved */
 
@@ -1098,7 +1111,12 @@ struct __attribute__((packed)) spdk_nvme_ctrlr_data {
 	/** FRU globally unique identifier */
 	uint8_t			fguid[16];
 
-	uint8_t			reserved_128[128];
+	/** Command retry intervals in units of 100msec */
+	uint16_t                crdt1;
+	uint16_t                crdt2;
+	uint16_t                crdt3;
+
+	uint8_t			reserved_134[122];
 
 	/* bytes 256-511: admin command set attributes */
 
@@ -2504,6 +2522,23 @@ union spdk_nvme_feat_host_identifier {
 	} bits;
 };
 SPDK_STATIC_ASSERT(sizeof(union spdk_nvme_feat_host_identifier) == 4, "Incorrect size");
+
+/**
+ * Data used by Set Features/Get Features \ref SPDK_NVME_FEAT_HOST_BEHAVIOR_SUPPORT
+ */
+typedef union spdk_nvme_feat_host_behavior_support {
+	uint8_t raw[512];
+	struct {
+		/** Advanced Command Retry Enabled */
+		struct {
+			uint8_t acre : 1;
+			uint8_t reserved : 7;
+		} byte0;
+
+		uint8_t reserved[511];
+	} bytes;
+} spdk_nvme_feat_host_behavior_support_t;
+SPDK_STATIC_ASSERT(sizeof(union spdk_nvme_feat_host_behavior_support) == 512, "Incorrect size");
 
 /**
  * Firmware slot information page (\ref SPDK_NVME_LOG_FIRMWARE_SLOT)

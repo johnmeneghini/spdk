@@ -154,6 +154,22 @@ spdk_nvmf_session_get_features_ns_write_protection_config(struct spdk_nvmf_reque
 	return -1;
 }
 
+int
+spdk_nvmf_session_set_features_host_behavior_support(struct spdk_nvmf_request *req)
+{
+	return -1;
+}
+
+int spdk_nvmf_session_get_features_host_behavior_support(struct spdk_nvmf_request *req)
+{
+	return -1;
+}
+
+bool spdk_nvmf_session_is_acre_enabled(struct spdk_nvmf_session *session)
+{
+	return false;
+}
+
 void
 spdk_nvmf_set_request_resp(struct spdk_nvmf_request *req, enum spdk_nvme_status_code_type sct,
 			   uint16_t sc, bool dnr, bool more)

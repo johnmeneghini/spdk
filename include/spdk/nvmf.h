@@ -270,6 +270,9 @@ struct spdk_nvmf_tgt_opts {
 	uint32_t				mnan;
 	uint8_t                                 tgt_instance_id;
 	uint16_t                                fuses;
+	uint16_t                                crdt1;
+	uint16_t                                crdt2;
+	uint16_t                                crdt3;
 };
 
 struct spdk_nvmf_subsystem *spdk_nvmf_create_subsystem(const char *nqn,

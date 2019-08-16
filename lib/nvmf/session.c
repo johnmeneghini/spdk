@@ -156,6 +156,9 @@ nvmf_init_nvme_session_properties(struct spdk_nvmf_session *session)
 	session->vcdata.nvmf_specific.ctrattr.ctrlr_model = SPDK_NVMF_CTRLR_MODEL_DYNAMIC;
 	session->vcdata.nvmf_specific.msdbd = 1; /* target supports single SGL in capsule */
 	session->vcdata.fuses = g_nvmf_tgt.opts.fuses;
+	session->vcdata.crdt1 = g_nvmf_tgt.opts.crdt1;
+	session->vcdata.crdt2 = g_nvmf_tgt.opts.crdt2;
+	session->vcdata.crdt3 = g_nvmf_tgt.opts.crdt3;
 
 	/* TODO: this should be set by the transport */
 	// session->vcdata.nvmf_specific.ioccsz += g_nvmf_tgt.opts.in_capsule_data_size / 16;
@@ -859,6 +862,52 @@ spdk_nvmf_session_get_features_host_identifier(struct spdk_nvmf_request *req)
 	}
 
 	memcpy(req->data, session->hostid, sizeof(session->hostid));
+	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+}
+
+bool
+spdk_nvmf_session_is_acre_enabled(struct spdk_nvmf_session *session)
+{
+	return ((session != NULL) && (session->host_behavior_support.bytes.byte0.acre == 1));
+}
+
+int
+spdk_nvmf_session_get_features_host_behavior_support(struct spdk_nvmf_request *req)
+{
+	struct spdk_nvmf_session *session = req->conn->sess;
+
+	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Get Features - Host behavior support\n");
+
+	if (req->data == NULL || req->length < sizeof(spdk_nvme_feat_host_behavior_support_t)) {
+		SPDK_ERRLOG("Invalid data buffer for Get Features - Host behavior support\n");
+		spdk_nvmf_set_request_resp(req, SPDK_NVME_SCT_GENERIC, SPDK_NVME_SC_INVALID_FIELD, 1, 0);
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+	}
+
+	memcpy(req->data, &session->host_behavior_support, sizeof(session->host_behavior_support));
+	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+}
+
+int
+spdk_nvmf_session_set_features_host_behavior_support(struct spdk_nvmf_request *req)
+{
+	struct spdk_nvmf_session *session = req->conn->sess;
+
+	SPDK_NOTICELOG("Set Features - Host behavior support\n");
+
+	if (req->data == NULL || req->length < sizeof(spdk_nvme_feat_host_behavior_support_t)) {
+		SPDK_ERRLOG("Invalid data buffer for Set Features - Host behavior support\n");
+		spdk_nvmf_set_request_resp(req, SPDK_NVME_SCT_GENERIC, SPDK_NVME_SC_INVALID_FIELD, 1, 0);
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+	}
+
+	memcpy(&session->host_behavior_support, req->data, sizeof(session->host_behavior_support));
+
+	if (spdk_nvmf_session_is_acre_enabled(session)) {
+		SPDK_NOTICELOG("Set Features - ACRE enabled on session %p\n", session);
+	} else {
+		SPDK_NOTICELOG("Set Features - ACRE disabled on session %p\n", session);
+	}
 	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 }
 
