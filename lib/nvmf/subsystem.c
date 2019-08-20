@@ -274,7 +274,7 @@ spdk_nvmf_create_subsystem(const char *nqn,
 	TAILQ_INSERT_TAIL(&g_nvmf_tgt.subsystems, subsystem, entries);
 	g_nvmf_tgt.discovery_genctr++;
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Created Subsystem NQN %s\n", nqn);
+	SPDK_NOTICELOG("Created Subsystem NQN %s\n", nqn);
 
 	return subsystem;
 }
@@ -291,8 +291,8 @@ spdk_nvmf_delete_subsystem(struct spdk_nvmf_subsystem *subsystem)
 		return;
 	}
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Destroy Subsystem NQN %s\n",
-		      spdk_nvmf_subsystem_get_nqn(subsystem));
+	SPDK_NOTICELOG("Destroy Subsystem NQN %s\n",
+		       spdk_nvmf_subsystem_get_nqn(subsystem));
 	SPDK_TRACELOG(SPDK_TRACE_NVMF, "subsystem is %p\n", subsystem);
 
 	TAILQ_FOREACH_SAFE(allowed_listener,
@@ -442,9 +442,9 @@ spdk_nvmf_subsystem_add_host(struct spdk_nvmf_subsystem *subsystem, const char *
 	TAILQ_INSERT_HEAD(&subsystem->hosts, host, link);
 	g_nvmf_tgt.discovery_genctr++;
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Host NQN %s (%u/%u/%u) added to Subsystem %s\n",
-		      host->nqn, host->max_aq_depth, host->max_io_queue_depth, host->max_connections_allowed,
-		      spdk_nvmf_subsystem_get_nqn(subsystem));
+	SPDK_NOTICELOG("Host NQN %s (%u/%u/%u) added to Subsystem %s\n",
+		       host->nqn, host->max_aq_depth, host->max_io_queue_depth, host->max_connections_allowed,
+		       spdk_nvmf_subsystem_get_nqn(subsystem));
 
 	return 0;
 }
@@ -461,8 +461,8 @@ spdk_nvmf_subsystem_remove_host(struct spdk_nvmf_subsystem *subsystem, const cha
 			free(host);
 			g_nvmf_tgt.discovery_genctr++;
 
-			SPDK_TRACELOG(SPDK_TRACE_NVMF, "Host NQN %s removed from Subsystem %s\n",
-				      hostnqn, spdk_nvmf_subsystem_get_nqn(subsystem));
+			SPDK_NOTICELOG("Host NQN %s removed from Subsystem %s\n",
+				       hostnqn, spdk_nvmf_subsystem_get_nqn(subsystem));
 
 			return;
 		}
@@ -788,6 +788,12 @@ spdk_nvmf_subsystem_remove_ns(struct spdk_nvmf_subsystem *subsystem, uint32_t ns
 		return -1;
 	}
 
+	SPDK_NOTICELOG("Subsystem %s: bdev %s unassigning nsid %" PRIu32 " anagrpid %u\n",
+		       spdk_nvmf_subsystem_get_nqn(subsystem),
+		       spdk_bdev_get_name(bdev),
+		       nsid,
+		       bdev->anagrpid);
+
 	if (bdev->anagrpid) {
 		ana_group = spdk_nvmf_subsystem_find_ana_group(subsystem, bdev->anagrpid);
 		if (!ana_group) {
@@ -877,11 +883,11 @@ spdk_nvmf_subsystem_add_ns(struct spdk_nvmf_subsystem *subsystem, struct spdk_bd
 	subsystem->dev.virt.max_nsid =  spdk_max(subsystem->dev.virt.max_nsid, nsid);
 	spdk_nvmf_subsystem_set_ns_changed(subsystem, nsid);
 
-	SPDK_TRACELOG(SPDK_TRACE_NVMF, "Subsystem %s: bdev %s assigned nsid %" PRIu32 " anagrpid %u\n",
-		      spdk_nvmf_subsystem_get_nqn(subsystem),
-		      spdk_bdev_get_name(bdev),
-		      nsid,
-		      anagrpid);
+	SPDK_NOTICELOG("Subsystem %s: bdev %s assigned nsid %" PRIu32 " anagrpid %u\n",
+		       spdk_nvmf_subsystem_get_nqn(subsystem),
+		       spdk_bdev_get_name(bdev),
+		       nsid,
+		       anagrpid);
 
 	return nsid;
 }

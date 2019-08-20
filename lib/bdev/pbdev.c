@@ -760,7 +760,7 @@ spdk_bdev_unregister(struct spdk_bdev *bdev)
 	int			rc;
 	bool			do_destruct = true;
 
-	SPDK_TRACELOG(SPDK_TRACE_DEBUG, "Removing bdev %s from list\n", bdev->name);
+	SPDK_NOTICELOG("Removing bdev %s from list\n", bdev->name);
 
 	pthread_mutex_lock(&bdev->mutex);
 
