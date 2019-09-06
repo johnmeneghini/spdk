@@ -10,3 +10,11 @@ This is the main NetApp SPDK integration branch for DOT:dev.
     OSRB code review process.
 
 Contact: johnm@netapp.com for more information.
+
+> git tag -a -m "branch dot_dev_<rl>" dot_dev_<rl>_branch <commit> 
+> git logg <tagname> -1
+
+* 72af40229 2017-08-17  (tag: dot_dev_kb_branch) nvmf_fc: FC-NVMe Library [ John Meneghini / johnm@netapp.com ]
+* 54c49e325 2018-03-29  (tag: dot_dev_db_branch) netapp: create dot_dev_db branch [ John Meneghini / johnm@netapp.com ]
+* f8ff7fbb5 2018-09-24  (tag: dot_dev_vr_branch) nvmf:Remove io_channel from nvmf subsystem [ Ed rodriguez / edwinr@netapp.com ]
+* 5f444baa2 2019-03-19  (tag: dot_dev_bp_branch) netapp: create the new dot_dev_bp release branch [ John Meneghini / johnm@netapp.com ]
