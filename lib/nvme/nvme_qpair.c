@@ -136,6 +136,18 @@ nvme_io_qpair_print_command(struct spdk_nvme_qpair *qpair,
 			       nvme_get_string(io_opcode, cmd->opc), qpair->id, cmd->cid,
 			       cmd->nsid);
 		break;
+	case SPDK_NVME_OPC_KV_STORE:
+	case SPDK_NVME_OPC_KV_RETRIEVE:
+		SPDK_NOTICELOG("%s (%02x) sqid:%d cid:%d nsid:%d"
+			       " fuse:%d psdt:%d\n mptr:0x%lx\n prp1:0x%lx prp2:0x%lx\n"
+			       " cdw10:0x%x\n cdw11:0x%x\n cdw12:0x%x\n cdw13:0x%x\n cdw14:0x%x\n cdw15:0x%x\n",
+			       nvme_get_string(io_opcode, cmd->opc), cmd->opc, qpair->id, cmd->cid,
+			       cmd->nsid,
+			       cmd->fuse, cmd->psdt,
+			       cmd->mptr,
+			       cmd->dptr.prp.prp1, cmd->dptr.prp.prp2,
+			       cmd->cdw10, cmd->cdw11, cmd->cdw12, cmd->cdw13, cmd->cdw14, cmd->cdw15);
+		break;
 	default:
 		SPDK_NOTICELOG("%s (%02x) sqid:%d cid:%d nsid:%d\n",
 			       nvme_get_string(io_opcode, cmd->opc), cmd->opc, qpair->id,
@@ -249,6 +261,36 @@ static const struct nvme_string media_error_status[] = {
 	{ 0xFFFF, "MEDIA ERROR" }
 };
 
+static const struct nvme_string kv_nvme_command_status[] = {
+	// 0x00h is reserved
+	{ KV_NVME_SC_INVALID_VALUE_SIZE, "INVALID VALUE SIZE" },
+	{ KV_NVME_SC_INVALID_VALUE_OFFSET, "INVALID VALUE OFFSET" },
+	{ KV_NVME_SC_INVALID_KEY_SIZE, "INVALID KEY SIZE" },
+	{ KV_NVME_SC_INVALID_OPTION, "INVALID OPTION" },
+
+	// 0x05h ~ 0x07h are reserved
+	{ KV_NVME_SC_MISALIGNED_VALUE_SIZE, "MISALIGNED VALUE SIZE" },
+	{ KV_NVME_SC_MISALIGNED_VALUE_OFFSET, "MISALIGNED VALUE OFFSET" },
+	{ KV_NVME_SC_MISALIGNED_KEY_SIZE, "MISALIGNED KEY SIZE" },
+
+	// 0x0Bh ~ 0x0F are reserved
+	{ KV_NVME_SC_NOT_EXIST_KEY, "NOT EXIST KEY" },
+	{ KV_NVME_SC_UNRECOVERED_ERROR, "UNRECOVERED ERROR" },
+	{ KV_NVME_SC_CAPACITY_EXCEEDED, "CAPACITY EXCEEDED" },
+
+	// 0x13b ~ 0x7Fh are reserved
+	{ KV_NVME_SC_IDEMPOTENT_STORE_FAIL, "IDEMPOTENT STORE FAIL" },
+	{ KV_NVME_SC_MAXIMUM_VALUE_SIZE_LIMIT_EXCEEDED, "MAXIMUM VALUE SIZE LIMIT EXCEEDED" },
+
+
+	{ KV_NVME_SC_INVALID_ITERATE_HANDLE, "INVALID ITERATE HANDLE" },
+	{ KV_NVME_SC_NO_AVAILABLE_ITERATE_HANDLE, "NO AVAILABLE ITERATE HANDLE" },
+	{ KV_NVME_SC_ITERATE_HANDLE_ALREADY_OPENED, "ITERATE HANDLE IS ALREADY OPENED" },
+	{ KV_NVME_SC_ITERATE_READ_EOF, "ITERATE READ EOF" },
+	{ KV_NVME_SC_ITERATE_REQUEST_FAIL, "ITERATE REQUEST FAILED" },
+	{ 0xFFFF, "KV SSD ERROR" }
+};
+
 static const char *
 get_status_string(uint16_t sct, uint16_t sc)
 {
@@ -263,6 +305,9 @@ get_status_string(uint16_t sct, uint16_t sc)
 		break;
 	case SPDK_NVME_SCT_MEDIA_ERROR:
 		entry = media_error_status;
+		break;
+	case KV_NVME_SCT_ERROR:
+		entry =  kv_nvme_command_status;
 		break;
 	case SPDK_NVME_SCT_VENDOR_SPECIFIC:
 		return "VENDOR SPECIFIC";
@@ -398,6 +443,11 @@ nvme_qpair_init(struct spdk_nvme_qpair *qpair, uint16_t id,
 
 	STAILQ_INIT(&qpair->free_req);
 	STAILQ_INIT(&qpair->queued_req);
+	pthread_spin_init(&qpair->req_lock, 0);
+
+	pthread_spin_init(&qpair->sq_lock, 0);
+	pthread_spin_init(&qpair->cq_lock, 0);
+	qpair->current_qd = 0;
 
 	req_size_padded = (sizeof(struct nvme_request) + 63) & ~(size_t)63;
 

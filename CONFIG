@@ -98,3 +98,6 @@ CONFIG_VPP?=n
 
 # Requires libiscsi development libraries.
 CONFIG_ISCSI_INITIATOR?=n
+
+# Build with Samsung KV NVMe commands
+CONFIG_KVNVME?=y

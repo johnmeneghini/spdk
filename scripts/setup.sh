@@ -162,9 +162,17 @@ function get_virtio_names_from_bdf {
 
 function configure_linux_pci {
 	driver_name=vfio-pci
+	target_nvme_bdf="$1"
 	if [ -z "$(ls /sys/kernel/iommu_groups)" ]; then
 		# No IOMMU. Use uio.
 		driver_name=uio_pci_generic
+	fi
+
+	#Check target nvme bdf
+	if [ -n "$target_nvme_bdf" ]; then
+		echo "config on target_bdf: " "$target_nvme_bdf"
+	else
+		echo "config all nvme bdf"
 	fi
 
 	# NVMe
@@ -177,14 +185,27 @@ function configure_linux_pci {
 			continue
 		fi
 		if [ "$blkname" != "" ]; then
-			mountpoints=$(lsblk /dev/$blkname --output MOUNTPOINT -n | wc -w)
+			#mountpoints=$(lsblk /dev/$blkname --output MOUNTPOINT -n | wc -w) #original spdk code
+			mountpoints=$(lsblk /dev/$blkname --output MOUNTPOINT -n | grep '/$' | wc -w)
 		else
 			mountpoints="0"
 		fi
+
 		if [ "$mountpoints" = "0" ]; then
-			linux_bind_driver "$bdf" "$driver_name"
+			if [ -n "$target_nvme_bdf" ]; then
+				for target in $target_nvme_bdf; do
+					if [ "$target" = "$bdf" ]; then
+						#echo "config target :" $bdf
+						linux_bind_driver "$bdf" "$driver_name"
+					fi
+				done
+			else
+					linux_bind_driver "$bdf" "$driver_name"
+			fi
 		else
-			echo Active mountpoints on /dev/$blkname, so not binding PCI dev $bdf
+			if [ "$target_nvme_bdf" == "$bdf" ] || [ "$target_nvme_bdf" == "" ]; then
+				echo Boot device on /dev/$blkname, so not binding PCI dev $bdf
+			fi
 		fi
 	done
 
@@ -235,7 +256,8 @@ function configure_linux_pci {
 }
 
 function configure_linux {
-	configure_linux_pci
+	target_nvme_bdf="$1"
+	configure_linux_pci "$target_nvme_bdf"
 	hugetlbfs_mounts=$(linux_hugetlbfs_mounts)
 
 	if [ -z "$hugetlbfs_mounts" ]; then
@@ -291,6 +313,17 @@ function configure_linux {
 
 function reset_linux_pci {
 	# NVMe
+
+	target_nvme_bdf="$1"
+	driver_name="nvme"
+
+	#Check target nvme bdf
+	if [ -n "$target_nvme_bdf" ]; then
+		echo "reset on target_nvme_bdf: " "$target_nvme_bdf"
+	else
+		echo "reset all nvme bdf"
+	fi
+
 	set +e
 	check_for_driver nvme
 	driver_loaded=$?
@@ -300,8 +333,18 @@ function reset_linux_pci {
 			echo "Skipping un-whitelisted NVMe controller $blkname ($bdf)"
 			continue
 		fi
+
 		if [ $driver_loaded -ne 0 ]; then
-			linux_bind_driver "$bdf" nvme
+			if [ -n "$target_nvme_bdf" ]; then
+				for target in $target_nvme_bdf; do
+					if [ "$target" = "$bdf" ]; then
+						#echo "config target :" $bdf
+						linux_bind_driver "$bdf" "$driver_name"
+					fi
+				done
+			else
+				linux_bind_driver "$bdf" "$driver_name"
+			fi
 		else
 			linux_unbind_driver "$bdf"
 		fi
@@ -358,7 +401,8 @@ function reset_linux_pci {
 }
 
 function reset_linux {
-	reset_linux_pci
+	target_nvme_bdf="$1"
+	reset_linux_pci "$target_nvme_bdf"
 	for mount in $(linux_hugetlbfs_mounts); do
 		rm -f "$mount"/spdk*map_*
 	done
@@ -477,7 +521,15 @@ function reset_freebsd {
 	kldunload nic_uio.ko || true
 }
 
-mode=$1
+username=$1
+mode=$2
+target_nvme_bdf="$3"
+
+if [ "$username" = "reset" -o "$username" = "config" -o "$username" = "status" -o "$username" = "help" ]; then
+	target_nvme_bdf="$mode"
+	mode="$username"
+	username=""
+fi
 
 if [ -z "$mode" ]; then
 	mode="config"
@@ -509,9 +561,9 @@ if [ `uname` = Linux ]; then
 	: ${NRHUGE=$(( (HUGEMEM + HUGEPGSZ_MB - 1) / HUGEPGSZ_MB ))}
 
 	if [ "$mode" == "config" ]; then
-		configure_linux
+		configure_linux "$target_nvme_bdf"
 	elif [ "$mode" == "reset" ]; then
-		reset_linux
+		reset_linux "$target_nvme_bdf"
 	elif [ "$mode" == "status" ]; then
 		status_linux
 	elif [ "$mode" == "help" ]; then

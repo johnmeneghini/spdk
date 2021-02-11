@@ -512,7 +512,7 @@ nvme_ctrlr_shutdown(struct spdk_nvme_ctrlr *ctrlr)
 	 */
 	SPDK_DEBUGLOG(SPDK_LOG_NVME, "RTD3E = %" PRIu32 " us\n", ctrlr->cdata.rtd3e);
 	shutdown_timeout_ms = (ctrlr->cdata.rtd3e + 999) / 1000;
-	shutdown_timeout_ms = spdk_max(shutdown_timeout_ms, 10000);
+	shutdown_timeout_ms = spdk_max(shutdown_timeout_ms, 30000);
 	SPDK_DEBUGLOG(SPDK_LOG_NVME, "shutdown timeout = %" PRIu32 " ms\n", shutdown_timeout_ms);
 
 	do {
@@ -1254,6 +1254,7 @@ nvme_ctrlr_configure_aer(struct spdk_nvme_ctrlr *ctrlr)
 
 	/* aerl is a zero-based value, so we need to add 1 here. */
 	ctrlr->num_aers = spdk_min(NVME_MAX_ASYNC_EVENTS, (ctrlr->cdata.aerl + 1));
+	//SPDK_NOTICELOG("number_of_aers=%d\n",ctrlr->num_aers);
 
 	for (i = 0; i < ctrlr->num_aers; i++) {
 		aer = &ctrlr->aer[i];

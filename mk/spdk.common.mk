@@ -68,7 +68,7 @@ endif
 
 TARGET_MACHINE := $(firstword $(TARGET_TRIPLET_WORDS))
 
-COMMON_CFLAGS = -g $(C_OPT) -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -Wmissing-declarations -fno-strict-aliasing -I$(SPDK_ROOT_DIR)/include
+COMMON_CFLAGS = -g $(C_OPT) -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -Wmissing-declarations -Wno-address-of-packed-member -fno-strict-aliasing -I$(SPDK_ROOT_DIR)/include
 
 ifneq ($(filter powerpc%,$(TARGET_MACHINE)),)
 COMMON_CFLAGS += -mcpu=native
@@ -79,8 +79,16 @@ endif
 
 COMMON_CFLAGS += -include $(SPDK_ROOT_DIR)/config.h
 
+# mountain : add KV_DD/include and SPDK/include/spdk
+KV_DIR = $(SPDK_ROOT_DIR)/../../../include/
+COMMON_CFLAGS += -I$(KV_DIR)
+
 ifeq ($(CONFIG_WERROR), y)
 COMMON_CFLAGS += -Werror
+endif
+
+ifeq ($(CC),clang)
+CFLAGS += -Wshorten-64-to-32
 endif
 
 ifeq ($(CONFIG_LTO),y)
