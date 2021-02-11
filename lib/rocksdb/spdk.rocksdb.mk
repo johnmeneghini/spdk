@@ -54,8 +54,8 @@ CXXFLAGS += -fno-sanitize=address
 endif
 
 SPDK_LIB_LIST = event_bdev event_copy
-SPDK_LIB_LIST += blobfs bdev copy event util conf trace \
-		log jsonrpc json rpc
+SPDK_LIB_LIST += blobfs blob blob_bdev bdev copy event conf trace \
+		log rpc jsonrpc json util
 
 AM_LINK += $(COPY_MODULES_LINKER_ARGS) $(BLOCKDEV_MODULES_LINKER_ARGS)
 AM_LINK += $(SPDK_LIB_LINKER_ARGS) $(ENV_LINKER_ARGS)

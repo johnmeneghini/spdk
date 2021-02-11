@@ -180,6 +180,12 @@ spdk_nvme_ns_get_max_io_xfer_size(struct spdk_nvme_ns *ns)
 	return ns->ctrlr->max_xfer_size;
 }
 
+uint16_t
+spdk_nvme_ns_get_max_io_queue_size(struct spdk_nvme_ns *ns)
+{
+	return ns->ctrlr->opts.io_queue_size;
+}
+
 uint32_t
 spdk_nvme_ns_get_sector_size(struct spdk_nvme_ns *ns)
 {

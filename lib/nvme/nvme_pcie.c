@@ -55,9 +55,9 @@
  * NVME_MAX_SGL_DESCRIPTORS defines the maximum number of descriptors in one SGL
  *  segment.
  */
-#define NVME_MAX_SGL_DESCRIPTORS	(253)
+#define NVME_MAX_SGL_DESCRIPTORS	(256)
 
-#define NVME_MAX_PRP_LIST_ENTRIES	(506)
+#define NVME_MAX_PRP_LIST_ENTRIES	(512)
 
 struct nvme_pcie_enum_ctx {
 	spdk_nvme_probe_cb probe_cb;
@@ -126,17 +126,31 @@ struct nvme_tracker {
 
 	uint64_t			prp_sgl_bus_addr;
 
+	struct nvme_tracker_dptr	*dptr;
+
+	uint8_t				reserved[8]; /* padding to make u.prp field page address aligned */
+	/*
+
+		union {
+			uint64_t			prp[NVME_MAX_PRP_LIST_ENTRIES];
+			struct spdk_nvme_sgl_descriptor	sgl[NVME_MAX_SGL_DESCRIPTORS];
+		} u;
+	 */
+};
+
+struct nvme_tracker_dptr {
 	union {
 		uint64_t			prp[NVME_MAX_PRP_LIST_ENTRIES];
 		struct spdk_nvme_sgl_descriptor	sgl[NVME_MAX_SGL_DESCRIPTORS];
 	} u;
 };
 /*
- * struct nvme_tracker must be exactly 4K so that the prp[] array does not cross a page boundary
+ * struct nvme_tracker must be exactly 8K so that the prp[] array does not cross a page boundary
  * and so that there is no padding required to meet alignment requirements.
  */
-SPDK_STATIC_ASSERT(sizeof(struct nvme_tracker) == 4096, "nvme_tracker is not 4K");
-SPDK_STATIC_ASSERT((offsetof(struct nvme_tracker, u.sgl) & 7) == 0, "SGL must be Qword aligned");
+SPDK_STATIC_ASSERT(sizeof(struct nvme_tracker) == 64, "nvme_tracker is not 64B");
+SPDK_STATIC_ASSERT((offsetof(struct nvme_tracker_dptr, u.sgl) & 7) == 0,
+		   "SGL must be Qword aligned");
 
 /* PCIe transport extensions for spdk_nvme_qpair */
 struct nvme_pcie_qpair {
@@ -166,6 +180,7 @@ struct nvme_pcie_qpair {
 
 	TAILQ_HEAD(, nvme_tracker) free_tr;
 	TAILQ_HEAD(nvme_outstanding_tr_head, nvme_tracker) outstanding_tr;
+	pthread_spinlock_t tr_lock;
 
 	/* Array of trackers indexed by command ID. */
 	struct nvme_tracker *tr;
@@ -203,6 +218,7 @@ static int nvme_pcie_ctrlr_attach(spdk_nvme_probe_cb probe_cb, void *cb_ctx,
 				  struct spdk_pci_addr *pci_addr);
 static int nvme_pcie_qpair_construct(struct spdk_nvme_qpair *qpair);
 static int nvme_pcie_qpair_destroy(struct spdk_nvme_qpair *qpair);
+static void spdk_dump_nvme_cmd(const struct spdk_nvme_cmd *cmd);
 
 __thread struct nvme_pcie_ctrlr *g_thread_mmio_ctrlr = NULL;
 static volatile uint16_t g_signal_lock;
@@ -920,7 +936,8 @@ nvme_pcie_ctrlr_destruct(struct spdk_nvme_ctrlr *ctrlr)
 static void
 nvme_qpair_construct_tracker(struct nvme_tracker *tr, uint16_t cid, uint64_t phys_addr)
 {
-	tr->prp_sgl_bus_addr = phys_addr + offsetof(struct nvme_tracker, u.prp);
+	//tr->prp_sgl_bus_addr = phys_addr + offsetof(struct nvme_tracker, u.prp);
+	tr->prp_sgl_bus_addr = phys_addr;
 	tr->cid = cid;
 	tr->active = false;
 }
@@ -968,13 +985,18 @@ nvme_pcie_qpair_construct(struct spdk_nvme_qpair *qpair)
 	 * and calculate how many trackers can be submitted at once without overflowing the
 	 * completion queue.
 	 */
-	pqpair->max_completions_cap = pqpair->num_entries / 4;
-	pqpair->max_completions_cap = spdk_max(pqpair->max_completions_cap, NVME_MIN_COMPLETIONS);
-	pqpair->max_completions_cap = spdk_min(pqpair->max_completions_cap, NVME_MAX_COMPLETIONS);
-	num_trackers = pqpair->num_entries - pqpair->max_completions_cap;
+	pqpair->max_completions_cap = pqpair->num_entries - 1;
+	//pqpair->max_completions_cap = spdk_max(pqpair->max_completions_cap, NVME_MIN_COMPLETIONS);
+	//pqpair->max_completions_cap = spdk_min(pqpair->max_completions_cap, NVME_MAX_COMPLETIONS);
+	//num_trackers = pqpair->num_entries - pqpair->max_completions_cap;
+	if (qpair->id == 0) {
+		num_trackers = NVME_ADMIN_ENTRIES;
+	} else {
+		num_trackers = pqpair->num_entries - 1;
+	}
 
-	SPDK_INFOLOG(SPDK_LOG_NVME, "max_completions_cap = %" PRIu16 " num_trackers = %" PRIu16 "\n",
-		     pqpair->max_completions_cap, num_trackers);
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "max_completions_cap = %" PRIu16 " num_trackers = %" PRIu16 "\n",
+		      pqpair->max_completions_cap, num_trackers);
 
 	assert(num_trackers != 0);
 
@@ -1017,20 +1039,31 @@ nvme_pcie_qpair_construct(struct spdk_nvme_qpair *qpair)
 	 *   This ensures the PRP list embedded in the nvme_tracker object will not span a
 	 *   4KB boundary, while allowing access to trackers in tr[] via normal array indexing.
 	 */
-	pqpair->tr = spdk_dma_zmalloc(num_trackers * sizeof(*tr), sizeof(*tr), &phys_addr);
+	pqpair->tr = spdk_dma_zmalloc(num_trackers * sizeof(*tr), sizeof(*tr), NULL);
 	if (pqpair->tr == NULL) {
 		SPDK_ERRLOG("nvme_tr failed\n");
 		return -ENOMEM;
 	}
 
+	uint32_t total_prp_buffer_size = spdk_align32pow2(num_trackers * sizeof(struct nvme_tracker_dptr));
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "q[%d] prp_buffer_size=%d\n", pqpair->qpair.id, total_prp_buffer_size);
+	struct nvme_tracker_dptr *tr_dptr = spdk_dma_zmalloc(total_prp_buffer_size, total_prp_buffer_size,
+					    &phys_addr);
+	if (tr_dptr == NULL) {
+		SPDK_ERRLOG("tr_dptr failed\n");
+		return -ENOMEM;
+	}
+
+	pthread_spin_init(&pqpair->tr_lock, 0);
 	TAILQ_INIT(&pqpair->free_tr);
 	TAILQ_INIT(&pqpair->outstanding_tr);
 
 	for (i = 0; i < num_trackers; i++) {
+		pqpair->tr[i].dptr = tr_dptr + i;
 		tr = &pqpair->tr[i];
 		nvme_qpair_construct_tracker(tr, i, phys_addr);
 		TAILQ_INSERT_HEAD(&pqpair->free_tr, tr, tq_list);
-		phys_addr += sizeof(struct nvme_tracker);
+		phys_addr += sizeof(struct nvme_tracker_dptr);
 	}
 
 	nvme_pcie_qpair_reset(qpair);
@@ -1188,6 +1221,12 @@ nvme_pcie_qpair_submit_tracker(struct spdk_nvme_qpair *qpair, struct nvme_tracke
 	/* Copy the command from the tracker to the submission queue. */
 	nvme_pcie_copy_command(&pqpair->cmd[pqpair->sq_tail], &req->cmd);
 
+	/*
+	struct timeval tp;
+	gettimeofday(&tp,NULL);
+	SPDK_ERRLOG("[%s] [%lds.%ldus] submitted qpair->id=%d cid=%d\n",__FUNCTION__, tp.tv_sec, tp.tv_usec, qpair->id, pqpair->cmd[pqpair->sq_tail].cid);
+	 */
+
 	if (++pqpair->sq_tail == pqpair->num_entries) {
 		pqpair->sq_tail = 0;
 	}
@@ -1225,8 +1264,11 @@ nvme_pcie_qpair_complete_tracker(struct spdk_nvme_qpair *qpair, struct nvme_trac
 		req->retries < spdk_nvme_retry_count;
 
 	if (error && print_on_error) {
-		nvme_qpair_print_command(qpair, &req->cmd);
-		nvme_qpair_print_completion(qpair, cpl);
+		if (spdk_likely(cpl->status.sct != KV_NVME_SCT_ERROR &&
+				cpl->status.sc != KV_NVME_SC_NOT_EXIST_KEY)) {
+			nvme_qpair_print_command(qpair, &req->cmd);
+			nvme_qpair_print_completion(qpair, cpl);
+		}
 	}
 
 	was_active = pqpair->tr[cpl->cid].active;
@@ -1236,6 +1278,7 @@ nvme_pcie_qpair_complete_tracker(struct spdk_nvme_qpair *qpair, struct nvme_trac
 
 	if (retry) {
 		req->retries++;
+		SPDK_DEBUGLOG(SPDK_LOG_NVME, "retry cmd(opc:%d)\n", req->cmd.opc);
 		nvme_pcie_qpair_submit_tracker(qpair, tr);
 	} else {
 		if (was_active) {
@@ -1256,20 +1299,31 @@ nvme_pcie_qpair_complete_tracker(struct spdk_nvme_qpair *qpair, struct nvme_trac
 
 		tr->req = NULL;
 
+		pthread_spin_lock(&pqpair->tr_lock);
 		TAILQ_REMOVE(&pqpair->outstanding_tr, tr, tq_list);
 		TAILQ_INSERT_HEAD(&pqpair->free_tr, tr, tq_list);
+		pthread_spin_unlock(&pqpair->tr_lock);
+
+		/*
+		struct timeval tp;
+		gettimeofday(&tp,NULL);
+		SPDK_ERRLOG("[%s] [%lds.%ldus] completed qpair->id=%d tr->cid=%d\n",__FUNCTION__, tp.tv_sec, tp.tv_usec, qpair->id, tr->cid);
+		 */
+
 
 		/*
 		 * If the controller is in the middle of resetting, don't
 		 *  try to submit queued requests here - let the reset logic
 		 *  handle that instead.
 		 */
-		if (!STAILQ_EMPTY(&qpair->queued_req) &&
-		    !qpair->ctrlr->is_resetting) {
-			req = STAILQ_FIRST(&qpair->queued_req);
-			STAILQ_REMOVE_HEAD(&qpair->queued_req, stailq);
-			nvme_qpair_submit_request(qpair, req);
-		}
+		/*
+				if (!STAILQ_EMPTY(&qpair->queued_req) &&
+				    !qpair->ctrlr->is_resetting) {
+					req = STAILQ_FIRST(&qpair->queued_req);
+					STAILQ_REMOVE_HEAD(&qpair->queued_req, stailq);
+					nvme_qpair_submit_request(qpair, req);
+				}
+		 */
 	}
 }
 
@@ -1342,6 +1396,11 @@ nvme_pcie_qpair_destroy(struct spdk_nvme_qpair *qpair)
 	if (pqpair->cpl) {
 		spdk_dma_free(pqpair->cpl);
 	}
+
+	if (pqpair->tr[0].dptr) {
+		spdk_dma_free(pqpair->tr[0].dptr);
+	}
+
 	if (pqpair->tr) {
 		spdk_dma_free(pqpair->tr);
 	}
@@ -1716,7 +1775,7 @@ nvme_pcie_prp_list_append(struct nvme_tracker *tr, uint32_t *prp_index, void *vi
 		 * prp_index 0 is stored in prp1, and the rest are stored in the prp[] array,
 		 * so prp_index == count is valid.
 		 */
-		if (spdk_unlikely(i > SPDK_COUNTOF(tr->u.prp))) {
+		if (spdk_unlikely(i > SPDK_COUNTOF(tr->dptr->u.prp))) {
 			SPDK_ERRLOG("out of PRP entries\n");
 			return -EINVAL;
 		}
@@ -1738,7 +1797,7 @@ nvme_pcie_prp_list_append(struct nvme_tracker *tr, uint32_t *prp_index, void *vi
 			}
 
 			SPDK_DEBUGLOG(SPDK_LOG_NVME, "prp[%u] = %p\n", i - 1, (void *)phys_addr);
-			tr->u.prp[i - 1] = phys_addr;
+			tr->dptr->u.prp[i - 1] = phys_addr;
 			seg_len = page_size;
 		}
 
@@ -1752,11 +1811,11 @@ nvme_pcie_prp_list_append(struct nvme_tracker *tr, uint32_t *prp_index, void *vi
 	if (i <= 1) {
 		cmd->dptr.prp.prp2 = 0;
 	} else if (i == 2) {
-		cmd->dptr.prp.prp2 = tr->u.prp[0];
+		cmd->dptr.prp.prp2 = tr->dptr->u.prp[0];
 		SPDK_DEBUGLOG(SPDK_LOG_NVME, "prp2 = %p\n", (void *)cmd->dptr.prp.prp2);
 	} else {
 		cmd->dptr.prp.prp2 = tr->prp_sgl_bus_addr;
-		SPDK_DEBUGLOG(SPDK_LOG_NVME, "prp2 = %p (PRP list)\n", (void *)cmd->dptr.prp.prp2);
+		SPDK_DEBUGLOG(SPDK_LOG_NVME, "prp2 = %p (PRP list) nr_entry=%d\n", (void *)cmd->dptr.prp.prp2, i);
 	}
 
 	*prp_index = i;
@@ -1783,6 +1842,122 @@ nvme_pcie_qpair_build_contig_request(struct spdk_nvme_qpair *qpair, struct nvme_
 	return 0;
 }
 
+
+/**
+ * check if the IO command being issued is KV command
+ */
+
+static bool
+check_if_kv_cmd(uint8_t opcode)
+{
+	switch (opcode) {
+	case SPDK_NVME_OPC_KV_STORE:
+	case SPDK_NVME_OPC_KV_RETRIEVE:
+	case SPDK_NVME_OPC_KV_DELETE:
+	case SPDK_NVME_OPC_KV_ITERATE_REQUEST:
+	case SPDK_NVME_OPC_KV_ITERATE_READ:
+	case SPDK_NVME_OPC_KV_APPEND:
+	case SPDK_NVME_OPC_KV_EXIST:
+		return true;
+	}
+	return false;
+}
+
+/**
+ * Build PRP list describing physically contiguous payload buffer.
+ * Hacks for Samsung KV commands.
+ *    Since original SPDK code only handles payload and metadata,
+ *    PRP list will always be assigned to mptr/dptr.
+ *    In case of Samsung KV commands, we use metadata/payload in different ways as below.
+ *    Here, we need to assign PRP to the right fields.
+ *                         metadata         payload
+ *   Store/Retrieve        key              value
+ *   Delete                key              N/A
+ *   Exist                 result list      key array
+ *   Iterate               N/A              key list
+ */
+static int
+nvme_pcie_qpair_build_contig_request_kv(struct spdk_nvme_qpair *qpair, struct nvme_request *req,
+					struct nvme_tracker *tr)
+{
+	uint64_t phys_addr = (uint64_t)0;
+	void *seg_addr;
+	uint32_t nseg = 1, cur_nseg, modulo, unaligned = 0;
+	void *md_payload;
+	void *payload = req->payload.u.contig + req->payload_offset;
+	uint64_t mptr;          /* metadata pointer */
+
+
+	if (payload) {
+#ifdef SPDK_CONFIG_KVNVME
+		assert(tr->req->cmd.opc != SPDK_NVME_OPC_KV_DELETE);
+#endif
+		phys_addr = spdk_vtophys(payload);
+		if (phys_addr == SPDK_VTOPHYS_ERROR) {
+			nvme_pcie_fail_request_bad_vtophys(qpair, tr);
+			return -1;
+		}
+		nseg = req->payload_size >> spdk_u32log2(PAGE_SIZE);
+		modulo = req->payload_size & (PAGE_SIZE - 1);
+		unaligned = phys_addr & (PAGE_SIZE - 1);
+		if (modulo || unaligned) {
+			nseg += 1 + ((modulo + unaligned - 1) >> spdk_u32log2(PAGE_SIZE));
+		}
+	}
+	if (req->payload.md) {
+		md_payload = req->payload.md + req->md_offset;
+		mptr = spdk_vtophys(md_payload);
+		if (mptr == SPDK_VTOPHYS_ERROR) {
+			nvme_pcie_fail_request_bad_vtophys(qpair, tr);
+			return -1;
+		}
+
+#ifdef SPDK_CONFIG_KVNVME
+		if (tr->req->cmd.opc == SPDK_NVME_OPC_KV_STORE ||
+		    tr->req->cmd.opc == SPDK_NVME_OPC_KV_RETRIEVE ||
+		    tr->req->cmd.opc == SPDK_NVME_OPC_KV_DELETE ||
+		    tr->req->cmd.opc == SPDK_NVME_OPC_KV_ITERATE_READ) {
+			*(uint64_t *)(&tr->req->cmd.cdw10) = mptr;
+		} else {
+			tr->req->cmd.mptr = mptr;
+		}
+#else
+		tr->req->cmd.mptr = mptr;
+#endif
+	}
+
+	tr->req->cmd.psdt = SPDK_NVME_PSDT_PRP;
+	tr->req->cmd.dptr.prp.prp1 = phys_addr;
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "value_prp1 vaddr=%16p paddr=%016lx\n", payload,
+		      tr->req->cmd.dptr.prp.prp1);
+	if (nseg == 2) {
+		seg_addr = payload + PAGE_SIZE - unaligned;
+		tr->req->cmd.dptr.prp.prp2 = spdk_vtophys(seg_addr);
+		SPDK_DEBUGLOG(SPDK_LOG_NVME, "value_prp2 vaddr=%16p paddr=%016lx\n\n", seg_addr,
+			      tr->req->cmd.dptr.prp.prp2);
+	} else if (nseg > 2) {
+		cur_nseg = 1;
+		tr->req->cmd.dptr.prp.prp2 = (uint64_t)tr->prp_sgl_bus_addr;
+		while (cur_nseg < nseg) {
+			seg_addr = payload + cur_nseg * PAGE_SIZE - unaligned;
+			phys_addr = spdk_vtophys(seg_addr);
+			if (phys_addr == SPDK_VTOPHYS_ERROR) {
+				nvme_pcie_fail_request_bad_vtophys(qpair, tr);
+				return -1;
+			}
+			tr->dptr->u.prp[cur_nseg - 1] = phys_addr;
+			SPDK_DEBUGLOG(SPDK_LOG_NVME, "value_prp2[%d]=%016lx\n", cur_nseg - 1, phys_addr);
+			cur_nseg++;
+		}
+		SPDK_DEBUGLOG(SPDK_LOG_NVME, "value_prp2 = %016lx (PRP list) nr_entry=%d\n\n",
+			      tr->req->cmd.dptr.prp.prp2, cur_nseg - 1);
+	}
+
+	return 0;
+
+}
+
+
 /**
  * Build SGL list describing scattered payload buffer.
  */
@@ -1806,7 +1981,7 @@ nvme_pcie_qpair_build_hw_sgl_request(struct spdk_nvme_qpair *qpair, struct nvme_
 	assert(req->payload.u.sgl.next_sge_fn != NULL);
 	req->payload.u.sgl.reset_sgl_fn(req->payload.u.sgl.cb_arg, req->payload_offset);
 
-	sgl = tr->u.sgl;
+	sgl = tr->dptr->u.sgl;
 	req->cmd.psdt = SPDK_NVME_PSDT_SGL_MPTR_CONTIG;
 	req->cmd.dptr.sgl1.unkeyed.subtype = 0;
 
@@ -1850,8 +2025,8 @@ nvme_pcie_qpair_build_hw_sgl_request(struct spdk_nvme_qpair *qpair, struct nvme_
 		 *  SGL element into SGL1.
 		 */
 		req->cmd.dptr.sgl1.unkeyed.type = SPDK_NVME_SGL_TYPE_DATA_BLOCK;
-		req->cmd.dptr.sgl1.address = tr->u.sgl[0].address;
-		req->cmd.dptr.sgl1.unkeyed.length = tr->u.sgl[0].unkeyed.length;
+		req->cmd.dptr.sgl1.address = tr->dptr->u.sgl[0].address;
+		req->cmd.dptr.sgl1.unkeyed.length = tr->dptr->u.sgl[0].unkeyed.length;
 	} else {
 		/* For now we can only support 1 SGL segment in NVMe controller */
 		req->cmd.dptr.sgl1.unkeyed.type = SPDK_NVME_SGL_TYPE_LAST_SEGMENT;
@@ -1941,6 +2116,7 @@ nvme_pcie_qpair_submit_request(struct spdk_nvme_qpair *qpair, struct nvme_reques
 		nvme_robust_mutex_lock(&ctrlr->ctrlr_lock);
 	}
 
+	pthread_spin_lock(&pqpair->tr_lock);
 	tr = TAILQ_FIRST(&pqpair->free_tr);
 
 	if (tr == NULL || !pqpair->is_enabled) {
@@ -1953,12 +2129,17 @@ nvme_pcie_qpair_submit_request(struct spdk_nvme_qpair *qpair, struct nvme_reques
 		 *  completion or when the controller reset is
 		 *  completed.
 		 */
-		STAILQ_INSERT_TAIL(&qpair->queued_req, req, stailq);
+		/*
+				STAILQ_INSERT_TAIL(&qpair->queued_req, req, stailq);
+		 */
+		rc = -ENOMEM;
+		pthread_spin_unlock(&pqpair->tr_lock);
 		goto exit;
 	}
 
 	TAILQ_REMOVE(&pqpair->free_tr, tr, tq_list); /* remove tr from free_tr */
 	TAILQ_INSERT_TAIL(&pqpair->outstanding_tr, tr, tq_list);
+	pthread_spin_unlock(&pqpair->tr_lock);
 	tr->req = req;
 	req->cmd.cid = tr->cid;
 
@@ -1976,7 +2157,11 @@ nvme_pcie_qpair_submit_request(struct spdk_nvme_qpair *qpair, struct nvme_reques
 		/* Null payload - leave PRP fields zeroed */
 		rc = 0;
 	} else if (req->payload.type == NVME_PAYLOAD_TYPE_CONTIG) {
-		rc = nvme_pcie_qpair_build_contig_request(qpair, req, tr);
+		if (spdk_unlikely(check_if_kv_cmd(tr->req->cmd.opc))) {
+			rc = nvme_pcie_qpair_build_contig_request_kv(qpair, req, tr);
+		} else {
+			rc = nvme_pcie_qpair_build_contig_request(qpair, req, tr);
+		}
 	} else if (req->payload.type == NVME_PAYLOAD_TYPE_SGL) {
 		if (ctrlr->flags & SPDK_NVME_CTRLR_SGL_SUPPORTED) {
 			rc = nvme_pcie_qpair_build_hw_sgl_request(qpair, req, tr);
@@ -1992,6 +2177,12 @@ nvme_pcie_qpair_submit_request(struct spdk_nvme_qpair *qpair, struct nvme_reques
 	if (rc < 0) {
 		goto exit;
 	}
+
+	/*
+	if(spdk_unlikely(check_if_kv_cmd(tr->req->cmd.opc))){
+		spdk_dump_nvme_cmd(&tr->req->cmd);
+	}
+	 */
 
 	nvme_pcie_qpair_submit_tracker(qpair, tr);
 
@@ -2140,4 +2331,56 @@ nvme_pcie_qpair_process_completions(struct spdk_nvme_qpair *qpair, uint32_t max_
 	}
 
 	return num_completions;
+}
+
+static void spdk_dump_nvme_cmd(const struct spdk_nvme_cmd *cmd)
+{
+	if (!cmd) {
+		return;
+	}
+
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "Dump nvme command:\n");
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tDWORD0\n");
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\t\topc : 0x%04x\n", cmd->opc);
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\t\tfuse : 0x%04x\n", cmd->fuse);
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\t\trsvd1 : 0x%04x\n", cmd->rsvd1);
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\t\tpsdt : 0x%04x\n", cmd->psdt);
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\t\tcid : 0x%04x\n", cmd->cid);
+
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tDWORD1");
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tnsid : 0x%08x\n", cmd->nsid);
+
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tDWORD2");
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\trsvd2 : 0x%08x\n", cmd->rsvd2);
+
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tDWORD3");
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\trsvd3 : 0x%08x\n", cmd->rsvd3);
+
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tDWORD4-5");
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tmptr : 0x%016llx\n", (long long unsigned int)cmd->mptr);
+
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tDWORD6-9\n");
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\t\tprp1 : 0x%016llx\n", (long long unsigned int)cmd->dptr.prp.prp1);
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\t\tprp2 : 0x%016llx\n", (long long unsigned int)cmd->dptr.prp.prp2);
+
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tDWORD10");
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tcdw10 : 0x%08x\n", cmd->cdw10);
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tDWORD11");
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tcdw11 : 0x%08x\n", cmd->cdw11);
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tDWORD12");
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tcdw12 : 0x%08x\n", cmd->cdw12);
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tDWORD13");
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tcdw13 : 0x%08x\n", cmd->cdw13);
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tDWORD14");
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tcdw14 : 0x%08x\n", cmd->cdw14);
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tDWORD15");
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tcdw15 : 0x%08x\n", cmd->cdw15);
+
+	char buf[32];
+	memset(buf, 0, sizeof(buf));
+	memcpy(buf, (char *)&cmd->cdw12, 4);
+	memcpy(buf + 4, (char *)&cmd->cdw13, 4);
+	memcpy(buf + 8, (char *)&cmd->cdw14, 4);
+	memcpy(buf + 12, (char *)&cmd->cdw15, 4);
+	SPDK_DEBUGLOG(SPDK_LOG_NVME, "DWORD12-15: %s\n", buf);
 }

@@ -79,6 +79,10 @@ endif
 
 COMMON_CFLAGS += -include $(SPDK_ROOT_DIR)/config.h
 
+# mountain : add KV_DD/include and SPDK/include/spdk
+KV_DIR = $(SPDK_ROOT_DIR)/../../../include/
+COMMON_CFLAGS += -I$(KV_DIR)
+
 ifeq ($(CONFIG_WERROR), y)
 COMMON_CFLAGS += -Werror
 endif

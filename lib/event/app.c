@@ -437,9 +437,11 @@ spdk_app_start(struct spdk_app_opts *opts, spdk_event_fn start_fn,
 	spdk_log_set_level(SPDK_APP_DEFAULT_LOG_LEVEL);
 	spdk_log_open();
 
+#if 0
 	if (spdk_app_setup_env(opts) < 0) {
 		goto app_start_log_close_err;
 	}
+#endif
 
 	SPDK_NOTICELOG("Total cores available: %d\n", spdk_env_get_core_count());
 

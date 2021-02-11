@@ -85,6 +85,8 @@ extern "C" {
 #include <sys/un.h>
 #include <sys/user.h>
 #include <sys/wait.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
 
 #ifdef __cplusplus
 }
