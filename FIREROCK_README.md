@@ -1,4 +1,4 @@
-# NetApp Firerock Development Branch 
+# NetApp Firerock Development Branch
 
 This is the main NetApp SPDK development branch for Firerock.
 
@@ -9,15 +9,14 @@ This is the main NetApp SPDK development branch for Firerock.
 
 Contact: johnm@netapp.com for more information.
 
-# KV-Store Repository Setup 
+# KV-Store Repository Setup
 
 The new Bitbucket KV-STORE project is located at: https://bitbucket.eng.netapp.com/projects/KV-STORE-BB
 
-Use the new setup-kv-store.sh setup script to set up a local working repository: `/x/eng/site/smokejumper/spdk/autotest/setup-kv-store.sh`
+Use the new setup-kv-store.sh setup script to set up a local working repository: `/x/eng/site/smokejumper/spdk/autotest/setup-kv-store.sh
 
 To create a working copy of this repository use command:
 
 ```
-    setup-kv-store.sh spdk 
+    setup-kv-store.sh spdk
 ```
-
