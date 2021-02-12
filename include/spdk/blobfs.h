@@ -368,13 +368,13 @@ bool spdk_file_get_retain_cache(struct spdk_file *file);
 /*
  *  set/get readahead size (default = 256*2 KB)
  */
-void spdk_file_set_prefetch_size(struct spdk_file *file, int size);
+void spdk_file_set_prefetch_size(struct spdk_file *file, uint32_t size);
 int spdk_file_get_prefetch_size(struct spdk_file *file);
 
 /*
  * set/get readahead threshold (default = 128 KB)
  */
-void spdk_file_set_prefetch_threshold(struct spdk_file *file, int size);
+void spdk_file_set_prefetch_threshold(struct spdk_file *file, uint32_t size);
 int spdk_file_get_prefetch_threshold(struct spdk_file *file);
 
 /*

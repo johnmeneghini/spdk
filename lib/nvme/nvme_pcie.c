@@ -218,7 +218,6 @@ static int nvme_pcie_ctrlr_attach(spdk_nvme_probe_cb probe_cb, void *cb_ctx,
 				  struct spdk_pci_addr *pci_addr);
 static int nvme_pcie_qpair_construct(struct spdk_nvme_qpair *qpair);
 static int nvme_pcie_qpair_destroy(struct spdk_nvme_qpair *qpair);
-static void spdk_dump_nvme_cmd(const struct spdk_nvme_cmd *cmd);
 
 __thread struct nvme_pcie_ctrlr *g_thread_mmio_ctrlr = NULL;
 static volatile uint16_t g_signal_lock;
@@ -2331,56 +2330,4 @@ nvme_pcie_qpair_process_completions(struct spdk_nvme_qpair *qpair, uint32_t max_
 	}
 
 	return num_completions;
-}
-
-static void spdk_dump_nvme_cmd(const struct spdk_nvme_cmd *cmd)
-{
-	if (!cmd) {
-		return;
-	}
-
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "Dump nvme command:\n");
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tDWORD0\n");
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\t\topc : 0x%04x\n", cmd->opc);
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\t\tfuse : 0x%04x\n", cmd->fuse);
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\t\trsvd1 : 0x%04x\n", cmd->rsvd1);
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\t\tpsdt : 0x%04x\n", cmd->psdt);
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\t\tcid : 0x%04x\n", cmd->cid);
-
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tDWORD1");
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tnsid : 0x%08x\n", cmd->nsid);
-
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tDWORD2");
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\trsvd2 : 0x%08x\n", cmd->rsvd2);
-
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tDWORD3");
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\trsvd3 : 0x%08x\n", cmd->rsvd3);
-
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tDWORD4-5");
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tmptr : 0x%016llx\n", (long long unsigned int)cmd->mptr);
-
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tDWORD6-9\n");
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\t\tprp1 : 0x%016llx\n", (long long unsigned int)cmd->dptr.prp.prp1);
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\t\tprp2 : 0x%016llx\n", (long long unsigned int)cmd->dptr.prp.prp2);
-
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tDWORD10");
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tcdw10 : 0x%08x\n", cmd->cdw10);
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tDWORD11");
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tcdw11 : 0x%08x\n", cmd->cdw11);
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tDWORD12");
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tcdw12 : 0x%08x\n", cmd->cdw12);
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tDWORD13");
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tcdw13 : 0x%08x\n", cmd->cdw13);
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tDWORD14");
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tcdw14 : 0x%08x\n", cmd->cdw14);
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tDWORD15");
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "\tcdw15 : 0x%08x\n", cmd->cdw15);
-
-	char buf[32];
-	memset(buf, 0, sizeof(buf));
-	memcpy(buf, (char *)&cmd->cdw12, 4);
-	memcpy(buf + 4, (char *)&cmd->cdw13, 4);
-	memcpy(buf + 8, (char *)&cmd->cdw14, 4);
-	memcpy(buf + 12, (char *)&cmd->cdw15, 4);
-	SPDK_DEBUGLOG(SPDK_LOG_NVME, "DWORD12-15: %s\n", buf);
 }

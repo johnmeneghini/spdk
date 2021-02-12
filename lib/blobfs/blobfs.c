@@ -1458,7 +1458,7 @@ spdk_file_get_direct_io(struct spdk_file *file)
 }
 
 void
-spdk_file_set_prefetch_size(struct spdk_file *file, int size)
+spdk_file_set_prefetch_size(struct spdk_file *file, uint32_t size)
 {
 	if (file) {
 		file->prefetch_size = spdk_max(file->prefetch_size, size);
@@ -1480,7 +1480,7 @@ spdk_file_get_prefetch_size(struct spdk_file *file)
 }
 
 void
-spdk_file_set_prefetch_threshold(struct spdk_file *file, int size)
+spdk_file_set_prefetch_threshold(struct spdk_file *file, uint32_t size)
 {
 	if (file) {
 		file->prefetch_threshold = spdk_max(size, MIN_READAHEAD_THRESHOLD);
@@ -2429,7 +2429,7 @@ spdk_file_read(struct spdk_file *file, struct spdk_io_channel *_channel,
 	file->next_seq_offset = offset + length;
 	if ((file->direct_io & BLOBFS_DIRECT_READ) == 0 &&
 	    file->seq_byte_count >= file->prefetch_threshold) {
-		for (int i = 0; i < file->prefetch_size; i += CACHE_BUFFER_SIZE) {
+		for (uint32_t i = 0; i < file->prefetch_size; i += CACHE_BUFFER_SIZE) {
 			check_readahead(file, offset + i, channel);
 		}
 	}

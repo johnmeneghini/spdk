@@ -333,6 +333,7 @@ spdk_app_read_config_file_global_params(struct spdk_app_opts *opts)
 	}
 }
 
+/*
 static int
 spdk_app_setup_env(struct spdk_app_opts *opts)
 {
@@ -357,6 +358,7 @@ spdk_app_setup_env(struct spdk_app_opts *opts)
 
 	return rc;
 }
+ */
 
 static int
 spdk_app_setup_trace(struct spdk_app_opts *opts)

@@ -290,7 +290,7 @@ spdk_build_eal_cmdline(const struct spdk_env_opts *opts)
 int spdk_env_init(const struct spdk_env_opts *opts)
 {
 	char **dpdk_args = NULL;
-	int i, rc;
+	int rc;
 	int orig_optind;
 
 	rc = spdk_build_eal_cmdline(opts);
