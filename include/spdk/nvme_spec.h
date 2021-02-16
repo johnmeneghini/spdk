@@ -720,6 +720,12 @@ enum spdk_nvme_nvm_opcode {
 
 	SPDK_NVME_OPC_RESERVATION_ACQUIRE		= 0x11,
 	SPDK_NVME_OPC_RESERVATION_RELEASE		= 0x15,
+	/* Key Value Command Set Commands */
+	SPDK_NVME_OPC_KV_STORE				= 0x01,
+	SPDK_NVME_OPC_KV_RETRIEVE			= 0x02,
+	SPDK_NVME_OPC_KV_DELETE				= 0x10,
+	SPDK_NVME_OPC_KV_EXIST				= 0x14,
+	SPDK_NVME_OPC_KV_LIST				= 0x06,
 };
 
 /**
@@ -769,6 +775,7 @@ enum spdk_nvme_feat {
 	SPDK_NVME_FEAT_KEEP_ALIVE_TIMER				= 0x0F,
 	SPDK_NVME_FEAT_HOST_CONTROLLED_THERMAL_MANAGEMENT	= 0x10,
 	SPDK_NVME_FEAT_NON_OPERATIONAL_POWER_STATE_CONFIG	= 0x11,
+	SPDK_NVME_FEAT_KEY_VALUE_CONFIG				= 0x20,
 
 	SPDK_NVME_FEAT_SOFTWARE_PROGRESS_MARKER			= 0x80,
 	/* 0x81-0xBF - command set specific */
@@ -1342,7 +1349,10 @@ struct spdk_nvme_ns_data {
 	} nsfeat;
 
 	/** number of lba formats */
-	uint8_t			nlbaf;
+	union {
+		uint8_t			nlbaf;
+		uint8_t			nkvf; /* Number of KV Formats */
+	};
 
 	/** formatted lba size */
 	struct {
@@ -1495,23 +1505,44 @@ struct spdk_nvme_ns_data {
 	/** IEEE extended unique identifier */
 	uint64_t		eui64;
 
-	/** lba format support */
-	struct {
-		/** metadata size */
-		uint32_t	ms	  : 16;
+	union {
+		/** lba format support */
+		struct {
+			/** metadata size */
+			uint32_t	ms	  : 16;
 
-		/** lba data size */
-		uint32_t	lbads	  : 8;
+			/** lba data size */
+			uint32_t	lbads	  : 8;
 
-		/** relative performance */
-		uint32_t	rp	  : 2;
+			/** relative performance */
+			uint32_t	rp	  : 2;
 
-		uint32_t	reserved6 : 6;
-	} lbaf[16];
+			uint32_t	reserved6 : 6;
+		} lbaf[16];
+		struct {
+			/** Maximum length of a KV key */
+			uint16_t kv_max_key_len;
 
-	uint8_t			reserved6[192];
+			uint8_t kv_resv0;
 
-	uint8_t			vendor_specific[3712];
+			/** Additional format options */
+			uint8_t kv_resv1: 6;
+			/** Relative Performance */
+			uint8_t kv_rp: 2;
+
+			/** Maximum length in bytes of a KV value in a key value pair */
+			uint32_t kv_max_value;
+
+			/** Maximum number of KV keys allowed in the namespace */
+			uint32_t kv_max_num_keys;
+
+			uint32_t kv_resv2;
+		} kvf[16];
+	};
+
+	uint8_t			reserved6[3512];
+
+	uint8_t			vendor_specific[256];
 };
 SPDK_STATIC_ASSERT(sizeof(struct spdk_nvme_ns_data) == 4096, "Incorrect size");
 
