@@ -200,5 +200,13 @@
 	spdk_opal_get_locking_range_info;
 	spdk_opal_free_locking_range_info;
 
+	# public functions from nvme_kv.h
+	spdk_nvme_kv_ns_get_data;
+	spdk_nvme_kv_cmd_store;
+	spdk_nvme_kv_cmd_retrieve;
+	spdk_nvme_kv_cmd_delete;
+	spdk_nvme_kv_cmd_exist;
+
+
 	local: *;
 };
