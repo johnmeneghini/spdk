@@ -52,6 +52,7 @@
 #include "spdk/util.h"
 #include "spdk/memory.h"
 #include "spdk/nvme_intel.h"
+#include "spdk/nvme_kv.h"
 #include "spdk/nvmf_spec.h"
 #include "spdk/uuid.h"
 
@@ -805,6 +806,11 @@ struct spdk_nvme_ctrlr {
 	 * Array of pointers to Zoned Namespace Command Set Specific Identify Namespace data.
 	 */
 	struct spdk_nvme_zns_ns_data	**nsdata_zns;
+
+	/**
+	 * Array of pointers to Zoned Namespace Command Set Specific Identify Namespace data.
+	 */
+	struct spdk_nvme_kv_ns_data	**nsdata_kv;
 
 	struct spdk_bit_array		*free_io_qids;
 	TAILQ_HEAD(, spdk_nvme_qpair)	active_io_qpairs;
