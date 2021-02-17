@@ -438,8 +438,8 @@ function gen_nvmf_target_json() {
 			  }
 			},
 		        $(
-		IFS=","
-		printf '%s\n' "${config[*]}"
+			IFS=","
+			printf '%s\n' "${config[*]}"
 		)
 		      ]
 		    }
