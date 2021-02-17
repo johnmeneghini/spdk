@@ -49,6 +49,7 @@
 #include "spdk/pci_ids.h"
 #include "spdk/util.h"
 #include "spdk/nvme_intel.h"
+#include "spdk/nvme_kv.h"
 #include "spdk/nvmf_spec.h"
 #include "spdk/uuid.h"
 

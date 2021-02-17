@@ -463,8 +463,8 @@ struct spdk_nvme_cmd {
 	uint32_t nsid;		/* namespace identifier */
 
 	/* dword 2-3 */
-	uint32_t rsvd2;
-	uint32_t rsvd3;
+	uint32_t kvkey0;	/* KV KEY [bytes 3:0] */
+	uint32_t kvkey1;	/* KV KEY [bytes 7:4] */
 
 	/* dword 4-5 */
 	uint64_t mptr;		/* metadata pointer */
@@ -484,8 +484,8 @@ struct spdk_nvme_cmd {
 	uint32_t cdw11;		/* command-specific */
 	uint32_t cdw12;		/* command-specific */
 	uint32_t cdw13;		/* command-specific */
-	uint32_t cdw14;		/* command-specific */
-	uint32_t cdw15;		/* command-specific */
+	uint32_t kvkey2;	/* KV KEY [bytes 11:8] */
+	uint32_t kvkey3;	/* KV KEY [bytes 15:12] */
 };
 SPDK_STATIC_ASSERT(sizeof(struct spdk_nvme_cmd) == 64, "Incorrect size");
 
@@ -598,6 +598,12 @@ enum spdk_nvme_generic_command_status_code {
 	SPDK_NVME_SC_NAMESPACE_NOT_READY		= 0x82,
 	SPDK_NVME_SC_RESERVATION_CONFLICT               = 0x83,
 	SPDK_NVME_SC_FORMAT_IN_PROGRESS                 = 0x84,
+
+	SPDK_NVME_SC_KV_INVALID_VALUE_SIZE              = 0x85,
+	SPDK_NVME_SC_KV_INVALID_KEY_SIZE                = 0x86,
+	SPDK_NVME_SC_KV_KEY_DOES_NOT_EXIST              = 0x87,
+	SPDK_NVME_SC_KV_KEY_EXISTS                      = 0x89,
+
 };
 
 /**
