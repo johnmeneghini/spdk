@@ -106,12 +106,25 @@ nvme_allocate_request(struct spdk_nvme_qpair *qpair,
 {
 	struct nvme_request *req;
 
+	//SPDK_NOTICELOG("qpair addr=%x\n",(void*)qpair);
+	if (!nvme_qpair_is_admin_queue(qpair)) {
+		pthread_spin_lock(&qpair->req_lock);
+	}
+
 	req = STAILQ_FIRST(&qpair->free_req);
+
 	if (req == NULL) {
+		if (!nvme_qpair_is_admin_queue(qpair)) {
+			pthread_spin_unlock(&qpair->req_lock);
+		}
 		return req;
 	}
 
 	STAILQ_REMOVE_HEAD(&qpair->free_req, stailq);
+
+	if (!nvme_qpair_is_admin_queue(qpair)) {
+		pthread_spin_unlock(&qpair->req_lock);
+	}
 
 	/*
 	 * Only memset up to (but not including) the children
@@ -223,7 +236,15 @@ nvme_free_request(struct nvme_request *req)
 	assert(req->num_children == 0);
 	assert(req->qpair != NULL);
 
-	STAILQ_INSERT_HEAD(&req->qpair->free_req, req, stailq);
+	if (!nvme_qpair_is_admin_queue(req->qpair)) {
+		pthread_spin_lock(&req->qpair->req_lock);
+	}
+
+	STAILQ_INSERT_TAIL(&req->qpair->free_req, req, stailq);
+
+	if (!nvme_qpair_is_admin_queue(req->qpair)) {
+		pthread_spin_unlock(&req->qpair->req_lock);
+	}
 }
 
 int

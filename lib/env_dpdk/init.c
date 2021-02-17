@@ -290,7 +290,7 @@ spdk_build_eal_cmdline(const struct spdk_env_opts *opts)
 int spdk_env_init(const struct spdk_env_opts *opts)
 {
 	char **dpdk_args = NULL;
-	int i, rc;
+	int rc;
 	int orig_optind;
 
 	rc = spdk_build_eal_cmdline(opts);
@@ -299,12 +299,14 @@ int spdk_env_init(const struct spdk_env_opts *opts)
 		return -1;
 	}
 
+	/* Disable DPDK version log
 	printf("Starting %s / %s initialization...\n", SPDK_VERSION_STRING, rte_version());
 	printf("[ DPDK EAL parameters: ");
 	for (i = 0; i < eal_cmdline_argcount; i++) {
 		printf("%s ", eal_cmdline[i]);
 	}
 	printf("]\n");
+	 */
 
 	/* DPDK rearranges the array we pass to it, so make a copy
 	 * before passing so we can still free the individual strings
