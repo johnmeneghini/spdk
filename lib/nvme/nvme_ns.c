@@ -150,26 +150,16 @@ nvme_ctrlr_identify_ns(struct spdk_nvme_ns *ns)
 }
 
 static int
-nvme_ctrlr_identify_ns_iocs_specific(struct spdk_nvme_ns *ns)
+nvme_ctrlr_identify_ns_iocs_zns(struct spdk_nvme_ns *ns)
 {
 	struct nvme_completion_poll_status *status;
 	struct spdk_nvme_ctrlr *ctrlr = ns->ctrlr;
 	struct spdk_nvme_zns_ns_data **nsdata_zns;
 	int rc;
 
-	switch (ns->csi) {
-	case SPDK_NVME_CSI_ZNS:
-		break;
-	default:
-		/*
-		 * This switch must handle all cases for which
-		 * nvme_ns_has_supported_iocs_specific_data() returns true,
-		 * other cases should never happen.
-		 */
-		assert(0);
-	}
-
+	assert(SPDK_NVME_CSI_ZNS == ns->csi);
 	assert(ctrlr->nsdata_zns);
+
 	nsdata_zns = &ctrlr->nsdata_zns[ns->id - 1];
 	assert(!*nsdata_zns);
 	*nsdata_zns = spdk_zmalloc(sizeof(**nsdata_zns), 64, NULL, SPDK_ENV_SOCKET_ID_ANY,
@@ -205,6 +195,76 @@ nvme_ctrlr_identify_ns_iocs_specific(struct spdk_nvme_ns *ns)
 	free(status);
 
 	return 0;
+}
+
+static int
+nvme_ctrlr_identify_ns_iocs_kv(struct spdk_nvme_ns *ns)
+{
+	struct nvme_completion_poll_status *status;
+	struct spdk_nvme_ctrlr *ctrlr = ns->ctrlr;
+	struct spdk_nvme_kv_ns_data **nsdata_kv;
+	int rc;
+
+	assert(SPDK_NVME_CSI_KV == ns->csi);
+	assert(ctrlr->nsdata_zns);
+
+	nsdata_kv = &ctrlr->nsdata_kv[ns->id - 1];
+	assert(!*nsdata_kv);
+	*nsdata_kv = spdk_zmalloc(sizeof(**nsdata_kv), 64, NULL, SPDK_ENV_SOCKET_ID_ANY,
+				  SPDK_MALLOC_SHARE | SPDK_MALLOC_DMA);
+	if (!*nsdata_kv) {
+		return -ENOMEM;
+	}
+
+	status = calloc(1, sizeof(*status));
+	if (!status) {
+		SPDK_ERRLOG("Failed to allocate status tracker\n");
+		nvme_ns_free_zns_specific_data(ns);
+		return -ENOMEM;
+	}
+
+	rc = nvme_ctrlr_cmd_identify(ctrlr, SPDK_NVME_IDENTIFY_NS_IOCS, 0, ns->id, ns->csi,
+				     *nsdata_kv, sizeof(**nsdata_kv),
+				     nvme_completion_poll_cb, status);
+	if (rc != 0) {
+		nvme_ns_free_zns_specific_data(ns);
+		free(status);
+		return rc;
+	}
+
+	if (nvme_wait_for_completion_robust_lock(ctrlr->adminq, status, &ctrlr->ctrlr_lock)) {
+		SPDK_ERRLOG("Failed to retrieve Identify IOCS Specific Namespace Data Structure\n");
+		nvme_ns_free_zns_specific_data(ns);
+		if (!status->timed_out) {
+			free(status);
+		}
+		return -ENXIO;
+	}
+	free(status);
+
+	return 0;
+}
+
+static int
+nvme_ctrlr_identify_ns_iocs_specific(struct spdk_nvme_ns *ns)
+{
+	switch (ns->csi) {
+	case SPDK_NVME_CSI_ZNS:
+		return nvme_ctrlr_identify_ns_iocs_zns(ns);
+		break;
+	case SPDK_NVME_CSI_KV:
+		return nvme_ctrlr_identify_ns_iocs_kv(ns);
+		break;
+	default:
+		/*
+		 * This switch must handle all cases for which
+		 * nvme_ns_has_supported_iocs_specific_data() returns true,
+		 * other cases should never happen.
+		 */
+		assert(0);
+	}
+
+	return -ENXIO;
 }
 
 static int

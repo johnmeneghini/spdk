@@ -2455,6 +2455,13 @@ nvme_ctrlr_construct_namespaces(struct spdk_nvme_ctrlr *ctrlr)
 			goto fail;
 		}
 
+		ctrlr->nsdata_kv = spdk_zmalloc(nn * sizeof(struct spdk_nvme_kv_ns_data *), 64,
+						NULL, SPDK_ENV_SOCKET_ID_ANY, SPDK_MALLOC_SHARE);
+		if (ctrlr->nsdata_kv == NULL) {
+			rc = -ENOMEM;
+			goto fail;
+		}
+
 		ctrlr->num_ns = nn;
 	} else {
 		/*
