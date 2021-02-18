@@ -1,7 +1,8 @@
-/*-
+/*
  *   BSD LICENSE
  *
- *   Copyright (c) 2020, Western Digital Corporation. All rights reserved.
+ *   Copyright (c) 2018-2019 NetApp.  All Rights Reserved.
+ *   The term "NetApp" refers to NetApp Inc. and/or its subsidiaries.
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -59,6 +60,7 @@ enum spdk_nvme_kv_command_status_code {
 	SPDK_NVME_SC_KV_INVALID_VALUE_SIZE              = 0x85,
 	SPDK_NVME_SC_KV_INVALID_KEY_SIZE                = 0x86,
 	SPDK_NVME_SC_KV_KEY_DOES_NOT_EXIST              = 0x87,
+	SPDK_NVME_SC_KV_UNRECOVERED_ERROR               = 0x88,
 	SPDK_NVME_SC_KV_KEY_EXISTS                      = 0x89,
 
 };
@@ -79,7 +81,89 @@ enum spdk_nvme_kv_feat {
 	SPDK_NVME_FEAT_KEY_VALUE_CONFIG		= 0x20,
 };
 
+/**
+ * Data used by Set Features/Get Features \ref SPDK_NVME_FEAT_KEY_VALUE_CONFIG
+ */
+union spdk_nvme_feat_key_value_config {
+	uint32_t raw;
+	struct {
+		/** Non-Operational Power State Permissive Mode Enable */
+		uint32_t ednek : 1;
+		uint32_t reserved : 31;
+	} bits;
+};
+
 typedef __uint128_t spdk_nvme_kv_key_t;
+union spdk_nvme_kv_cmd_cdw10 {
+	uint32_t raw;
+	struct {
+		/* Host Buffer Size */
+		uint32_t hbs;
+	} kv_list;
+
+	struct {
+		/* Host Buffer Size */
+		uint32_t hbs;
+	} kv_retrieve;
+
+	struct {
+		/* Value size */
+		uint32_t vs;
+	} kv_store;
+};
+SPDK_STATIC_ASSERT(sizeof(union spdk_nvme_kv_cmd_cdw10) == 4, "Incorrect size");
+
+union spdk_nvme_kv_cmd_cdw11 {
+	uint32_t raw;
+
+	struct {
+		/* Key Length */
+		uint8_t kl;
+		uint8_t reserved[3];
+	} kv_del;
+
+	struct {
+		/* Key Length */
+		uint8_t kl;
+		uint8_t reserved[3];
+	} kv_list;
+
+	struct {
+		/* Key Length */
+		uint8_t kl;
+		struct {
+			/* Return uncompressed data */
+			uint8_t raw_data : 1;
+			uint8_t reserved    : 7;
+		} ro;
+		uint8_t reserved[2];
+	} kv_retrieve;
+
+	struct {
+		/* Key Length */
+		uint8_t kl;
+		uint8_t reserved[3];
+	} kv_exist;
+
+	struct {
+		/* Key Length */
+		uint8_t kl;
+		struct {
+			/** controller shall not store the KV value if the KV key does not exists. */
+			uint8_t overwrite_only : 1;
+
+			/** controller shall not store the KV value if the KV key exists. */
+			uint8_t no_overwrite : 1;
+
+			/** controller shall not compress the KV value. */
+			uint8_t no_compression  : 1;
+
+			uint8_t reserved  : 5;
+		} so;
+		uint8_t reserved[2];
+	} kv_store;
+};
+SPDK_STATIC_ASSERT(sizeof(union spdk_nvme_kv_cmd_cdw11) == 4, "Incorrect size");
 
 struct spdk_nvme_kv_cmd {
 	/* dword 0 */
@@ -109,15 +193,37 @@ struct spdk_nvme_kv_cmd {
 		struct spdk_nvme_sgl_descriptor sgl1;
 	} dptr;
 
-	/* dword 10-15 */
-	uint32_t cdw10;		/* command-specific */
-	uint32_t cdw11;		/* command-specific */
+	/* command-specific */
+	union {
+		uint32_t cdw10;
+		union spdk_nvme_kv_cmd_cdw10 cdw10_bits;
+	};
+	/* command-specific */
+	union {
+		uint32_t cdw11;
+		union spdk_nvme_kv_cmd_cdw11 cdw11_bits;
+	};
+
+	/* dword 12-15 */
 	uint32_t cdw12;		/* command-specific */
 	uint32_t cdw13;		/* command-specific */
 	uint32_t kvkey2;	/* KV KEY [bytes 11:8] */
 	uint32_t kvkey3;	/* KV KEY [bytes 15:12] */
 };
 SPDK_STATIC_ASSERT(sizeof(struct spdk_nvme_kv_cmd) == 64, "Incorrect size");
+
+struct spdk_nvme_kv_ns_format_data {
+	uint16_t     kv_key_max_len;
+	uint8_t      rsvd;
+	struct {
+		/* NS write protect flag */
+		uint8_t rp : 2;
+		uint8_t reserved : 6;
+	} addl_format;
+	uint32_t kv_value_max_len;
+	uint32_t kv_max_num_keys;
+	uint8_t  reserved[4];
+};
 
 struct spdk_nvme_kv_ns_data {
 	/** namespace size */
@@ -215,25 +321,7 @@ struct spdk_nvme_kv_ns_data {
 	uint64_t		eui64;
 
 	/** KV format support */
-	struct {
-		/** Maximum length of a KV key */
-		uint16_t kv_max_key_len;
-
-		uint8_t kv_resv0;
-
-		/** Additional format options */
-		uint8_t kv_resv1: 6;
-		/** Relative Performance */
-		uint8_t kv_rp: 2;
-
-		/** Maximum length in bytes of a KV value in a key value pair */
-		uint32_t kv_max_value;
-
-		/** Maximum number of KV keys allowed in the namespace */
-		uint32_t kv_max_num_keys;
-
-		uint32_t kv_resv2;
-	} kvf[16];
+	struct spdk_nvme_kv_ns_format_data kvf[16];
 
 	uint8_t			reserved6[3512];
 

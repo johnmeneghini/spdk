@@ -2448,6 +2448,23 @@ _nvme_ana_state_to_path_status(enum spdk_nvme_ana_state ana_state)
 }
 
 static int
+nvmf_ctrlr_get_features_key_value_config(struct spdk_nvmf_request *req)
+{
+	union spdk_nvme_feat_key_value_config kv;
+
+	if (req->data == NULL) {
+		req->rsp->nvme_cpl.status.sct = SPDK_NVME_SCT_GENERIC;
+		req->rsp->nvme_cpl.status.sc = SPDK_NVME_SC_INVALID_FIELD;
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+	}
+
+	/* Need to do this on a per NS basis */
+	kv.raw = 0;
+	memcpy(req->data, &kv, sizeof(union spdk_nvme_feat_key_value_config));
+	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+}
+
+static int
 nvmf_ctrlr_get_features(struct spdk_nvmf_request *req)
 {
 	uint8_t feature;
@@ -2504,6 +2521,8 @@ nvmf_ctrlr_get_features(struct spdk_nvmf_request *req)
 		return nvmf_ctrlr_get_features_reservation_notification_mask(req);
 	case SPDK_NVME_FEAT_HOST_RESERVE_PERSIST:
 		return nvmf_ctrlr_get_features_reservation_persistence(req);
+	case SPDK_NVME_FEAT_KEY_VALUE_CONFIG:
+		return nvmf_ctrlr_get_features_key_value_config(req);
 	default:
 		SPDK_ERRLOG("Get Features command with unsupported feature ID 0x%02x\n", feature);
 		response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
@@ -3133,6 +3152,91 @@ nvmf_ctrlr_process_io_fused_cmd(struct spdk_nvmf_request *req, struct spdk_bdev 
 	return rc;
 }
 
+static int
+nvmf_bdev_ctrlr_kv_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
+		       struct spdk_io_channel *ch, struct spdk_nvmf_request *req)
+{
+	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
+	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
+
+	switch (cmd->opc) {
+	case SPDK_NVME_OPC_KV_STORE:
+		rsp->status.sct = SPDK_NVME_SCT_GENERIC;
+		rsp->status.sc = SPDK_NVME_SC_INVALID_OPCODE;
+		break;
+	case SPDK_NVME_OPC_KV_RETRIEVE:
+		rsp->status.sct = SPDK_NVME_SCT_GENERIC;
+		rsp->status.sc = SPDK_NVME_SC_INVALID_OPCODE;
+		break;
+	case SPDK_NVME_OPC_KV_LIST:
+		rsp->status.sct = SPDK_NVME_SCT_GENERIC;
+		rsp->status.sc = SPDK_NVME_SC_INVALID_OPCODE;
+		break;
+	case SPDK_NVME_OPC_KV_DELETE:
+		rsp->status.sct = SPDK_NVME_SCT_GENERIC;
+		rsp->status.sc = SPDK_NVME_SC_INVALID_OPCODE;
+		break;
+	case SPDK_NVME_OPC_KV_EXIST:
+		rsp->status.sct = SPDK_NVME_SCT_GENERIC;
+		rsp->status.sc = SPDK_NVME_SC_INVALID_OPCODE;
+		break;
+	default:
+		rsp->status.sct = SPDK_NVME_SCT_GENERIC;
+		rsp->status.sc = SPDK_NVME_SC_INVALID_OPCODE;
+		break;
+	}
+#if 0
+	uint64_t bdev_num_blocks = spdk_bdev_get_num_blocks(bdev);
+	uint32_t block_size = spdk_bdev_get_block_size(bdev);
+	uint32_t value_size = 0;
+	uint64_t key1 = from_le64(&cmd->cdw14);
+	if (spdk_unlikely(req->num_blocks > bdev_num_blocks)) {
+		SPDK_ERRLOG("value too big\n");
+		rsp->status.sct = SPDK_NVME_SCT_GENERIC;
+		rsp->status.sc = SPDK_NVME_SC_KV_INVALID_VALUE_SIZE;
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+	}
+	if (spdk_unlikely(req->num_blocks &&
+			  !nvmf_bdev_ctrlr_lba_in_range(bdev_num_blocks, req->start_lba, req->num_blocks))) {
+		SPDK_ERRLOG("key not found\n");
+		rsp->status.sct = SPDK_NVME_SCT_GENERIC;
+		rsp->status.sc = SPDK_NVME_SC_KV_KEY_DOES_NOT_EXIST;
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+	}
+	/* XXX: only supporting first 8 byte key value for now */
+	if (spdk_unlikely(key1)) {
+		SPDK_ERRLOG("invalid key\n");
+		rsp->status.sct = SPDK_NVME_SCT_GENERIC;
+		rsp->status.sc = SPDK_NVME_SC_KV_INVALID_KEY_SIZE;
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+	}
+
+	if (spdk_unlikely(req->num_blocks * block_size > req->length)) {
+		SPDK_ERRLOG("Read NLB %" PRIu64 " * block size %" PRIu32 " > SGL length %" PRIu32 "\n",
+			    req->num_blocks, block_size, req->length);
+		rsp->status.sct = SPDK_NVME_SCT_GENERIC;
+		rsp->status.sc = SPDK_NVME_SC_DATA_SGL_LENGTH_INVALID;
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+	}
+	if (cmd->opc == SPDK_NVME_OPC_KV_RETRIEVE) {
+		if (spdk_unlikely(spdk_bdev_read_blocks(desc, ch, req->data, req->start_lba, req->num_blocks,
+							nvmf_bdev_ctrlr_complete_cmd, req))) {
+			rsp->status.sct = SPDK_NVME_SCT_GENERIC;
+			rsp->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
+			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+		}
+	} else if (cmd->opc == SPDK_NVME_OPC_KV_STORE) {
+		if (spdk_unlikely(spdk_bdev_write_blocks(desc, ch, req->data, req->start_lba, req->num_blocks,
+				  nvmf_bdev_ctrlr_complete_cmd, req))) {
+			rsp->status.sct = SPDK_NVME_SCT_GENERIC;
+			rsp->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
+			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+		}
+	}
+#endif
+	return SPDK_NVMF_REQUEST_EXEC_STATUS_ASYNCHRONOUS;
+}
+
 int
 nvmf_ctrlr_process_io_cmd(struct spdk_nvmf_request *req)
 {
@@ -3214,27 +3318,31 @@ nvmf_ctrlr_process_io_cmd(struct spdk_nvmf_request *req)
 		req->qpair->first_fused_req = NULL;
 	}
 
-	switch (cmd->opc) {
-	case SPDK_NVME_OPC_READ:
-		return nvmf_bdev_ctrlr_read_cmd(bdev, desc, ch, req);
-	case SPDK_NVME_OPC_WRITE:
-		return nvmf_bdev_ctrlr_write_cmd(bdev, desc, ch, req);
-	case SPDK_NVME_OPC_COMPARE:
-		return nvmf_bdev_ctrlr_compare_cmd(bdev, desc, ch, req);
-	case SPDK_NVME_OPC_WRITE_ZEROES:
-		return nvmf_bdev_ctrlr_write_zeroes_cmd(bdev, desc, ch, req);
-	case SPDK_NVME_OPC_FLUSH:
-		return nvmf_bdev_ctrlr_flush_cmd(bdev, desc, ch, req);
-	case SPDK_NVME_OPC_DATASET_MANAGEMENT:
-		return nvmf_bdev_ctrlr_dsm_cmd(bdev, desc, ch, req);
-	case SPDK_NVME_OPC_RESERVATION_REGISTER:
-	case SPDK_NVME_OPC_RESERVATION_ACQUIRE:
-	case SPDK_NVME_OPC_RESERVATION_RELEASE:
-	case SPDK_NVME_OPC_RESERVATION_REPORT:
-		spdk_thread_send_msg(ctrlr->subsys->thread, nvmf_ns_reservation_request, req);
-		return SPDK_NVMF_REQUEST_EXEC_STATUS_ASYNCHRONOUS;
-	default:
-		return nvmf_bdev_ctrlr_nvme_passthru_io(bdev, desc, ch, req);
+	if (nvmf_ns_get_csi(ns) == SPDK_NVME_CSI_KV) {
+		return nvmf_bdev_ctrlr_kv_cmd(bdev, desc, ch, req);
+	} else {
+		switch (cmd->opc) {
+		case SPDK_NVME_OPC_READ:
+			return nvmf_bdev_ctrlr_read_cmd(bdev, desc, ch, req);
+		case SPDK_NVME_OPC_WRITE:
+			return nvmf_bdev_ctrlr_write_cmd(bdev, desc, ch, req);
+		case SPDK_NVME_OPC_COMPARE:
+			return nvmf_bdev_ctrlr_compare_cmd(bdev, desc, ch, req);
+		case SPDK_NVME_OPC_WRITE_ZEROES:
+			return nvmf_bdev_ctrlr_write_zeroes_cmd(bdev, desc, ch, req);
+		case SPDK_NVME_OPC_FLUSH:
+			return nvmf_bdev_ctrlr_flush_cmd(bdev, desc, ch, req);
+		case SPDK_NVME_OPC_DATASET_MANAGEMENT:
+			return nvmf_bdev_ctrlr_dsm_cmd(bdev, desc, ch, req);
+		case SPDK_NVME_OPC_RESERVATION_REGISTER:
+		case SPDK_NVME_OPC_RESERVATION_ACQUIRE:
+		case SPDK_NVME_OPC_RESERVATION_RELEASE:
+		case SPDK_NVME_OPC_RESERVATION_REPORT:
+			spdk_thread_send_msg(ctrlr->subsys->thread, nvmf_ns_reservation_request, req);
+			return SPDK_NVMF_REQUEST_EXEC_STATUS_ASYNCHRONOUS;
+		default:
+			return nvmf_bdev_ctrlr_nvme_passthru_io(bdev, desc, ch, req);
+		}
 	}
 }
 
