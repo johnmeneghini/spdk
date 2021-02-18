@@ -1154,7 +1154,7 @@ test_spdk_nvmf_rdma_request_parse_sgl_with_md(void)
 	sgl->address = 0;
 	rdma_req.recv->buf = (void *)&sgl_desc;
 	MOCK_SET(spdk_mempool_get, &data);
-	aligned_buffer = (void *)((uintptr_t)((char *)&data + NVMF_DATA_BUFFER_MASK) &
+	aligned_buffer = (void *)((((uintptr_t)&data) + NVMF_DATA_BUFFER_MASK) &
 				  ~NVMF_DATA_BUFFER_MASK);
 
 	/* part 1: 2 segments each with 1 wr. io_unit_size is aligned with data_bs + md_size */
