@@ -1359,7 +1359,7 @@ function pap() {
 	while read -r file; do
 		cat <<- FILE
 			--- $file ---
-			$(<"$file")
+			$(< "$file")
 			--- $file ---
 		FILE
 		rm -f "$file"

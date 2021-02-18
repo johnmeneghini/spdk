@@ -380,8 +380,8 @@ function gen_nvmf_target_json() {
 		      "subsystem": "bdev",
 		      "config": [
 		        $(
-		IFS=","
-		printf '%s\n' "${config[*]}"
+			IFS=","
+			printf '%s\n' "${config[*]}"
 		)
 		      ]
 		    }
