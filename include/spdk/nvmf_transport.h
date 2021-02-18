@@ -40,6 +40,7 @@
 
 #include "spdk/bdev.h"
 #include "spdk/nvme_spec.h"
+#include "spdk/nvme_kv.h"
 #include "spdk/nvmf.h"
 #include "spdk/nvmf_cmd.h"
 #include "spdk/nvmf_spec.h"
@@ -62,6 +63,7 @@ union nvmf_h2c_msg {
 	struct spdk_nvmf_fabric_prop_set_cmd		prop_set_cmd;
 	struct spdk_nvmf_fabric_prop_get_cmd		prop_get_cmd;
 	struct spdk_nvmf_fabric_connect_cmd		connect_cmd;
+	struct spdk_nvme_kv_cmd				nvme_kv_cmd;
 };
 SPDK_STATIC_ASSERT(sizeof(union nvmf_h2c_msg) == 64, "Incorrect size");
 

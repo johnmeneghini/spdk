@@ -824,7 +824,7 @@ struct spdk_nvme_ctrlr {
 	struct spdk_nvme_zns_ns_data	**nsdata_zns;
 
 	/**
-	 * Array of pointers to Zoned Namespace Command Set Specific Identify Namespace data.
+	 * Array of pointers to Key Value Command Set Specific Identify Namespace data.
 	 */
 	struct spdk_nvme_kv_ns_data	**nsdata_kv;
 

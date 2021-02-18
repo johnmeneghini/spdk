@@ -184,6 +184,8 @@ struct spdk_nvmf_ns {
 	char *ptpl_file;
 	/* Persist Through Power Loss feature is enabled */
 	bool ptpl_activated;
+	/* Command Set Identifier */
+	enum spdk_nvme_csi		csi;
 };
 
 struct spdk_nvmf_ctrlr_feat {
@@ -413,6 +415,18 @@ static inline bool
 nvmf_qpair_is_admin_queue(struct spdk_nvmf_qpair *qpair)
 {
 	return qpair->qid == 0;
+}
+
+/**
+ * Get the Command Set Identifier for the given namespace.
+ *
+ * \param ns Namespace to query.
+ *
+ * \return the namespace Command Set Identifier.
+ */
+static inline enum spdk_nvme_csi
+nvmf_ns_get_csi(const struct spdk_nvmf_ns *ns) {
+	return ns->csi;
 }
 
 #endif /* __NVMF_INTERNAL_H__ */
