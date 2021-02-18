@@ -33,6 +33,12 @@
 #include "spdk/nvme_kv.h"
 #include "nvme_internal.h"
 
+const struct spdk_nvme_kv_ns_data *
+spdk_nvme_kv_ns_get_data(struct spdk_nvme_ns *ns)
+{
+	return ns->ctrlr->nsdata_kv[ns->id - 1];
+}
+
 static inline void _nvme_kv_cmd_set_key(struct spdk_nvme_kv_cmd *cmd, spdk_nvme_kv_key_t key)
 {
 	cmd->kvkey0 = *((uint32_t *)&key + 0);
