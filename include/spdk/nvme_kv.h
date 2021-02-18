@@ -241,6 +241,9 @@ struct spdk_nvme_kv_ns_data {
 };
 SPDK_STATIC_ASSERT(sizeof(struct spdk_nvme_kv_ns_data) == 4096, "Incorrect size");
 
+const struct spdk_nvme_kv_ns_data *
+spdk_nvme_kv_ns_get_data(struct spdk_nvme_ns *ns);
+
 int
 spdk_nvme_kv_cmd_store(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
 		       uint32_t keyspace_id, spdk_nvme_kv_key_t key,
