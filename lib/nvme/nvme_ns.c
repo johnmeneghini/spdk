@@ -321,7 +321,6 @@ spdk_nvme_ns_get_id(struct spdk_nvme_ns *ns)
 bool
 spdk_nvme_ns_is_active(struct spdk_nvme_ns *ns)
 {
-	const struct spdk_nvme_ns_data *nsdata = NULL;
 
 	/*
 	 * According to the spec, valid NS has non-zero id.
@@ -330,14 +329,27 @@ spdk_nvme_ns_is_active(struct spdk_nvme_ns *ns)
 		return false;
 	}
 
-	nsdata = _nvme_ns_get_data(ns);
+	if (ns->csi == SPDK_NVME_CSI_KV) {
+		const struct spdk_nvme_kv_ns_data *nsdata_kv = NULL;
+		nsdata_kv = spdk_nvme_kv_ns_get_data(ns);
 
-	/*
-	 * According to the spec, Identify Namespace will return a zero-filled structure for
-	 *  inactive namespace IDs.
-	 * Check NCAP since it must be nonzero for an active namespace.
-	 */
-	return nsdata->ncap != 0;
+		/*
+		 * According to the spec, Identify Namespace will return a zero-filled structure for
+		 *  inactive namespace IDs.
+		 * Check NSZE since it must be nonzero for an active namespace.
+		 */
+		return nsdata_kv->nsze != 0;
+	} else {
+		const struct spdk_nvme_ns_data *nsdata = NULL;
+		nsdata = _nvme_ns_get_data(ns);
+
+		/*
+		 * According to the spec, Identify Namespace will return a zero-filled structure for
+		 *  inactive namespace IDs.
+		 * Check NCAP since it must be nonzero for an active namespace.
+		 */
+		return nsdata->ncap != 0;
+	}
 }
 
 struct spdk_nvme_ctrlr *
