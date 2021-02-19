@@ -158,7 +158,7 @@ CONFIG_URING=n
 CONFIG_URING_PATH=
 
 # Build with FUSE support
-CONFIG_FUSE=n
+CONFIG_FUSE=y
 
 # Build with RAID5 support
 CONFIG_RAID5=n
