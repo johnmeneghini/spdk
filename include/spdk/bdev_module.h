@@ -391,6 +391,18 @@ struct spdk_bdev {
 	/** function table for all LUN ops */
 	const struct spdk_bdev_fn_table *fn_table;
 
+	/** Total size of the namespace in bytes */
+	uint64_t nsze;
+
+	/** Bytes used in bdev */
+	uint64_t nuse;
+
+	/** Max number of keys available */
+	uint32_t num_keys;
+
+	/** Max value size */
+	uint32_t max_value;
+
 	/** Fields that are used internally by the bdev subsystem.  Bdev modules
 	 *  must not read or write to these fields.
 	 */
@@ -595,6 +607,24 @@ struct spdk_bdev_io {
 			/* The data buffer */
 			void *buf;
 		} zone_mgmt;
+		struct {
+
+			/* Key value */
+			__uint128_t key;
+
+			/* Data buffer */
+			void *buffer;
+
+			/* Data buffer size in bytes */
+			uint32_t buffer_len;
+
+			struct {
+				/** The callback argument for the outstanding request which this abort
+				 *  attempts to cancel.
+				 */
+				void *bio_cb_arg;
+			} abort;
+		} kv;
 	} u;
 
 	/** It may be used by modules to put the bdev_io into its own list. */
