@@ -1005,11 +1005,6 @@ nvmf_prop_set_cc(struct spdk_nvmf_ctrlr *ctrlr, uint32_t value)
 		return false;
 	}
 
-	if (diff.bits.css) {
-		SPDK_ERRLOG("I/O Command Set Selected (CSS) 0x%x not supported!\n", cc.bits.css);
-		return false;
-	}
-
 	if (diff.raw != 0) {
 		/* Print an error message, but don't fail the command in this case.
 		 * If we did want to fail in this case, we'd need to ensure we acted
