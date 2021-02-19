@@ -140,6 +140,11 @@ enum spdk_bdev_io_type {
 	SPDK_BDEV_IO_TYPE_COMPARE,
 	SPDK_BDEV_IO_TYPE_COMPARE_AND_WRITE,
 	SPDK_BDEV_IO_TYPE_ABORT,
+	SPDK_BDEV_IO_TYPE_KV_STORE,
+	SPDK_BDEV_IO_TYPE_KV_RETRIEVE,
+	SPDK_BDEV_IO_TYPE_KV_DELETE,
+	SPDK_BDEV_IO_TYPE_KV_EXIST,
+	SPDK_BDEV_IO_TYPE_KV_LIST,
 	SPDK_BDEV_NUM_IO_TYPES /* Keep last */
 };
 
@@ -1698,6 +1703,22 @@ void spdk_bdev_histogram_get(struct spdk_bdev *bdev, struct spdk_histogram_data 
  */
 size_t spdk_bdev_get_media_events(struct spdk_bdev_desc *bdev_desc,
 				  struct spdk_bdev_media_event *events, size_t max_events);
+
+/**
+ * Get size of a KV device device in bytes.
+ *
+ * \param bdev KV device to query.
+ * \return Size of bdev in bytes.
+ */
+uint64_t spdk_bdev_get_kv_size(const struct spdk_bdev *bdev);
+
+/**
+ * Get number of bytes used by KV device.
+ *
+ * \param bdev Block device to query.
+ * \return Bytes used by bdev.
+ */
+uint64_t spdk_bdev_get_kv_usage(const struct spdk_bdev *bdev);
 
 #ifdef __cplusplus
 }

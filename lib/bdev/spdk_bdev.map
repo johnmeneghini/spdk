@@ -90,6 +90,8 @@
 	spdk_bdev_histogram_enable;
 	spdk_bdev_histogram_get;
 	spdk_bdev_get_media_events;
+	spdk_bdev_get_kv_size;
+	spdk_bdev_get_kv_usage;
 
 	# Public functions in bdev_module.h
 	spdk_bdev_register;
