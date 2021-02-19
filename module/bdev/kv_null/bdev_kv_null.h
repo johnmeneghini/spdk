@@ -45,6 +45,7 @@ struct spdk_uuid;
 struct spdk_kv_null_bdev_opts {
 	const char *name;
 	const struct spdk_uuid *uuid;
+	uint64_t capacity;
 	uint32_t max_num_keys;
 	uint32_t max_value_size;
 };
