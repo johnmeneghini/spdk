@@ -43,6 +43,7 @@
 struct rpc_construct_null {
 	char *name;
 	char *uuid;
+	uint64_t capacity;
 	uint32_t max_num_keys;
 	uint32_t max_value_size;
 };
@@ -57,7 +58,8 @@ free_rpc_construct_null(struct rpc_construct_null *req)
 static const struct spdk_json_object_decoder rpc_construct_null_decoders[] = {
 	{"name", offsetof(struct rpc_construct_null, name), spdk_json_decode_string},
 	{"uuid", offsetof(struct rpc_construct_null, uuid), spdk_json_decode_string, true},
-	{"max_num_keys", offsetof(struct rpc_construct_null, max_num_keys), spdk_json_decode_uint64},
+	{"capacity", offsetof(struct rpc_construct_null, capacity), spdk_json_decode_uint64},
+	{"max_num_keys", offsetof(struct rpc_construct_null, max_num_keys), spdk_json_decode_uint32},
 	{"max_value_size", offsetof(struct rpc_construct_null, max_value_size), spdk_json_decode_uint32},
 };
 
@@ -83,6 +85,12 @@ rpc_bdev_kv_null_create(struct spdk_jsonrpc_request *request,
 	}
 
 
+	if (req.capacity == 0) {
+		spdk_jsonrpc_send_error_response(request, -EINVAL,
+						 "Capacity must be greater than 0");
+		goto cleanup;
+	}
+
 	if (req.max_num_keys == 0) {
 		spdk_jsonrpc_send_error_response(request, -EINVAL,
 						 "Number of keys must be greater than 0");
@@ -106,6 +114,7 @@ rpc_bdev_kv_null_create(struct spdk_jsonrpc_request *request,
 
 	opts.name = req.name;
 	opts.uuid = uuid;
+	opts.capacity = req.capacity;
 	opts.max_num_keys = req.max_num_keys;
 	opts.max_value_size = req.max_value_size;
 	rc = bdev_kv_null_create(&bdev, &opts);
@@ -124,7 +133,7 @@ cleanup:
 	free_rpc_construct_null(&req);
 }
 SPDK_RPC_REGISTER("bdev_kv_null_create", rpc_bdev_kv_null_create, SPDK_RPC_RUNTIME)
-SPDK_RPC_REGISTER_ALIAS_DEPRECATED(bdev_kv_null_create, construct_null_bdev)
+SPDK_RPC_REGISTER_ALIAS_DEPRECATED(bdev_kv_null_create, construct_kv_null_bdev)
 
 struct rpc_delete_kv_null {
 	char *name;
