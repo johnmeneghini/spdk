@@ -968,7 +968,7 @@ print_namespace(struct spdk_nvme_ctrlr *ctrlr, struct spdk_nvme_ns *ns)
 		get_zns_zone_report(ns, qpair);
 		print_zns_zone_report();
 		spdk_nvme_ctrlr_free_io_qpair(qpair);
-	} else if(spdk_nvme_ns_get_csi(ns) == SPDK_NVME_CSI_KV) {
+	} else if (spdk_nvme_ns_get_csi(ns) == SPDK_NVME_CSI_KV) {
 		print_kv_ns_data(nsdata_kv);
 	}
 }
@@ -1196,6 +1196,8 @@ print_controller(struct spdk_nvme_ctrlr *ctrlr, const struct spdk_nvme_transport
 	printf("Command Sets Supported\n");
 	printf("  NVM Command Set:                     %s\n",
 	       cap.bits.css & SPDK_NVME_CAP_CSS_NVM ? "Supported" : "Not Supported");
+	printf("  IOCS Command Set:                    %s\n",
+	       cap.bits.css & SPDK_NVME_CAP_CSS_IOCS ? "Supported" : "Not Supported");
 	printf("Boot Partition:                        %s\n",
 	       cap.bits.bps ? "Supported" : "Not Supported");
 	printf("Memory Page Size Minimum:              %" PRIu64 " bytes\n",
