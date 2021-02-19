@@ -276,6 +276,7 @@ def bdev_null_delete(client, name):
     params = {'name': name}
     return client.call('bdev_null_delete', params)
 
+
 @deprecated_alias('construct_kv_null_bdev')
 def bdev_kv_null_create(client, capacity, num_keys, name, uuid=None, max_value=65536):
     """Construct a KV null block device.
