@@ -390,7 +390,7 @@ nvmf_ctrlr_create(struct spdk_nvmf_subsystem *subsystem,
 	ctrlr->vcprop.cap.bits.ams = 0; /* optional arb mechanisms */
 	ctrlr->vcprop.cap.bits.to = 1; /* ready timeout - 500 msec units */
 	ctrlr->vcprop.cap.bits.dstrd = 0; /* fixed to 0 for NVMe-oF */
-	ctrlr->vcprop.cap.bits.css = SPDK_NVME_CAP_CSS_NVM; /* NVM command set */
+	ctrlr->vcprop.cap.bits.css = SPDK_NVME_CAP_CSS_IOCS; /* IO command set support */
 	ctrlr->vcprop.cap.bits.mpsmin = 0; /* 2 ^ (12 + mpsmin) == 4k */
 	ctrlr->vcprop.cap.bits.mpsmax = 0; /* 2 ^ (12 + mpsmax) == 4k */
 
@@ -2019,6 +2019,50 @@ spdk_nvmf_ctrlr_identify_ns(struct spdk_nvmf_ctrlr *ctrlr,
 	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 }
 
+static int
+nvmf_ctrlr_identify_ns_kv(struct spdk_nvmf_ctrlr *ctrlr,
+			  struct spdk_nvme_cmd *cmd,
+			  struct spdk_nvme_cpl *rsp,
+			  struct spdk_nvme_kv_ns_data *nsdata)
+{
+	struct spdk_nvmf_subsystem *subsystem = ctrlr->subsys;
+	struct spdk_nvmf_ns *ns;
+
+	if (cmd->nsid == 0 || cmd->nsid > subsystem->max_nsid) {
+		SPDK_ERRLOG("Identify Namespace for invalid NSID %u\n", cmd->nsid);
+		rsp->status.sct = SPDK_NVME_SCT_GENERIC;
+		rsp->status.sc = SPDK_NVME_SC_INVALID_NAMESPACE_OR_FORMAT;
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+	}
+
+	ns = _nvmf_subsystem_get_ns(subsystem, cmd->nsid);
+	if (ns == NULL || ns->bdev == NULL) {
+		/*
+		 * Inactive namespaces should return a zero filled data structure.
+		 * The data buffer is already zeroed by nvmf_ctrlr_process_admin_cmd(),
+		 * so we can just return early here.
+		 */
+		SPDK_DEBUGLOG(nvmf, "Identify Namespace for inactive NSID %u\n", cmd->nsid);
+		rsp->status.sct = SPDK_NVME_SCT_GENERIC;
+		rsp->status.sc = SPDK_NVME_SC_SUCCESS;
+		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+	}
+
+	nvmf_bdev_ctrlr_identify_ns_kv(ns, nsdata);
+
+	if (subsystem->flags.ana_reporting) {
+		/* ANA group ID matches NSID. */
+		nsdata->anagrpid = ns->nsid;
+
+		if (ctrlr->listener->ana_state == SPDK_NVME_ANA_INACCESSIBLE_STATE ||
+		    ctrlr->listener->ana_state == SPDK_NVME_ANA_PERSISTENT_LOSS_STATE) {
+			nsdata->nuse = 0;
+		}
+	}
+
+	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+}
+
 static void
 nvmf_ctrlr_populate_oacs(struct spdk_nvmf_ctrlr *ctrlr,
 			 struct spdk_nvme_ctrlr_data *cdata)
@@ -2165,6 +2209,9 @@ nvmf_ctrlr_identify_active_ns_list(struct spdk_nvmf_subsystem *subsystem,
 		if (ns->opts.nsid <= cmd->nsid) {
 			continue;
 		}
+		if (cmd->opc == SPDK_NVME_IDENTIFY_ACTIVE_NS_LIST_IOCS && cmd->cdw11_bits.identify.csi != ns->csi) {
+			continue;
+		}
 
 		ns_list->ns_list[count++] = ns->opts.nsid;
 		if (count == SPDK_COUNTOF(ns_list->ns_list)) {
@@ -2270,11 +2317,21 @@ nvmf_ctrlr_identify(struct spdk_nvmf_request *req)
 	case SPDK_NVME_IDENTIFY_NS:
 		return spdk_nvmf_ctrlr_identify_ns(ctrlr, cmd, rsp, req->data);
 	case SPDK_NVME_IDENTIFY_CTRLR:
+	case SPDK_NVME_IDENTIFY_CTRLR_IOCS:
 		return spdk_nvmf_ctrlr_identify_ctrlr(ctrlr, req->data);
 	case SPDK_NVME_IDENTIFY_ACTIVE_NS_LIST:
+	case SPDK_NVME_IDENTIFY_ACTIVE_NS_LIST_IOCS:
 		return nvmf_ctrlr_identify_active_ns_list(subsystem, cmd, rsp, req->data);
 	case SPDK_NVME_IDENTIFY_NS_ID_DESCRIPTOR_LIST:
 		return nvmf_ctrlr_identify_ns_id_descriptor_list(subsystem, cmd, rsp, req->data, req->length);
+	case SPDK_NVME_IDENTIFY_NS_IOCS:
+		if (cmd->cdw11_bits.identify.csi == SPDK_NVME_CSI_KV) {
+			return nvmf_ctrlr_identify_ns_kv(ctrlr, cmd, rsp, req->data);
+		} else if (cmd->cdw11_bits.identify.csi == SPDK_NVME_CSI_NVM) {
+			return spdk_nvmf_ctrlr_identify_ns(ctrlr, cmd, rsp, req->data);
+		} else {
+			goto invalid_cns;
+		}
 	default:
 		goto invalid_cns;
 	}

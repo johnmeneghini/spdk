@@ -223,6 +223,8 @@ struct spdk_trace_histories *g_trace_histories;
 struct spdk_bdev {
 	int ut_mock;
 	uint64_t blockcnt;
+	uint64_t nsze;
+	uint64_t nuse;
 };
 
 int
@@ -325,6 +327,17 @@ nvmf_bdev_ctrlr_identify_ns(struct spdk_nvmf_ns *ns, struct spdk_nvme_ns_data *n
 	nsdata->nlbaf = 0;
 	nsdata->flbas.format = 0;
 	nsdata->lbaf[0].lbads = spdk_u32log2(512);
+}
+
+void
+nvmf_bdev_ctrlr_identify_ns_kv(struct spdk_nvmf_ns *ns, struct spdk_nvme_kv_ns_data *nsdata)
+{
+	SPDK_CU_ASSERT_FATAL(ns->bdev != NULL);
+
+	nsdata->nsze = ns->bdev->nsze;
+	nsdata->nuse = ns->bdev->nuse;
+	nsdata->nkvf = 0;
+
 }
 
 const char *

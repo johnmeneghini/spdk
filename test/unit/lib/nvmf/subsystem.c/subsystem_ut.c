@@ -64,6 +64,9 @@ DEFINE_STUB(spdk_nvmf_transport_stop_listen,
 	    (struct spdk_nvmf_transport *transport,
 	     const struct spdk_nvme_transport_id *trid), 0);
 
+DEFINE_STUB(spdk_bdev_io_type_supported, bool,
+	    (struct spdk_bdev *bdev, enum spdk_bdev_io_type io_type), false);
+
 int
 spdk_nvmf_transport_listen(struct spdk_nvmf_transport *transport,
 			   const struct spdk_nvme_transport_id *trid)
