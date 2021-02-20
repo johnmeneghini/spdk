@@ -376,15 +376,24 @@ function check_python_style() {
 
 function check_bash_style() {
 	local rc=0
+	local shfmt="shfmt-3.1.0"
+	local shfmt_version=3.1.0
 
 	# find compatible shfmt binary
-	shfmt_bins=$(compgen -c | grep '^shfmt' || true)
-	for bin in $shfmt_bins; do
-		if version_lt "$("$bin" --version)" "3.1.0"; then
-			shfmt=$bin
-			break
-		fi
-	done
+	#shfmt_bins=$(compgen -c | grep '^shfmt' || true)
+	#for bin in $shfmt_bins; do
+	#	if version_lt "$("$bin" --version)" "3.1.0"; then
+	#		shfmt=$bin
+	#		break
+	#	fi
+	#done
+
+	if hash "$shfmt" && [[ $("$shfmt" --version) == "v$shfmt_version" ]]; then
+		echo "shfmt installed"
+	else
+		echo "shfmt not detected, Bash style formatting check is skipped"
+		return 0
+	fi
 
 	if [ -n "$shfmt" ]; then
 		shfmt_cmdline=() silly_plural=()
@@ -453,7 +462,6 @@ function check_bash_style() {
 	else
 		echo "shfmt not detected, Bash style formatting check is skipped"
 	fi
-
 	return $rc
 }
 
