@@ -1434,6 +1434,10 @@ spdk_nvmf_subsystem_add_ns_ext(struct spdk_nvmf_subsystem *subsystem, const char
 		opts.uuid = *spdk_bdev_get_uuid(ns->bdev);
 	}
 
+	if (spdk_bdev_io_type_supported(ns->bdev, SPDK_BDEV_IO_TYPE_KV_STORE)) {
+		ns->csi = SPDK_NVME_CSI_KV;
+	}
+
 	ns->opts = opts;
 	ns->subsystem = subsystem;
 	subsystem->ns[opts.nsid - 1] = ns;
