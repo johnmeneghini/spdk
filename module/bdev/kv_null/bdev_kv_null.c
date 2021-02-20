@@ -176,8 +176,7 @@ bdev_kv_null_write_config_json(struct spdk_bdev *bdev, struct spdk_json_write_ct
 
 	spdk_json_write_named_object_begin(w, "params");
 	spdk_json_write_named_string(w, "name", bdev->name);
-	spdk_json_write_named_uint64(w, "num_keys", bdev->num_keys);
-	spdk_json_write_named_uint32(w, "value_size", bdev->max_value);
+	spdk_json_write_named_uint64(w, "capacity", bdev->blockcnt);
 	spdk_uuid_fmt_lower(uuid_str, sizeof(uuid_str), &bdev->uuid);
 	spdk_json_write_named_string(w, "uuid", uuid_str);
 	spdk_json_write_object_end(w);
@@ -209,16 +208,6 @@ bdev_kv_null_create(struct spdk_bdev **bdev, const struct spdk_kv_null_bdev_opts
 		return -EINVAL;
 	}
 
-	if (opts->max_num_keys == 0) {
-		SPDK_ERRLOG("Device must be capable of storing more than 0 keys\n");
-		return -EINVAL;
-	}
-
-	if (opts->max_value_size == 0) {
-		SPDK_ERRLOG("Max value size must be greater than 0\n");
-		return -EINVAL;
-	}
-
 	kv_null_disk = calloc(1, sizeof(*kv_null_disk));
 	if (!kv_null_disk) {
 		SPDK_ERRLOG("could not allocate kv_null_bdev\n");
@@ -235,8 +224,6 @@ bdev_kv_null_create(struct spdk_bdev **bdev, const struct spdk_kv_null_bdev_opts
 	kv_null_disk->bdev.write_cache = 0;
 	kv_null_disk->bdev.blocklen = 1;
 	kv_null_disk->bdev.blockcnt = opts->capacity;
-	kv_null_disk->bdev.num_keys = opts->max_num_keys;
-	kv_null_disk->bdev.max_value = opts->max_value_size;
 	if (opts->uuid) {
 		kv_null_disk->bdev.uuid = *opts->uuid;
 	} else {
