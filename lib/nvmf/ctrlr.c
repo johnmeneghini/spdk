@@ -2255,6 +2255,7 @@ nvmf_ctrlr_identify_ns_id_descriptor_list(
 	struct spdk_nvmf_ns *ns;
 	size_t buf_remain = id_desc_list_size;
 	void *buf_ptr = id_desc_list;
+	uint8_t csi;
 
 	ns = _nvmf_subsystem_get_ns(subsystem, cmd->nsid);
 	if (ns == NULL || ns->bdev == NULL) {
@@ -2262,6 +2263,7 @@ nvmf_ctrlr_identify_ns_id_descriptor_list(
 		rsp->status.sc = SPDK_NVME_SC_INVALID_NAMESPACE_OR_FORMAT;
 		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 	}
+	csi = ns->csi;
 
 #define ADD_ID_DESC(type, data, size) \
 	do { \
@@ -2273,6 +2275,7 @@ nvmf_ctrlr_identify_ns_id_descriptor_list(
 	ADD_ID_DESC(SPDK_NVME_NIDT_EUI64, ns->opts.eui64, sizeof(ns->opts.eui64));
 	ADD_ID_DESC(SPDK_NVME_NIDT_NGUID, ns->opts.nguid, sizeof(ns->opts.nguid));
 	ADD_ID_DESC(SPDK_NVME_NIDT_UUID, &ns->opts.uuid, sizeof(ns->opts.uuid));
+	ADD_ID_DESC(SPDK_NVME_NIDT_CSI, &csi, sizeof(csi));
 
 	/*
 	 * The list is automatically 0-terminated because controller to host buffers in
