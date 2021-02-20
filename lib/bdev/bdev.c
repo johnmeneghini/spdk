@@ -3002,18 +3002,6 @@ spdk_bdev_get_num_blocks(const struct spdk_bdev *bdev)
 	return bdev->blockcnt;
 }
 
-uint64_t
-spdk_bdev_get_kv_size(const struct spdk_bdev *bdev)
-{
-	return bdev->nsze;
-}
-
-uint64_t
-spdk_bdev_get_kv_usage(const struct spdk_bdev *bdev)
-{
-	return bdev->nuse;
-}
-
 const char *
 spdk_bdev_get_qos_rpc_type(enum spdk_bdev_qos_rate_limit_type type)
 {

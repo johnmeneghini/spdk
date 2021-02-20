@@ -376,12 +376,6 @@ struct spdk_bdev {
 	/** function table for all LUN ops */
 	const struct spdk_bdev_fn_table *fn_table;
 
-	/** Total size of the namespace in bytes */
-	uint64_t nsze;
-
-	/** Bytes used in bdev */
-	uint64_t nuse;
-
 	/** Max number of keys available */
 	uint32_t num_keys;
 

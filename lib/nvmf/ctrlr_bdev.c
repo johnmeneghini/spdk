@@ -206,8 +206,8 @@ nvmf_bdev_ctrlr_identify_ns_kv(struct spdk_nvmf_ns *ns, struct spdk_nvme_kv_ns_d
 {
 	struct spdk_bdev *bdev = ns->bdev;
 
-	nsdata->nsze = spdk_bdev_get_kv_size(bdev);
-	nsdata->nuse = spdk_bdev_get_kv_usage(bdev);
+	nsdata->nsze = spdk_bdev_get_num_blocks(bdev);
+	nsdata->nuse = spdk_bdev_get_num_blocks(bdev);
 	nsdata->nkvf = 0;
 	nsdata->nmic.can_share = 1;
 	if (ns->ptpl_file != NULL) {
