@@ -363,6 +363,9 @@ struct spdk_bdev {
 	 */
 	uint32_t optimal_open_zones;
 
+	/** Max value size */
+	uint32_t max_value;
+
 	/**
 	 * Specifies whether bdev supports media management events.
 	 */
@@ -375,12 +378,6 @@ struct spdk_bdev {
 
 	/** function table for all LUN ops */
 	const struct spdk_bdev_fn_table *fn_table;
-
-	/** Max number of keys available */
-	uint32_t num_keys;
-
-	/** Max value size */
-	uint32_t max_value;
 
 	/** Fields that are used internally by the bdev subsystem.  Bdev modules
 	 *  must not read or write to these fields.
