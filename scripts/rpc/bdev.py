@@ -291,6 +291,35 @@ def bdev_null_resize(client, name, new_size):
     return client.call('bdev_null_resize', params)
 
 
+@deprecated_alias('construct_kv_null_bdev')
+def bdev_kv_null_create(client, capacity, name, uuid=None):
+    """Construct a KV null block device.
+
+    Args:
+        capacity: size of device in bytes
+        name: name of block device
+        uuid: UUID of block device (optional)
+
+    Returns:
+        Name of created KV device.
+    """
+    params = {'name': name, 'capacity': capacity}
+    if uuid:
+        params['uuid'] = uuid
+    return client.call('bdev_kv_null_create', params)
+
+
+@deprecated_alias('delete_kv_null_bdev')
+def bdev_kv_null_delete(client, name):
+    """Remove KV null bdev from the system.
+
+    Args:
+        name: name of null bdev to delete
+    """
+    params = {'name': name}
+    return client.call('bdev_kv_null_delete', params)
+
+
 @deprecated_alias('get_raid_bdevs')
 def bdev_raid_get_bdevs(client, category):
     """Get list of raid bdevs based on category

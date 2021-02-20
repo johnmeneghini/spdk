@@ -201,6 +201,33 @@ nvmf_bdev_ctrlr_identify_ns(struct spdk_nvmf_ns *ns, struct spdk_nvme_ns_data *n
 	memcpy(&nsdata->eui64, ns->opts.eui64, sizeof(nsdata->eui64));
 }
 
+void
+nvmf_bdev_ctrlr_identify_ns_kv(struct spdk_nvmf_ns *ns, struct spdk_nvme_kv_ns_data *nsdata)
+{
+	struct spdk_bdev *bdev = ns->bdev;
+
+	nsdata->nsze = spdk_bdev_get_num_blocks(bdev);
+	nsdata->nuse = spdk_bdev_get_num_blocks(bdev);
+	nsdata->nkvf = 0;
+	nsdata->nmic.can_share = 1;
+	if (ns->ptpl_file != NULL) {
+		nsdata->nsrescap.rescap.persist = 1;
+	}
+	nsdata->nsrescap.rescap.write_exclusive = 1;
+	nsdata->nsrescap.rescap.exclusive_access = 1;
+	nsdata->nsrescap.rescap.write_exclusive_reg_only = 1;
+	nsdata->nsrescap.rescap.exclusive_access_reg_only = 1;
+	nsdata->nsrescap.rescap.write_exclusive_all_reg = 1;
+	nsdata->nsrescap.rescap.exclusive_access_all_reg = 1;
+	nsdata->nsrescap.rescap.ignore_existing_key = 1;
+
+	SPDK_STATIC_ASSERT(sizeof(nsdata->nguid) == sizeof(ns->opts.nguid), "size mismatch");
+	memcpy(nsdata->nguid, ns->opts.nguid, sizeof(nsdata->nguid));
+
+	SPDK_STATIC_ASSERT(sizeof(nsdata->eui64) == sizeof(ns->opts.eui64), "size mismatch");
+	memcpy(&nsdata->eui64, ns->opts.eui64, sizeof(nsdata->eui64));
+}
+
 static void
 nvmf_bdev_ctrlr_get_rw_params(const struct spdk_nvme_cmd *cmd, uint64_t *start_lba,
 			      uint64_t *num_blocks)

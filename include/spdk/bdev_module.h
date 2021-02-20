@@ -378,6 +378,9 @@ struct spdk_bdev {
 	 */
 	uint32_t optimal_open_zones;
 
+	/** Max value size */
+	uint32_t max_value;
+
 	/**
 	 * Specifies whether bdev supports media management events.
 	 */
@@ -595,6 +598,24 @@ struct spdk_bdev_io {
 			/* The data buffer */
 			void *buf;
 		} zone_mgmt;
+		struct {
+
+			/* Key value */
+			__uint128_t key;
+
+			/* Data buffer */
+			void *buffer;
+
+			/* Data buffer size in bytes */
+			uint32_t buffer_len;
+
+			struct {
+				/** The callback argument for the outstanding request which this abort
+				 *  attempts to cancel.
+				 */
+				void *bio_cb_arg;
+			} abort;
+		} kv;
 	} u;
 
 	/** It may be used by modules to put the bdev_io into its own list. */

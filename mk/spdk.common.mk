@@ -275,12 +275,12 @@ DEPFLAGS = -MMD -MP -MF $*.d.tmp
 # Compile first input $< (.c) into $@ (.o)
 COMPILE_C=\
 	$(Q)echo "  CC $S/$@"; \
-	$(CC) -o $@ $(DEPFLAGS) $(CFLAGS) -c $< && \
+	$(CC) -o $@ $(DEPFLAGS) $(CFLAGS) -c $(realpath $<) && \
 	mv -f $*.d.tmp $*.d && touch -c $@
 
 COMPILE_CXX=\
 	$(Q)echo "  CXX $S/$@"; \
-	$(CXX) -o $@ $(DEPFLAGS) $(CXXFLAGS) -c $< && \
+	$(CXX) -o $@ $(DEPFLAGS) $(CXXFLAGS) -c $(realpath $<) && \
 	mv -f $*.d.tmp $*.d && touch -c $@
 
 ENV_LDFLAGS = $(if $(SPDK_NO_LINK_ENV),,$(ENV_LINKER_ARGS))

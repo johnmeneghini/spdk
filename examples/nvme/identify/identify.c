@@ -41,6 +41,7 @@
 #include "spdk/nvme_zns.h"
 #include "spdk/env.h"
 #include "spdk/nvme_intel.h"
+#include "spdk/nvme_kv.h"
 #include "spdk/nvmf_spec.h"
 #include "spdk/pci_ids.h"
 #include "spdk/string.h"
@@ -827,11 +828,23 @@ print_zns_ns_data(const struct spdk_nvme_zns_ns_data *nsdata_zns)
 }
 
 static void
+print_kv_ns_data(const struct spdk_nvme_kv_ns_data *nsdata_kv)
+{
+	printf("KV Specific Namespace Data\n");
+	printf("===========================\n");
+	printf("Bytes capacity:                       %"PRIu64"\n", nsdata_kv->nsze);
+	printf("Bytes used:                           %"PRIu64"\n", nsdata_kv->nuse);
+	printf("Number of KV formats:                 %u\n", nsdata_kv->nkvf);
+	printf("\n");
+}
+
+static void
 print_namespace(struct spdk_nvme_ctrlr *ctrlr, struct spdk_nvme_ns *ns)
 {
 	const struct spdk_nvme_ctrlr_data	*cdata;
 	const struct spdk_nvme_ns_data		*nsdata;
 	const struct spdk_nvme_zns_ns_data	*nsdata_zns;
+	const struct spdk_nvme_kv_ns_data	*nsdata_kv;
 	const struct spdk_uuid			*uuid;
 	uint32_t				i;
 	uint32_t				flags;
@@ -841,6 +854,7 @@ print_namespace(struct spdk_nvme_ctrlr *ctrlr, struct spdk_nvme_ns *ns)
 	cdata = spdk_nvme_ctrlr_get_data(ctrlr);
 	nsdata = spdk_nvme_ns_get_data(ns);
 	nsdata_zns = spdk_nvme_zns_ns_get_data(ns);
+	nsdata_kv = spdk_nvme_kv_ns_get_data(ns);
 	flags  = spdk_nvme_ns_get_flags(ns);
 
 	printf("Namespace ID:%d\n", spdk_nvme_ns_get_id(ns));
@@ -966,6 +980,8 @@ print_namespace(struct spdk_nvme_ctrlr *ctrlr, struct spdk_nvme_ns *ns)
 		print_zns_ns_data(nsdata_zns);
 		get_and_print_zns_zone_report(ns, qpair);
 		spdk_nvme_ctrlr_free_io_qpair(qpair);
+	} else if (spdk_nvme_ns_get_csi(ns) == SPDK_NVME_CSI_KV) {
+		print_kv_ns_data(nsdata_kv);
 	}
 }
 
@@ -1192,6 +1208,8 @@ print_controller(struct spdk_nvme_ctrlr *ctrlr, const struct spdk_nvme_transport
 	printf("Command Sets Supported\n");
 	printf("  NVM Command Set:                     %s\n",
 	       cap.bits.css & SPDK_NVME_CAP_CSS_NVM ? "Supported" : "Not Supported");
+	printf("  IOCS Command Set:                    %s\n",
+	       cap.bits.css & SPDK_NVME_CAP_CSS_IOCS ? "Supported" : "Not Supported");
 	printf("Boot Partition:                        %s\n",
 	       cap.bits.bps ? "Supported" : "Not Supported");
 	printf("Memory Page Size Minimum:              %" PRIu64 " bytes\n",

@@ -184,6 +184,8 @@ struct spdk_nvmf_ns {
 	char *ptpl_file;
 	/* Persist Through Power Loss feature is enabled */
 	bool ptpl_activated;
+	/* Command Set Identifier */
+	enum spdk_nvme_csi		csi;
 };
 
 struct spdk_nvmf_ctrlr_feat {
@@ -334,6 +336,7 @@ void nvmf_ctrlr_ns_changed(struct spdk_nvmf_ctrlr *ctrlr, uint32_t nsid);
 
 void nvmf_bdev_ctrlr_identify_ns(struct spdk_nvmf_ns *ns, struct spdk_nvme_ns_data *nsdata,
 				 bool dif_insert_or_strip);
+void nvmf_bdev_ctrlr_identify_ns_kv(struct spdk_nvmf_ns *ns, struct spdk_nvme_kv_ns_data *nsdata);
 int nvmf_bdev_ctrlr_read_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 			     struct spdk_io_channel *ch, struct spdk_nvmf_request *req);
 int nvmf_bdev_ctrlr_write_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
@@ -413,6 +416,18 @@ static inline bool
 nvmf_qpair_is_admin_queue(struct spdk_nvmf_qpair *qpair)
 {
 	return qpair->qid == 0;
+}
+
+/**
+ * Get the Command Set Identifier for the given namespace.
+ *
+ * \param ns Namespace to query.
+ *
+ * \return the namespace Command Set Identifier.
+ */
+static inline enum spdk_nvme_csi
+nvmf_ns_get_csi(const struct spdk_nvmf_ns *ns) {
+	return ns->csi;
 }
 
 #endif /* __NVMF_INTERNAL_H__ */
