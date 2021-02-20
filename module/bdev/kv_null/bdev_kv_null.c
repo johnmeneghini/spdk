@@ -233,7 +233,8 @@ bdev_kv_null_create(struct spdk_bdev **bdev, const struct spdk_kv_null_bdev_opts
 	kv_null_disk->bdev.product_name = "KV Null disk";
 
 	kv_null_disk->bdev.write_cache = 0;
-	kv_null_disk->bdev.nsze = opts->capacity;
+	kv_null_disk->bdev.blocklen = 1;
+	kv_null_disk->bdev.blockcnt = opts->capacity;
 	kv_null_disk->bdev.num_keys = opts->max_num_keys;
 	kv_null_disk->bdev.max_value = opts->max_value_size;
 	if (opts->uuid) {
