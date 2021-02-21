@@ -1761,22 +1761,22 @@ size_t spdk_bdev_get_media_events(struct spdk_bdev_desc *bdev_desc,
 				  struct spdk_bdev_media_event *events, size_t max_events);
 
 /**
- * Submit a read request to the bdev on the given channel.
+ * Submit a KV retrieve request to the kv bdev on the given channel.
  *
  * \ingroup bdev_io_submit_functions
  *
  * \param desc Block device descriptor.
  * \param ch I/O channel. Obtained by calling spdk_bdev_get_io_channel().
+ * \param key Key to retrieve data for.
  * \param buf Data buffer to read into.
- * \param offset The offset, in bytes, from the start of the block device.
- * \param nbytes The number of bytes to read.
+ * \param buffer_len The number of bytes to retrieve.
  * \param cb Called when the request is complete.
  * \param cb_arg Argument passed to cb.
  *
  * \return 0 on success. On success, the callback will always
  * be called (even if the request ultimately failed). Return
  * negated errno on failure, in which case the callback will not be called.
- *   * -EINVAL - offset and/or nbytes are not aligned or out of range
+ *   * -EINVAL - buf or buffer_lens are not aligned or out of range
  *   * -ENOMEM - spdk_bdev_io buffer cannot be allocated
  */
 int spdk_bdev_kv_retrieve(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
@@ -1784,15 +1784,15 @@ int spdk_bdev_kv_retrieve(struct spdk_bdev_desc *desc, struct spdk_io_channel *c
 			  spdk_bdev_io_completion_cb cb, void *cb_arg);
 
 /**
- * Submit a read request to the bdev on the given channel.
+ * Submit a store request to the kv bdev on the given channel.
  *
  * \ingroup bdev_io_submit_functions
  *
  * \param desc Block device descriptor.
  * \param ch I/O channel. Obtained by calling spdk_bdev_get_io_channel().
+ * \param key Key to retrieve data for.
  * \param buf Data buffer to read into.
- * \param offset The offset, in bytes, from the start of the block device.
- * \param nbytes The number of bytes to read.
+ * \param buffer_len The number of bytes to retrieve.
  * \param cb Called when the request is complete.
  * \param cb_arg Argument passed to cb.
  *
@@ -1807,15 +1807,15 @@ int spdk_bdev_kv_store(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 		       spdk_bdev_io_completion_cb cb, void *cb_arg);
 
 /**
- * Submit a read request to the bdev on the given channel.
+ * Submit a list keys request to the kv bdev on the given channel.
  *
  * \ingroup bdev_io_submit_functions
  *
  * \param desc Block device descriptor.
  * \param ch I/O channel. Obtained by calling spdk_bdev_get_io_channel().
+ * \param key Key to retrieve data for.
  * \param buf Data buffer to read into.
- * \param offset The offset, in bytes, from the start of the block device.
- * \param nbytes The number of bytes to read.
+ * \param buffer_len The number of bytes to retrieve.
  * \param cb Called when the request is complete.
  * \param cb_arg Argument passed to cb.
  *
@@ -1830,15 +1830,13 @@ int spdk_bdev_kv_list(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 		      spdk_bdev_io_completion_cb cb, void *cb_arg);
 
 /**
- * Submit a read request to the bdev on the given channel.
+ * Submit a read request test key existence to the kv bdev on the given channel.
  *
  * \ingroup bdev_io_submit_functions
  *
  * \param desc Block device descriptor.
  * \param ch I/O channel. Obtained by calling spdk_bdev_get_io_channel().
- * \param buf Data buffer to read into.
- * \param offset The offset, in bytes, from the start of the block device.
- * \param nbytes The number of bytes to read.
+ * \param key Key to retrieve data for.
  * \param cb Called when the request is complete.
  * \param cb_arg Argument passed to cb.
  *
@@ -1852,15 +1850,13 @@ int spdk_bdev_kv_exist(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 		       __uint128_t key, spdk_bdev_io_completion_cb cb, void *cb_arg);
 
 /**
- * Submit a read request to the bdev on the given channel.
+ * Submit a delete key request to the kv bdev on the given channel.
  *
  * \ingroup bdev_io_submit_functions
  *
  * \param desc Block device descriptor.
  * \param ch I/O channel. Obtained by calling spdk_bdev_get_io_channel().
- * \param buf Data buffer to read into.
- * \param offset The offset, in bytes, from the start of the block device.
- * \param nbytes The number of bytes to read.
+ * \param key Key to retrieve data for.
  * \param cb Called when the request is complete.
  * \param cb_arg Argument passed to cb.
  *
