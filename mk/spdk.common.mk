@@ -244,6 +244,14 @@ COMMON_CFLAGS += -fsanitize=thread
 LDFLAGS += -fsanitize=thread
 endif
 
+CFLAGS +=  -I$(SPDK_ROOT_DIR)/../rocksdb/include
+LDFLAGS += -L$(SPDK_ROOT_DIR)/../rocksdb
+ifeq ($(CONFIG_DEBUG),y)
+SYS_LIBS += -lrocksdb_debug -lsnappy
+else
+SYS_LIBS += -lrocksdb -lsnappy
+endif
+
 SPDK_GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null)
 ifneq (, $(SPDK_GIT_COMMIT))
 COMMON_CFLAGS += -DSPDK_GIT_COMMIT=$(SPDK_GIT_COMMIT)
@@ -288,7 +296,7 @@ ENV_LDFLAGS = $(if $(SPDK_NO_LINK_ENV),,$(ENV_LINKER_ARGS))
 # Link $(OBJS) and $(LIBS) into $@ (app)
 LINK_C=\
 	$(Q)echo "  LINK $(notdir $@)"; \
-	$(CC) -o $@ $(CPPFLAGS) $(LDFLAGS) $(OBJS) $(LIBS) $(ENV_LDFLAGS) $(SYS_LIBS)
+	$(CXX) -o $@ $(CPPFLAGS) $(LDFLAGS) $(OBJS) $(LIBS) $(ENV_LDFLAGS) $(SYS_LIBS)
 
 LINK_CXX=\
 	$(Q)echo "  LINK $(notdir $@)"; \
