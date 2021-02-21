@@ -214,7 +214,8 @@ DEFINE_STUB_V(spdk_nvmf_tgt_new_qpair, (struct spdk_nvmf_tgt *tgt, struct spdk_n
 DEFINE_STUB_V(nvmf_transport_qpair_abort_request,
 	      (struct spdk_nvmf_qpair *qpair, struct spdk_nvmf_request *req));
 
-DEFINE_STUB_V(spdk_nvme_print_command, (uint16_t qid, struct spdk_nvme_cmd *cmd));
+DEFINE_STUB_V(spdk_nvme_print_command, (uint16_t qid, struct spdk_nvme_cmd *cmd,
+					enum spdk_nvme_csi csi));
 DEFINE_STUB_V(spdk_nvme_print_completion, (uint16_t qid, struct spdk_nvme_cpl *cpl));
 
 DEFINE_STUB(nvmf_transport_req_free,
@@ -239,6 +240,36 @@ DEFINE_STUB(spdk_nvmf_bdev_ctrlr_nvme_passthru_admin,
 	     struct spdk_io_channel *ch, struct spdk_nvmf_request *req,
 	     spdk_nvmf_nvme_passthru_cmd_cb cb_fn),
 	    0)
+
+DEFINE_STUB(nvmf_bdev_ctrlr_retrieve_cmd,
+	    int,
+	    (struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
+	     struct spdk_io_channel *ch, struct spdk_nvmf_request *req),
+	    0);
+
+DEFINE_STUB(nvmf_bdev_ctrlr_store_cmd,
+	    int,
+	    (struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
+	     struct spdk_io_channel *ch, struct spdk_nvmf_request *req),
+	    0);
+
+DEFINE_STUB(nvmf_bdev_ctrlr_list_cmd,
+	    int,
+	    (struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
+	     struct spdk_io_channel *ch, struct spdk_nvmf_request *req),
+	    0);
+
+DEFINE_STUB(nvmf_bdev_ctrlr_exist_cmd,
+	    int,
+	    (struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
+	     struct spdk_io_channel *ch, struct spdk_nvmf_request *req),
+	    0);
+
+DEFINE_STUB(nvmf_bdev_ctrlr_delete_cmd,
+	    int,
+	    (struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
+	     struct spdk_io_channel *ch, struct spdk_nvmf_request *req),
+	    0);
 
 struct spdk_trace_histories *g_trace_histories;
 

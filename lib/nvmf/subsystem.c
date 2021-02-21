@@ -1436,6 +1436,10 @@ spdk_nvmf_subsystem_add_ns_ext(struct spdk_nvmf_subsystem *subsystem, const char
 
 	if (spdk_bdev_io_type_supported(ns->bdev, SPDK_BDEV_IO_TYPE_KV_STORE)) {
 		ns->csi = SPDK_NVME_CSI_KV;
+		ns->process_io_cmd = nvmf_ctrlr_process_kv_io_cmd;
+	} else {
+		ns->csi = SPDK_NVME_CSI_NVM;
+		ns->process_io_cmd = nvmf_ctrlr_process_nvm_io_cmd;
 	}
 
 	ns->opts = opts;

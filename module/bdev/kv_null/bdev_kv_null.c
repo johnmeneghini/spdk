@@ -107,18 +107,6 @@ bdev_kv_null_submit_request(struct spdk_io_channel *_ch, struct spdk_bdev_io *bd
 
 	switch (bdev_io->type) {
 	case SPDK_BDEV_IO_TYPE_KV_RETRIEVE:
-		if (bdev_io->u.bdev.iovs[0].iov_base == NULL) {
-			assert(bdev_io->u.bdev.iovcnt == 1);
-			if (spdk_likely(bdev_io->u.kv.buffer_len <=
-					SPDK_BDEV_LARGE_BUF_MAX_SIZE)) {
-				bdev_io->u.kv.buffer = g_kv_null_read_buf;
-			} else {
-				SPDK_ERRLOG("Overflow occurred. Read I/O size %u was larger than permitted %d\n",
-					    bdev_io->u.kv.buffer_len, SPDK_BDEV_LARGE_BUF_MAX_SIZE);
-				spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_FAILED);
-				return;
-			}
-		}
 		TAILQ_INSERT_TAIL(&ch->io, bdev_io, module_link);
 		break;
 	case SPDK_BDEV_IO_TYPE_KV_STORE:

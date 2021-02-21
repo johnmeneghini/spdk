@@ -329,34 +329,46 @@ struct spdk_nvme_kv_ns_data {
 };
 SPDK_STATIC_ASSERT(sizeof(struct spdk_nvme_kv_ns_data) == 4096, "Incorrect size");
 
+void
+spdk_nvme_kv_cmd_set_key(struct spdk_nvme_kv_cmd *cmd, spdk_nvme_kv_key_t key);
+
+spdk_nvme_kv_key_t
+spdk_nvme_kv_cmd_get_key(struct spdk_nvme_kv_cmd *cmd);
+
 const struct spdk_nvme_kv_ns_data *
 spdk_nvme_kv_ns_get_data(struct spdk_nvme_ns *ns);
 
 int
 spdk_nvme_kv_cmd_store(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
-		       uint32_t keyspace_id, spdk_nvme_kv_key_t key,
-		       void *buffer, uint32_t buffer_length,
-		       uint32_t offset,
-		       spdk_nvme_cmd_cb cb_fn, void *cb_arg,
-		       uint32_t io_flags, uint32_t option);
+		       spdk_nvme_kv_key_t key, void *buffer, uint32_t buffer_length, uint32_t offset,
+		       spdk_nvme_cmd_cb cb_fn, void *cb_arg, uint32_t option);
 
 int
 spdk_nvme_kv_cmd_retrieve(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
-			  uint32_t keyspace_id, spdk_nvme_kv_key_t key,
-			  void *buffer, uint32_t buffer_length,
-			  uint32_t offset,
+			  spdk_nvme_kv_key_t key, void *buffer, uint32_t buffer_length, uint32_t offset,
 			  spdk_nvme_cmd_cb cb_fn, void *cb_arg, uint32_t option);
 
 int
 spdk_nvme_kv_cmd_delete(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
-			uint32_t keyspace_id, spdk_nvme_kv_key_t key,
-			spdk_nvme_cmd_cb cb_fn, void *cb_arg);
+			spdk_nvme_kv_key_t key, spdk_nvme_cmd_cb cb_fn, void *cb_arg);
 
 int
 spdk_nvme_kv_cmd_exist(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
-		       uint32_t keyspace_id, spdk_nvme_kv_key_t key,
-		       spdk_nvme_cmd_cb cb_fn, void *cb_arg);
+		       spdk_nvme_kv_key_t key, spdk_nvme_cmd_cb cb_fn, void *cb_arg);
 
+
+/**
+ * Convert Key in spdk_uuid into lowercase textual format.
+ *
+ * \param uuid_str User-provided string buffer to write the textual format into.
+ * \param uuid_str_size Size of uuid_str buffer. Must be at least SPDK_UUID_STRING_LEN.
+ * \param uuid UUID to convert to textual format.
+ *
+ * \return 0 on success, or negative errno on failure.
+ */
+int spdk_kv_key_fmt_lower(char *uuid_str, size_t uuid_str_size, const spdk_nvme_kv_key_t *key);
+int spdk_kv_cmd_fmt_lower(char *uuid_str, size_t uuid_str_size,
+			  const struct spdk_nvme_kv_cmd *kv_cmd);
 
 
 #ifdef __cplusplus

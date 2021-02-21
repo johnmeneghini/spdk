@@ -33,6 +33,7 @@
 
 #include "nvme_internal.h"
 #include "spdk/nvme_ocssd.h"
+#include "spdk/nvme_kv.h"
 
 #define NVME_CMD_DPTR_STR_SIZE 256
 
@@ -126,7 +127,25 @@ static const struct nvme_string io_opcode[] = {
 	{ SPDK_OCSSD_OPC_VECTOR_WRITE, "OCSSD / VECTOR WRITE" },
 	{ SPDK_OCSSD_OPC_VECTOR_READ, "OCSSD / VECTOR READ" },
 	{ SPDK_OCSSD_OPC_VECTOR_COPY, "OCSSD / VECTOR COPY" },
+	{ SPDK_NVME_OPC_KV_STORE, "KV STORE" },
+	{ SPDK_NVME_OPC_KV_RETRIEVE, "KV RETRIEVE" },
+	{ SPDK_NVME_OPC_KV_DELETE, "KV DELETE" },
+	{ SPDK_NVME_OPC_KV_EXIST, "KV_EXIST" },
+	{ SPDK_NVME_OPC_KV_LIST, "KV LIST" },
 	{ 0xFFFF, "IO COMMAND" }
+};
+
+static const struct nvme_string kv_io_opcode[] = {
+	{ SPDK_NVME_OPC_RESERVATION_REGISTER, "RESERVATION REGISTER" },
+	{ SPDK_NVME_OPC_RESERVATION_REPORT, "RESERVATION REPORT" },
+	{ SPDK_NVME_OPC_RESERVATION_ACQUIRE, "RESERVATION ACQUIRE" },
+	{ SPDK_NVME_OPC_RESERVATION_RELEASE, "RESERVATION RELEASE" },
+	{ SPDK_NVME_OPC_KV_STORE, "KV STORE" },
+	{ SPDK_NVME_OPC_KV_RETRIEVE, "KV RETRIEVE" },
+	{ SPDK_NVME_OPC_KV_DELETE, "KV DELETE" },
+	{ SPDK_NVME_OPC_KV_EXIST, "KV_EXIST" },
+	{ SPDK_NVME_OPC_KV_LIST, "KV LIST" },
+	{ 0xFFFF, "KV IO COMMAND" }
 };
 
 static const struct nvme_string sgl_type[] = {
@@ -283,15 +302,58 @@ nvme_io_qpair_print_command(uint16_t qid, struct spdk_nvme_cmd *cmd)
 	}
 }
 
+static void
+nvme_io_qpair_print_kv_command(uint16_t qid, struct spdk_nvme_cmd *cmd)
+{
+	char dptr[NVME_CMD_DPTR_STR_SIZE] = {'\0'};
+	char key_str[SPDK_UUID_STRING_LEN] = {'\0'};
+
+	assert(cmd != NULL);
+
+	nvme_get_dptr(dptr, sizeof(dptr), cmd);
+
+	switch ((int)cmd->opc) {
+	case SPDK_NVME_OPC_KV_STORE:
+	case SPDK_NVME_OPC_KV_RETRIEVE:
+	case SPDK_NVME_OPC_KV_LIST:
+		spdk_kv_cmd_fmt_lower(key_str, sizeof(key_str), (struct spdk_nvme_kv_cmd *)cmd);
+		SPDK_NOTICELOG("%s sqid:%d cid:%d nsid:%d "
+			       "key: %s len:%d %s\n",
+			       nvme_get_string(kv_io_opcode, cmd->opc), qid, cmd->cid, cmd->nsid,
+			       key_str,
+			       ((struct spdk_nvme_kv_cmd *)cmd)->cdw10_bits.kv_retrieve.hbs, dptr);
+		break;
+	case SPDK_NVME_OPC_KV_EXIST:
+	case SPDK_NVME_OPC_KV_DELETE:
+		spdk_kv_cmd_fmt_lower(key_str, sizeof(key_str), (struct spdk_nvme_kv_cmd *)cmd);
+		SPDK_NOTICELOG("%s sqid:%d cid:%d nsid:%d "
+			       "key: %s %s\n",
+			       nvme_get_string(kv_io_opcode, cmd->opc), qid, cmd->cid, cmd->nsid,
+			       key_str, dptr);
+		break;
+	default:
+		SPDK_NOTICELOG("%s (%02x) sqid:%d cid:%d nsid:%d\n",
+			       nvme_get_string(kv_io_opcode, cmd->opc), cmd->opc, qid, cmd->cid, cmd->nsid);
+		break;
+	}
+}
+
 void
-spdk_nvme_print_command(uint16_t qid, struct spdk_nvme_cmd *cmd)
+spdk_nvme_print_command(uint16_t qid, struct spdk_nvme_cmd *cmd, enum spdk_nvme_csi csi)
 {
 	assert(cmd != NULL);
 
 	if (qid == 0 || cmd->opc == SPDK_NVME_OPC_FABRIC) {
 		nvme_admin_qpair_print_command(qid, cmd);
 	} else {
-		nvme_io_qpair_print_command(qid, cmd);
+		switch (csi) {
+		case SPDK_NVME_CSI_KV:
+			nvme_io_qpair_print_kv_command(qid, cmd);
+			break;
+		default:
+			nvme_io_qpair_print_command(qid, cmd);
+			break;
+		}
 	}
 }
 
@@ -301,7 +363,8 @@ spdk_nvme_qpair_print_command(struct spdk_nvme_qpair *qpair, struct spdk_nvme_cm
 	assert(qpair != NULL);
 	assert(cmd != NULL);
 
-	spdk_nvme_print_command(qpair->id, cmd);
+	spdk_nvme_print_command(qpair->id, cmd,
+				qpair->ctrlr->ns ? qpair->ctrlr->ns->csi : SPDK_NVME_CSI_NVM);
 }
 
 static const struct nvme_string generic_status[] = {

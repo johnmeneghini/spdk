@@ -40,7 +40,8 @@ spdk_nvme_kv_ns_get_data(struct spdk_nvme_ns *ns)
 	return ns->ctrlr->nsdata_kv[ns->id - 1];
 }
 
-static inline void _nvme_kv_cmd_set_key(struct spdk_nvme_kv_cmd *cmd, spdk_nvme_kv_key_t key)
+void
+spdk_nvme_kv_cmd_set_key(struct spdk_nvme_kv_cmd *cmd, spdk_nvme_kv_key_t key)
 {
 	cmd->kvkey0 = *((uint32_t *)&key + 0);
 	cmd->kvkey1 = *((uint32_t *)&key + 1);
@@ -48,7 +49,8 @@ static inline void _nvme_kv_cmd_set_key(struct spdk_nvme_kv_cmd *cmd, spdk_nvme_
 	cmd->kvkey3 = *((uint32_t *)&key + 3);
 }
 
-static inline spdk_nvme_kv_key_t _nvme_kv_cmd_get_key(struct spdk_nvme_kv_cmd *cmd)
+spdk_nvme_kv_key_t
+spdk_nvme_kv_cmd_get_key(struct spdk_nvme_kv_cmd *cmd)
 {
 	spdk_nvme_kv_key_t key = 0;
 	*((uint32_t *)&key + 0) = cmd->kvkey0;
@@ -56,6 +58,18 @@ static inline spdk_nvme_kv_key_t _nvme_kv_cmd_get_key(struct spdk_nvme_kv_cmd *c
 	*((uint32_t *)&key + 2) = cmd->kvkey2;
 	*((uint32_t *)&key + 3) = cmd->kvkey3;
 	return key;
+}
+
+int spdk_kv_key_fmt_lower(char *key_str, size_t key_str_size, const spdk_nvme_kv_key_t *key)
+{
+	return snprintf(key_str, key_str_size, "%08x-%08x-%08x-%08x",
+			((uint32_t *)key)[0], ((uint32_t *)key)[1], ((uint32_t *)key)[2], ((uint32_t *)key)[3]) != 0;
+}
+
+int spdk_kv_cmd_fmt_lower(char *key_str, size_t key_str_size, const struct spdk_nvme_kv_cmd *kv_cmd)
+{
+	return snprintf(key_str, key_str_size, "%08x-%08x-%08x-%08x",
+			kv_cmd->kvkey0, kv_cmd->kvkey1, kv_cmd->kvkey2, kv_cmd->kvkey3) != 0;
 }
 
 
@@ -67,12 +81,12 @@ _nvme_kv_cmd_setup_store_request(struct spdk_nvme_ns *ns, struct nvme_request *r
 				 spdk_nvme_kv_key_t key,
 				 uint32_t buffer_size,
 				 uint32_t offset,
-				 uint32_t io_flags, uint32_t option)
+				 uint32_t option)
 {
 	struct spdk_nvme_kv_cmd	*cmd;
 
 	cmd = (struct spdk_nvme_kv_cmd *)&req->cmd;
-	_nvme_kv_cmd_set_key(cmd, key);
+	spdk_nvme_kv_cmd_set_key(cmd, key);
 	cmd->cdw10 = buffer_size;
 
 	/**
@@ -94,7 +108,7 @@ _nvme_kv_cmd_setup_retrieve_request(struct spdk_nvme_ns *ns, struct nvme_request
 	struct spdk_nvme_kv_cmd	*cmd;
 
 	cmd = (struct spdk_nvme_kv_cmd *)&req->cmd;
-	_nvme_kv_cmd_set_key(cmd, key);
+	spdk_nvme_kv_cmd_set_key(cmd, key);
 	cmd->cdw10 = buffer_size;
 
 	/**
@@ -114,7 +128,7 @@ _nvme_kv_cmd_setup_delete_request(struct spdk_nvme_ns *ns, struct nvme_request *
 	struct spdk_nvme_kv_cmd	*cmd;
 
 	cmd = (struct spdk_nvme_kv_cmd *)&req->cmd;
-	_nvme_kv_cmd_set_key(cmd, key);
+	spdk_nvme_kv_cmd_set_key(cmd, key);
 	cmd->cdw10 = 0;
 
 	/**
@@ -133,7 +147,7 @@ _nvme_kv_cmd_setup_exist_request(struct spdk_nvme_ns *ns, struct nvme_request *r
 	struct spdk_nvme_kv_cmd	*cmd;
 
 	cmd = (struct spdk_nvme_kv_cmd *)&req->cmd;
-	_nvme_kv_cmd_set_key(cmd, key);
+	spdk_nvme_kv_cmd_set_key(cmd, key);
 	cmd->cdw10 = 0;
 
 	/**
@@ -157,7 +171,7 @@ static struct nvme_request *
 _nvme_kv_cmd_allocate_request(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
 			      const struct nvme_payload *payload,
 			      uint32_t buffer_size, uint32_t payload_offset, uint32_t md_offset,
-			      spdk_nvme_cmd_cb cb_fn, void *cb_arg, uint32_t opc, uint32_t keyspace_id)
+			      spdk_nvme_cmd_cb cb_fn, void *cb_arg, uint32_t opc)
 {
 	struct nvme_request	*req;
 	struct spdk_nvme_kv_cmd    *cmd;
@@ -169,7 +183,7 @@ _nvme_kv_cmd_allocate_request(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *q
 
 	cmd = (struct spdk_nvme_kv_cmd *)&req->cmd;
 	cmd->opc = opc;
-	cmd->nsid = keyspace_id;
+	cmd->nsid = ns->id;
 
 	req->payload_offset = payload_offset;
 	req->md_offset = md_offset;
@@ -205,11 +219,11 @@ _nvme_kv_cmd_allocate_request(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *q
  */
 int
 spdk_nvme_kv_cmd_store(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
-		       uint32_t keyspace_id, spdk_nvme_kv_key_t key,
+		       spdk_nvme_kv_key_t key,
 		       void *buffer, uint32_t buffer_length,
 		       uint32_t offset,
 		       spdk_nvme_cmd_cb cb_fn, void *cb_arg,
-		       uint32_t io_flags, uint32_t option)
+		       uint32_t option)
 {
 	struct nvme_request *req;
 	struct nvme_payload payload;
@@ -220,13 +234,13 @@ spdk_nvme_kv_cmd_store(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
 	payload = NVME_PAYLOAD_CONTIG(buffer, NULL);
 
 	req = _nvme_kv_cmd_allocate_request(ns, qpair, &payload, buffer_length,
-					    0, 0, cb_fn, cb_arg, SPDK_NVME_OPC_KV_STORE, keyspace_id);
+					    0, 0, cb_fn, cb_arg, SPDK_NVME_OPC_KV_STORE);
 
 	if (NULL == req) {
 		return -ENOMEM;
 	}
 
-	_nvme_kv_cmd_setup_store_request(ns, req, key, buffer_length, offset, io_flags, option);
+	_nvme_kv_cmd_setup_store_request(ns, req, key, buffer_length, offset, option);
 
 	return nvme_qpair_submit_request(qpair, req);
 }
@@ -258,8 +272,7 @@ spdk_nvme_kv_cmd_store(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
  */
 int
 spdk_nvme_kv_cmd_retrieve(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
-			  uint32_t keyspace_id, spdk_nvme_kv_key_t key,
-			  void *buffer, uint32_t buffer_length,
+			  spdk_nvme_kv_key_t key, void *buffer, uint32_t buffer_length,
 			  uint32_t offset,
 			  spdk_nvme_cmd_cb cb_fn, void *cb_arg, uint32_t option)
 {
@@ -273,7 +286,7 @@ spdk_nvme_kv_cmd_retrieve(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair
 	payload = NVME_PAYLOAD_CONTIG(buffer, NULL);
 
 	req = _nvme_kv_cmd_allocate_request(ns, qpair, &payload, buffer_length, 0, 0, cb_fn, cb_arg,
-					    SPDK_NVME_OPC_KV_RETRIEVE, keyspace_id);
+					    SPDK_NVME_OPC_KV_RETRIEVE);
 	if (NULL == req) {
 		return -ENOMEM;
 	}
@@ -303,7 +316,7 @@ spdk_nvme_kv_cmd_retrieve(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair
  */
 int
 spdk_nvme_kv_cmd_delete(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
-			uint32_t keyspace_id, spdk_nvme_kv_key_t key,
+			spdk_nvme_kv_key_t key,
 			spdk_nvme_cmd_cb cb_fn, void *cb_arg)
 {
 	struct nvme_request *req;
@@ -313,7 +326,7 @@ spdk_nvme_kv_cmd_delete(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
 
 	req = _nvme_kv_cmd_allocate_request(ns, qpair, &payload,
 					    0, /** Payload length is 0 for delete command */
-					    0, 0, cb_fn, cb_arg, SPDK_NVME_OPC_KV_DELETE, keyspace_id);
+					    0, 0, cb_fn, cb_arg, SPDK_NVME_OPC_KV_DELETE);
 
 	if (NULL == req) {
 		return -ENOMEM;
@@ -344,8 +357,7 @@ spdk_nvme_kv_cmd_delete(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
  */
 int
 spdk_nvme_kv_cmd_exist(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
-		       uint32_t keyspace_id, spdk_nvme_kv_key_t key,
-		       spdk_nvme_cmd_cb cb_fn, void *cb_arg)
+		       spdk_nvme_kv_key_t key, spdk_nvme_cmd_cb cb_fn, void *cb_arg)
 {
 	struct nvme_request *req;
 	struct nvme_payload payload;
@@ -354,7 +366,7 @@ spdk_nvme_kv_cmd_exist(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
 
 	req = _nvme_kv_cmd_allocate_request(ns, qpair, &payload,
 					    0, /** payload length is 0 for exist command */
-					    0, 0, cb_fn, cb_arg, SPDK_NVME_OPC_KV_EXIST, keyspace_id);
+					    0, 0, cb_fn, cb_arg, SPDK_NVME_OPC_KV_EXIST);
 
 	if (NULL == req) {
 		return -ENOMEM;

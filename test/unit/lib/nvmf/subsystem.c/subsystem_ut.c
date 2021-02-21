@@ -99,6 +99,14 @@ DEFINE_STUB(spdk_nvme_transport_id_trtype_str,
 DEFINE_STUB(spdk_bdev_io_type_supported, bool,
 	    (struct spdk_bdev *bdev, enum spdk_bdev_io_type io_type), false);
 
+DEFINE_STUB(nvmf_ctrlr_process_nvm_io_cmd, int,
+	    (struct spdk_bdev *bdev, struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+	     struct spdk_nvmf_request *req), 0);
+
+DEFINE_STUB(nvmf_ctrlr_process_kv_io_cmd, int,
+	    (struct spdk_bdev *bdev, struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+	     struct spdk_nvmf_request *req), 0);
+
 int
 spdk_nvmf_transport_listen(struct spdk_nvmf_transport *transport,
 			   const struct spdk_nvme_transport_id *trid, struct spdk_nvmf_listen_opts *opts)
