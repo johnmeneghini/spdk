@@ -97,6 +97,8 @@ function usage()
 	echo "                           No path required."
 	echo " raid5                     Build with bdev_raid module RAID5 support."
 	echo "                           No path required."
+	echo " rocksdb                   Build with rocksdb kv bdev"
+	echo "                           No path required."
 	echo ""
 	echo "Environment variables:"
 	echo ""
@@ -436,6 +438,12 @@ for i in "$@"; do
 			;;
 		--without-idxd)
 			CONFIG[IDXD]=n
+			;;
+		--with-rocksdb)
+			CONFIG[ROCKSDB]=y
+			;;
+		--without-rocksdb)
+			CONFIG[ROCKSDB]=n
 			;;
 		--)
 			break

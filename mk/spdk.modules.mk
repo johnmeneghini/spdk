@@ -115,6 +115,15 @@ ifeq ($(CONFIG_IDXD),y)
 ACCEL_MODULES_LIST += accel_idxd idxd
 endif
 
+ifeq ($(CONFIG_ROCKSDB),y)
+BLOCKDEV_MODULES_LIST += bdev_rocksdb
+ifeq ($(CONFIG_DEBUG), y)
+BLOCKDEV_MODULES_PRIVATE_LIBS += -lrocksdb_debug -lsnappy -lz
+else
+BLOCKDEV_MODULES_PRIVATE_LIBS += -lrocksdb -lsnappy -lz
+endif
+endif
+
 EVENT_BDEV_SUBSYSTEM = event_bdev event_accel event_vmd event_sock
 
 ALL_MODULES_LIST = $(BLOCKDEV_MODULES_LIST) $(ACCEL_MODULES_LIST) $(SOCK_MODULES_LIST)

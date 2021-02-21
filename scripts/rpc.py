@@ -422,6 +422,30 @@ if __name__ == "__main__":
     p.add_argument('name', help='KV null bdev name')
     p.set_defaults(func=bdev_kv_null_delete)
 
+    def bdev_rocksdb_create(args):
+        print_json(rpc.bdev.bdev_rocksdb_create(args.client,
+                                                db_path=args.db_path,
+                                                db_backup_path=args.db_path,
+                                                name=args.name,
+                                                uuid=args.uuid))
+
+    p = subparsers.add_parser('bdev_rocksdb_create', aliases=['construct_rocksdb_bdev'],
+                              help='Add a kv bdev with rocksdb backend')
+    p.add_argument('name', help='KV device name')
+    p.add_argument('-u', '--uuid', help='UUID of the bdev')
+    p.add_argument('db_path', help='Path to data directory')
+    p.add_argument('-b', '--backup-path', help='Path to backup directory')
+    p.set_defaults(func=bdev_rocksdb_create)
+
+    def bdev_rocksdb_delete(args):
+        rpc.bdev.bdev_rocksdb_delete(args.client,
+                                     name=args.name)
+
+    p = subparsers.add_parser('bdev_rocksdb_delete', aliases=['delete_rocksdb_bdev'],
+                              help='Delete a KV rocksdb bdev')
+    p.add_argument('name', help='KV rocksdb bdev name')
+    p.set_defaults(func=bdev_rocksdb_delete)
+
     def bdev_aio_create(args):
         print_json(rpc.bdev.bdev_aio_create(args.client,
                                             filename=args.filename,

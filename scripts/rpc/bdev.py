@@ -320,6 +320,38 @@ def bdev_kv_null_delete(client, name):
     return client.call('bdev_kv_null_delete', params)
 
 
+@deprecated_alias('construct_kv_null_bdev')
+def bdev_rocksdb_create(client, name, db_path, uuid=None, db_backup_path=None):
+    """Construct a KV rocksd device.
+
+    Args:
+        db_path: Path to data directory
+        db_backup_path: Path to backup data directory (Optional)
+        name: name of block device
+        uuid: UUID of block device (optional)
+
+    Returns:
+        Name of created KV device.
+    """
+    params = {'name': name, 'db_path': db_path}
+    if uuid:
+        params['uuid'] = uuid
+    if db_backup_path:
+        params['db_backup_path'] = db_backup_path
+    return client.call('bdev_rocksdb_create', params)
+
+
+@deprecated_alias('delete_rocksdb_bdev')
+def bdev_rocksdb_delete(client, name):
+    """Remove KV rocksdb bdev from the system.
+
+    Args:
+        name: name of rocksdb bdev to delete
+    """
+    params = {'name': name}
+    return client.call('bdev_rocksdb_delete', params)
+
+
 @deprecated_alias('get_raid_bdevs')
 def bdev_raid_get_bdevs(client, category):
     """Get list of raid bdevs based on category

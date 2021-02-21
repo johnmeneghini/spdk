@@ -78,3 +78,29 @@ After starting nvmf target run the perf utility from another shell with:
 ```
 
 See the README.md file in examples/kv for more information
+
+# Rocksdb Submodlule
+
+Rocksdb is now a submodule of SPDK. To start using this new submodule:
+
+ - create a new SPDK repository with `setup-kv-store.sh firerock` and
+ - configure the submodule with `./configure --enable-debug --with-rocksdb`
+
+Rocksdb support is a configure option that can be enabled with:
+
+```
+./configure --enable-debug --with-rocksdb
+```
+
+And disabled with:
+
+```
+./configure --enable-debug --without-rocksdb
+```
+
+Note: in a pinch, use the following command to fix a broken repository:
+
+```
+  git config submodule.rocksdb.url https://bitbucket.eng.netapp.com/scm/kv-store-bb/rocksdb.git
+  git submodule update --init
+```
