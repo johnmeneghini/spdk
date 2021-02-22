@@ -32,6 +32,7 @@ if [[ $INSTALL_DEV_TOOLS == "true" ]]; then
 	apt-get install -y libpcap-dev
 	# ROCKSDB requires this
 	apt-get install libsnappy-dev
+	apt-get install libz-dev
 fi
 if [[ $INSTALL_PMEM == "true" ]]; then
 	# Additional dependencies for building pmem based backends
