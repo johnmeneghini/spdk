@@ -244,13 +244,12 @@ COMMON_CFLAGS += -fsanitize=thread
 LDFLAGS += -fsanitize=thread
 endif
 
-CFLAGS +=  -I$(SPDK_ROOT_DIR)/../rocksdb/include
-LDFLAGS += -L$(SPDK_ROOT_DIR)/../rocksdb
-ifeq ($(CONFIG_DEBUG),y)
-SYS_LIBS += -lrocksdb_debug -lsnappy
-else
-SYS_LIBS += -lrocksdb -lsnappy
+ROCKSDB_USER_DIR=$(SPDK_ROOT_DIR)/rocksdb
+ifeq ($(CONFIG_ROCKSDB), y)
+CFLAGS +=  -I$(ROCKSDB_USER_DIR)/include
+LDFLAGS += -L$(ROCKSDB_USER_DIR)
 endif
+
 
 SPDK_GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null)
 ifneq (, $(SPDK_GIT_COMMIT))
@@ -294,10 +293,15 @@ COMPILE_CXX=\
 ENV_LDFLAGS = $(if $(SPDK_NO_LINK_ENV),,$(ENV_LINKER_ARGS))
 
 # Link $(OBJS) and $(LIBS) into $@ (app)
+ifeq ($(CONFIG_ROCKSDB), y)
 LINK_C=\
 	$(Q)echo "  LINK $(notdir $@)"; \
 	$(CXX) -o $@ $(CPPFLAGS) $(LDFLAGS) $(OBJS) $(LIBS) $(ENV_LDFLAGS) $(SYS_LIBS)
-
+else
+LINK_C=\
+	$(Q)echo "  LINK $(notdir $@)"; \
+	$(CC) -o $@ $(CPPFLAGS) $(LDFLAGS) $(OBJS) $(LIBS) $(ENV_LDFLAGS) $(SYS_LIBS)
+endif
 LINK_CXX=\
 	$(Q)echo "  LINK $(notdir $@)"; \
 	$(CXX) -o $@ $(CPPFLAGS) $(LDFLAGS) $(OBJS) $(LIBS) $(ENV_LDFLAGS) $(SYS_LIBS)

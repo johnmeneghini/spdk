@@ -35,7 +35,7 @@ BLOCKDEV_MODULES_LIST = bdev_malloc bdev_null bdev_nvme bdev_passthru bdev_lvol
 BLOCKDEV_MODULES_LIST += bdev_raid bdev_error bdev_gpt bdev_split bdev_delay
 BLOCKDEV_MODULES_LIST += bdev_zone_block
 BLOCKDEV_MODULES_LIST += blobfs blobfs_bdev blob_bdev blob lvol vmd nvme
-BLOCKDEV_MODULES_LIST += bdev_kv_null bdev_rocksdb
+BLOCKDEV_MODULES_LIST += bdev_kv_null
 
 # Some bdev modules don't have pollers, so they can directly run in interrupt mode
 INTR_BLOCKDEV_MODULES_LIST = bdev_malloc bdev_passthru bdev_error bdev_gpt bdev_split bdev_raid
@@ -113,6 +113,15 @@ endif
 ACCEL_MODULES_LIST = accel_ioat ioat
 ifeq ($(CONFIG_IDXD),y)
 ACCEL_MODULES_LIST += accel_idxd idxd
+endif
+
+ifeq ($(CONFIG_ROCKSDB),y)
+BLOCKDEV_MODULES_LIST += bdev_rocksdb
+ifeq ($(CONFIG_DEBUG), y)
+BLOCKDEV_MODULES_PRIVATE_LIBS += -lrocksdb_debug -lsnappy -lz
+else
+BLOCKDEV_MODULES_PRIVATE_LIBS += -lrocksdb -lsnappy -lz
+endif
 endif
 
 EVENT_BDEV_SUBSYSTEM = event_bdev event_accel event_vmd event_sock
