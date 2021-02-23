@@ -48,9 +48,14 @@ ROCKSDB_DEBUGLEVEL = 1
 else
 ROCKSDB_DEBUGLEVEL = 0
 endif
+ifeq ($(CONFIG_SHARED),y)
+ROCKSDB_LIBRARY_TARGET := shared_lib
+else
+ROCKSDB_LIBRARY_TARGET := static_lib
+endif
 
 all:
-	$(Q)$(MAKE) -C $(ROCKSDB_USER_DIR) static_lib USE_RTTI=1 DEBUG_LEVEL=$(ROCKSDB_DEBUGLEVEL) SPDK_DIR=$(SPDK_ROOT_DIR) EXTRA_CXXFLAGS='-Wno-deprecated-copy -Wno-pessimizing-move -Wno-stringop-truncation' CC=$(SUB_CC) $(REDIRECT)
+	$(Q)$(MAKE) -C $(ROCKSDB_USER_DIR) $(ROCKSDB_LIBRARY_TARGET) USE_RTTI=1 DEBUG_LEVEL=$(ROCKSDB_DEBUGLEVEL) SPDK_DIR=$(SPDK_ROOT_DIR) EXTRA_CXXFLAGS='-Wno-deprecated-copy -Wno-pessimizing-move -Wno-stringop-truncation' CC=$(SUB_CC) $(REDIRECT)
 
 install: all
 

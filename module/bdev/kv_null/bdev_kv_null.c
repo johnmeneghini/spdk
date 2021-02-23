@@ -300,6 +300,7 @@ bdev_kv_null_initialize(void)
 	g_kv_null_read_buf = spdk_zmalloc(SPDK_BDEV_LARGE_BUF_MAX_SIZE, 0, NULL,
 					  SPDK_ENV_SOCKET_ID_ANY, SPDK_MALLOC_DMA);
 	if (g_kv_null_read_buf == NULL) {
+		SPDK_DEBUGLOG(kv_bdev_null, "bdev_kv_null_initialize Failed to allocate memory buffer\n");
 		return -1;
 	}
 
