@@ -439,7 +439,7 @@ if __name__ == "__main__":
 
     def bdev_rocksdb_delete(args):
         rpc.bdev.bdev_rocksdb_delete(args.client,
-                                  name=args.name)
+                                     name=args.name)
 
     p = subparsers.add_parser('bdev_rocksdb_delete', aliases=['delete_rocksdb_bdev'],
                               help='Delete a KV rocksdb bdev')
