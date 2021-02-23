@@ -15,4 +15,4 @@
 	url = https://github.com/nutanix/libvfio-user.git
 [submodule "rocksdb"]
 	path = rocksdb
-	url = https://bitbucket.eng.netapp.com/scm/kv-store-bb/rocksdb.git
+	url = https://github.com/johnmeneghini/rocksdb.git

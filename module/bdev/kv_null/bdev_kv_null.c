@@ -328,4 +328,3 @@ bdev_kv_null_finish(void)
 }
 
 SPDK_LOG_REGISTER_COMPONENT(kv_bdev_null)
-
