@@ -995,6 +995,13 @@ nvmf_prop_set_cc(struct spdk_nvmf_ctrlr *ctrlr, uint32_t value)
 		diff.bits.iocqes = 0;
 	}
 
+	if (diff.bits.css) {
+		SPDK_DEBUGLOG(nvmf, "Prop Set CSS = %u (%u bytes)\n",
+			      cc.bits.css, 1u << cc.bits.css);
+		ctrlr->vcprop.cc.bits.css = cc.bits.css;
+		diff.bits.css = 0;
+	}
+
 	if (diff.bits.ams) {
 		SPDK_ERRLOG("Arbitration Mechanism Selected (AMS) 0x%x not supported!\n", cc.bits.ams);
 		return false;

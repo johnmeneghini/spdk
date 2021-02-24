@@ -44,12 +44,13 @@ include $(SPDK_ROOT_DIR)/mk/spdk.common.mk
 SUB_CC = $(patsubst %ccc-analyzer,$(DEFAULT_CC),$(CC))
 
 ifeq ($(CONFIG_DEBUG),y)
-ROCKSDB_DEBUGLEVEL = 1
+ROCKSDB_DEBUGLEVEL = 0
 else
 ROCKSDB_DEBUGLEVEL = 0
 endif
 ifeq ($(CONFIG_SHARED),y)
 ROCKSDB_LIBRARY_TARGET := shared_lib
+ENV_LINKER_ARGS += -Wl,-rpath-link $(ROCKSDB_USER_DIR)
 else
 ROCKSDB_LIBRARY_TARGET := static_lib
 endif

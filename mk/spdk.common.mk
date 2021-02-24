@@ -247,6 +247,7 @@ endif
 ROCKSDB_USER_DIR=$(SPDK_ROOT_DIR)/rocksdb
 ifeq ($(CONFIG_ROCKSDB), y)
 CFLAGS +=  -I$(ROCKSDB_USER_DIR)/include
+CXXFLAGS +=  -I$(ROCKSDB_USER_DIR)/include
 LDFLAGS += -L$(ROCKSDB_USER_DIR)
 endif
 

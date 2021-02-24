@@ -42,5 +42,3 @@ LIBNAME = bdev_rocksdb
 SPDK_MAP_FILE = $(SPDK_ROOT_DIR)/mk/spdk_blank.map
 
 include $(SPDK_ROOT_DIR)/mk/spdk.lib.mk
-
-CFLAGS += -Wno-strict-prototypes

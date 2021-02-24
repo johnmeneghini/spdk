@@ -87,14 +87,14 @@ _nvme_kv_cmd_setup_store_request(struct spdk_nvme_ns *ns, struct nvme_request *r
 
 	cmd = (struct spdk_nvme_kv_cmd *)&req->cmd;
 	spdk_nvme_kv_cmd_set_key(cmd, key);
-	cmd->cdw10 = buffer_size;
+	cmd->cdw10_bits.kv_store.vs = buffer_size;
 
 	/**
 	 * cdw11:
 	 * [0:7] key_size
 	 * [8:15] store option
 	 */
-	cmd->cdw11 = ((uint32_t)((option & 0xFF) << 8) | (KV_MAX_KEY_SIZE & 0xFF));
+	cmd->cdw11_bits.kv_store.kl = KV_MAX_KEY_SIZE;
 }
 
 /*
@@ -109,14 +109,14 @@ _nvme_kv_cmd_setup_retrieve_request(struct spdk_nvme_ns *ns, struct nvme_request
 
 	cmd = (struct spdk_nvme_kv_cmd *)&req->cmd;
 	spdk_nvme_kv_cmd_set_key(cmd, key);
-	cmd->cdw10 = buffer_size;
+	cmd->cdw10_bits.kv_retrieve.hbs = buffer_size;
 
 	/**
 	 * cdw11:
 	 * [0:7] key_size
 	 * [8:15] store option
 	 */
-	cmd->cdw11 = ((uint32_t)((option & 0xFF) << 8) | (KV_MAX_KEY_SIZE & 0xFF));
+	cmd->cdw11_bits.kv_retrieve.kl = KV_MAX_KEY_SIZE;
 }
 
 /*
@@ -135,7 +135,7 @@ _nvme_kv_cmd_setup_delete_request(struct spdk_nvme_ns *ns, struct nvme_request *
 	 * cdw11:
 	 * [0:7] key_size
 	 */
-	cmd->cdw11 = (KV_MAX_KEY_SIZE & 0xFF);
+	cmd->cdw11_bits.kv_del.kl = KV_MAX_KEY_SIZE;
 }
 
 /*
@@ -150,11 +150,7 @@ _nvme_kv_cmd_setup_exist_request(struct spdk_nvme_ns *ns, struct nvme_request *r
 	spdk_nvme_kv_cmd_set_key(cmd, key);
 	cmd->cdw10 = 0;
 
-	/**
-	 * cdw11:
-	 * [0:7] key_size
-	 */
-	cmd->cdw11 = (KV_MAX_KEY_SIZE & 0xFF);
+	cmd->cdw11_bits.kv_exist.kl = KV_MAX_KEY_SIZE;
 }
 
 /*

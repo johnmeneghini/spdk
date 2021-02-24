@@ -749,6 +749,8 @@ static void io_complete(void *ctx, const struct spdk_nvme_cpl *cpl);
 static void perf_disconnect_cb(struct spdk_nvme_qpair *qpair, void *ctx);
 static int nvme_init_ns_worker_ctx(struct ns_worker_ctx *ns_ctx);
 static void nvme_cleanup_ns_worker_ctx(struct ns_worker_ctx *ns_ctx);
+static spdk_nvme_kv_key_t prod_key;
+static spdk_nvme_kv_key_t cons_key;
 
 static void
 kv_setup_payload(struct perf_task *task, uint8_t pattern)
@@ -756,7 +758,6 @@ kv_setup_payload(struct perf_task *task, uint8_t pattern)
 	void *buf;
 	int rc;
 
-	spdk_uuid_generate((struct spdk_uuid *)&task->kv_key);
 	buf = spdk_dma_zmalloc(g_io_size_bytes, g_io_align, NULL);
 	if (buf == NULL) {
 		fprintf(stderr, "task->buf spdk_dma_zmalloc failed\n");
@@ -784,6 +785,13 @@ kv_submit_io(struct perf_task *task, struct ns_worker_ctx *ns_ctx,
 	ns_ctx->u.nvme.last_qpair++;
 	if (ns_ctx->u.nvme.last_qpair == ns_ctx->u.nvme.num_active_qpairs) {
 		ns_ctx->u.nvme.last_qpair = 0;
+	}
+
+	if (task->is_read && cons_key < prod_key) {
+		task->kv_key = __sync_fetch_and_add(&cons_key, 1);
+	} else {
+		task->is_read = false;
+		task->kv_key = __sync_fetch_and_add(&prod_key, 1);
 	}
 
 	if (task->is_read) {

@@ -29,7 +29,13 @@ To create a working copy of this repository use command:
    ./configure
    make
 ```
+# Configure for full debug checks
 
+This will configure SPDK with full debug coverage and mem leak testing - slows things down a bit though!
+
+```
+./configure --enable-debug --enable-werror --enable-coverage --enable-ubsan --enable-asan --with-rdma
+```
 # Testbed Setup
 
 ```
