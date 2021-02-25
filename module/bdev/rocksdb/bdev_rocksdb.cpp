@@ -137,7 +137,7 @@ static void bdev_rocksdb_store(struct spdk_io_channel *_ch, struct spdk_bdev_io 
 			/** TODO: Need to figure out how to do this with rocksdb */
 		}
 		rocksdb::Status s = rocksdb_disk->db->Put(rocksdb_disk->writeoptions,
-				    rocksdb::Slice((char *)&bdev_io->u.kv.key, sizeof(&bdev_io->u.kv.key)),
+				    rocksdb::Slice((char *)&bdev_io->u.kv.key, sizeof(bdev_io->u.kv.key)),
 				    rocksdb::Slice((const char *)bdev_io->u.kv.buffer, bdev_io->u.kv.buffer_len));
 		if (!s.ok()) {
 			/** TODO: I know this is wrong, but until this is a C++ source file this is all the status I can get */
@@ -159,7 +159,7 @@ static void bdev_rocksdb_retrieve(struct spdk_io_channel *_ch, struct spdk_bdev_
 		}
 		std::string tmp;
 		rocksdb::Status s = rocksdb_disk->db->Get(rocksdb_disk->readoptions,
-				    rocksdb::Slice((char *)&bdev_io->u.kv.key, sizeof(&bdev_io->u.kv.key)), &tmp);
+				    rocksdb::Slice((char *)&bdev_io->u.kv.key, sizeof(bdev_io->u.kv.key)), &tmp);
 		if (SPDK_DEBUGLOG_FLAG_ENABLED("bdev_rocksdb")) {
 			char key_str[KV_KEY_STRING_LEN];
 			spdk_kv_key_fmt_lower(key_str, sizeof(key_str), &bdev_io->u.kv.key);
@@ -197,7 +197,7 @@ static void bdev_rocksdb_delete_key(struct spdk_io_channel *_ch, struct spdk_bde
 		}
 		rocksdb::Status s = rocksdb_disk->db->Delete(rocksdb_disk->writeoptions,
 				    rocksdb::Slice((char *)&bdev_io->u.kv.key,
-						   sizeof(&bdev_io->u.kv.key)));
+						   sizeof(bdev_io->u.kv.key)));
 		if (s.code() == rocksdb::Status::kNotFound) {
 			req->rsp->nvme_cpl.status.sc = SPDK_NVME_SC_KV_KEY_DOES_NOT_EXIST;
 		} else {
@@ -226,8 +226,8 @@ static void bdev_rocksdb_exist(struct spdk_io_channel *_ch, struct spdk_bdev_io 
 			status = SPDK_BDEV_IO_STATUS_FAILED;
 			break;
 		}
-		iter->Seek(rocksdb::Slice((char *)&bdev_io->u.kv.key, sizeof(&bdev_io->u.kv.key)));
-		if (iter->status().code() == rocksdb::Status::kNotFound) {
+		iter->Seek(rocksdb::Slice((char *)&bdev_io->u.kv.key, sizeof(bdev_io->u.kv.key)));
+		if (!iter->Valid() || iter->status().code() == rocksdb::Status::kNotFound) {
 			/** TODO: I know this is wrong, but until this is a C++ source file this is all the status I can get */
 			req->rsp->nvme_cpl.status.sc = SPDK_NVME_SC_KV_KEY_DOES_NOT_EXIST;
 			break;
@@ -269,7 +269,7 @@ static void bdev_rocksdb_list(struct spdk_io_channel *_ch, struct spdk_bdev_io *
 			break;
 		}
 
-		iter->Seek(rocksdb::Slice((char *)&bdev_io->u.kv.key, sizeof(&bdev_io->u.kv.key)));
+		iter->Seek(rocksdb::Slice((char *)&bdev_io->u.kv.key, sizeof(bdev_io->u.kv.key)));
 		if (!iter->status().ok() && iter->status().code() != rocksdb::Status::kNotFound) {
 			req->rsp->nvme_cpl.status.sc = SPDK_NVME_SC_KV_UNRECOVERED_ERROR;
 			break;

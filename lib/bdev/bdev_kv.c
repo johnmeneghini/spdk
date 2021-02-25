@@ -145,7 +145,7 @@ spdk_bdev_kv_exist(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 
 	bdev_io->internal.ch = channel;
 	bdev_io->internal.desc = desc;
-	bdev_io->type = SPDK_BDEV_IO_TYPE_KV_STORE;
+	bdev_io->type = SPDK_BDEV_IO_TYPE_KV_EXIST;
 	bdev_io->u.kv.key = key;
 	bdev_io_init(bdev_io, bdev, cb_arg, cb);
 
@@ -168,7 +168,7 @@ spdk_bdev_kv_delete(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 
 	bdev_io->internal.ch = channel;
 	bdev_io->internal.desc = desc;
-	bdev_io->type = SPDK_BDEV_IO_TYPE_KV_STORE;
+	bdev_io->type = SPDK_BDEV_IO_TYPE_KV_DELETE;
 	bdev_io->u.kv.key = key;
 	bdev_io_init(bdev_io, bdev, cb_arg, cb);
 

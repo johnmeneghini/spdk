@@ -85,6 +85,20 @@ After starting nvmf target run the perf utility from another shell with:
 
 See the README.md file in examples/kv for more information
 
+## KV CMD
+
+After starting nvmf target run the kv\_cmd utility from another shell with:
+
+Store:
+```
+   python -c "print('test')" | sudo build/examples/kv_cmd -r 'trtype:TCP adrfam:IPv4 traddr:127.0.0.1 trsvcid:4420 subnqn:nqn.2016-06.io.spdk:cnode1' -d 256 -C -k aaaaaaaaaaaaaaaa -c store
+```
+
+Retrieve:
+```
+   sudo build/examples/kv_cmd -r 'trtype:TCP adrfam:IPv4 traddr:127.0.0.1 trsvcid:4420 subnqn:nqn.2016-06.io.spdk:cnode1' -d 256 -C -k aaaaaaaaaaaaaaaa -c retrieve
+```
+
 # Rocksdb Submodlule
 
 Rocksdb is now a submodule of SPDK. To start using this new submodule:
