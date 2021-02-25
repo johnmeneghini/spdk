@@ -321,7 +321,7 @@ def bdev_kv_null_delete(client, name):
 
 
 @deprecated_alias('construct_kv_null_bdev')
-def bdev_rocksdb_create(client, name, db_path, uuid=None, db_backup_path=None):
+def bdev_rocksdb_create(client, name, db_path, uuid=None, db_backup_path=None, conf=None, bdev=None, cache=None):
     """Construct a KV rocksd device.
 
     Args:
@@ -329,6 +329,9 @@ def bdev_rocksdb_create(client, name, db_path, uuid=None, db_backup_path=None):
         db_backup_path: Path to backup data directory (Optional)
         name: name of block device
         uuid: UUID of block device (optional)
+        conf: Path to conf file for blobfs (optional)
+        bdev: Name of bdev for blobfs (optional)
+        cache: cache size for rocksdb in MB (optional)
 
     Returns:
         Name of created KV device.
@@ -338,6 +341,13 @@ def bdev_rocksdb_create(client, name, db_path, uuid=None, db_backup_path=None):
         params['uuid'] = uuid
     if db_backup_path:
         params['db_backup_path'] = db_backup_path
+    if conf:
+        params['conf'] = conf
+    if bdev:
+        params['bdev'] = bdev
+    if cache:
+        params['cache'] = cache
+
     return client.call('bdev_rocksdb_create', params)
 
 

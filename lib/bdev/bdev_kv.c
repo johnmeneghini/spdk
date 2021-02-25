@@ -52,6 +52,11 @@
 
 #include "bdev_internal.h"
 
+bool spdk_bdev_is_kv(struct spdk_bdev *bdev)
+{
+	return spdk_bdev_io_type_supported(bdev, SPDK_BDEV_IO_TYPE_KV_RETRIEVE);
+}
+
 int
 spdk_bdev_kv_retrieve(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 		      __uint128_t key, void *buf, uint64_t buffer_len,

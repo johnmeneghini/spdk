@@ -425,16 +425,22 @@ if __name__ == "__main__":
     def bdev_rocksdb_create(args):
         print_json(rpc.bdev.bdev_rocksdb_create(args.client,
                                                 db_path=args.db_path,
-                                                db_backup_path=args.db_path,
+                                                db_backup_path=args.backup_path,
                                                 name=args.name,
-                                                uuid=args.uuid))
+                                                uuid=args.uuid,
+                                                conf=args.conf,
+                                                bdev=args.bdev,
+                                                cache=args.cache))
 
     p = subparsers.add_parser('bdev_rocksdb_create', aliases=['construct_rocksdb_bdev'],
                               help='Add a kv bdev with rocksdb backend')
     p.add_argument('name', help='KV device name')
-    p.add_argument('-u', '--uuid', help='UUID of the bdev')
     p.add_argument('db_path', help='Path to data directory')
+    p.add_argument('-u', '--uuid', help='UUID of the bdev')
     p.add_argument('-b', '--backup-path', help='Path to backup directory')
+    p.add_argument('-c', '--conf', help='Path to configuration file for blobfs')
+    p.add_argument('-d', '--bdev', help='Name of bdev for blobfs')
+    p.add_argument('-m', '--cache', help='cache size for rocksdb in MB', type=int)
     p.set_defaults(func=bdev_rocksdb_create)
 
     def bdev_rocksdb_delete(args):

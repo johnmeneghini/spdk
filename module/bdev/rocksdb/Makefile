@@ -36,7 +36,7 @@ SPDK_ROOT_DIR := $(abspath $(CURDIR)/../../..)
 SO_VER := 2
 SO_MINOR := 0
 
-C_SRCS = bdev_rocksdb.c bdev_rocksdb_rpc.c
+C_SRCS = bdev_rocksdb.c bdev_rocksdb_rpc.c bdev_rocksdb_env.c
 LIBNAME = bdev_rocksdb
 
 SPDK_MAP_FILE = $(SPDK_ROOT_DIR)/mk/spdk_blank.map

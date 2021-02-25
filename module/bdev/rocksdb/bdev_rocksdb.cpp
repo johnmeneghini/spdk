@@ -54,17 +54,23 @@ extern "C" {
 #include "rocksdb/utilities/backupable_db.h"
 
 #include "bdev_rocksdb.h"
+#include "bdev_rocksdb_env.h"
 
 struct rocksdb_bdev {
 	struct spdk_bdev	bdev;
-	char *db_path;
-	char *db_backup_path;
+	const char *db_path;
+	const char *db_backup_path;
+	const char *blobfs_conf;
+	const char *bdev_name;
+	uint64_t cache_size_mb;
 	rocksdb::DB *db;
 	rocksdb::BackupEngine *be;
 	rocksdb::WriteOptions writeoptions;
 	rocksdb::ReadOptions readoptions;
 	TAILQ_ENTRY(rocksdb_bdev)	tailq;
 };
+
+static rocksdb::Env *env = rocksdb::Env::Default();
 
 struct rocksdb_io_channel {
 	struct spdk_poller		*poller;
@@ -436,6 +442,29 @@ bdev_rocksdb_create(struct spdk_bdev **bdev, const struct spdk_rocksdb_bdev_opts
 			return -ENOMEM;
 		}
 	}
+
+	if (opts->conf) {
+		if (!opts->bdev) {
+			SPDK_ERRLOG("Must specify a bdev name for blobfs storage.\n");
+			return -EINVAL;
+		}
+		rocksdb_disk->blobfs_conf = strdup(opts->conf);
+		if (!rocksdb_disk->blobfs_conf) {
+			free(rocksdb_disk);
+			return -ENOMEM;
+		}
+		rocksdb_disk->bdev_name = strdup(opts->bdev);
+		if (!rocksdb_disk->bdev_name) {
+			free(rocksdb_disk);
+			return -ENOMEM;
+		}
+		if (!opts->cache) {
+			free(rocksdb_disk);
+			return -EINVAL;
+		}
+		rocksdb_disk->cache_size_mb = opts->cache;
+	}
+
 	rocksdb_disk->bdev.product_name = strdup("KV Null disk");
 
 	rocksdb_disk->bdev.write_cache = 0;
@@ -463,9 +492,19 @@ bdev_rocksdb_create(struct spdk_bdev **bdev, const struct spdk_rocksdb_bdev_opts
 	options.OptimizeLevelStyleCompaction(0);
 	/** create the DB if it's not already present */
 	options.create_if_missing = true;
-	options.compression = rocksdb::kNoCompression;
 
 	/** open DB */
+
+	if (rocksdb_disk->blobfs_conf) {
+		env = NewSpdkRocksdbEnv(rocksdb::Env::Default(), rocksdb_disk->db_path, rocksdb_disk->blobfs_conf,
+					rocksdb_disk->bdev_name, rocksdb_disk->cache_size_mb);
+		if (env == NULL) {
+			SPDK_ERRLOG("Could not load SPDK blobfs - check that SPDK mkfs was run "
+				    "against block device %s.\n", rocksdb_disk->bdev_name);
+			return -EINVAL;
+		}
+	}
+
 	rocksdb::Status s = rocksdb::DB::Open(options, rocksdb_disk->db_path, &rocksdb_disk->db);
 	if (!s.ok()) {
 		SPDK_ERRLOG("%s\n", s.ToString().c_str());

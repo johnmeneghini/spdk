@@ -118,7 +118,7 @@ endif
 ifeq ($(CONFIG_ROCKSDB),y)
 BLOCKDEV_MODULES_LIST += bdev_rocksdb
 ifeq ($(CONFIG_DEBUG), y)
-BLOCKDEV_MODULES_PRIVATE_LIBS += -lrocksdb -lsnappy -lz
+BLOCKDEV_MODULES_PRIVATE_LIBS += -lrocksdb_debug -lsnappy -lz
 else
 BLOCKDEV_MODULES_PRIVATE_LIBS += -lrocksdb -lsnappy -lz
 endif

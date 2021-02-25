@@ -58,6 +58,7 @@ DEFINE_STUB(spdk_notify_send, uint64_t, (const char *type, const char *ctx), 0);
 DEFINE_STUB(spdk_notify_type_register, struct spdk_notify_type *, (const char *type), NULL);
 DEFINE_STUB_V(spdk_scsi_nvme_translate, (const struct spdk_bdev_io *bdev_io, int *sc, int *sk,
 		int *asc, int *ascq));
+DEFINE_STUB(spdk_bdev_is_kv, bool, (struct spdk_bdev *bdev), false);
 
 struct ut_bdev {
 	struct spdk_bdev	bdev;

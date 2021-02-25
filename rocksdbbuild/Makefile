@@ -44,7 +44,7 @@ include $(SPDK_ROOT_DIR)/mk/spdk.common.mk
 SUB_CC = $(patsubst %ccc-analyzer,$(DEFAULT_CC),$(CC))
 
 ifeq ($(CONFIG_DEBUG),y)
-ROCKSDB_DEBUGLEVEL = 0
+ROCKSDB_DEBUGLEVEL = 2
 else
 ROCKSDB_DEBUGLEVEL = 0
 endif

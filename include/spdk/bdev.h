@@ -1761,6 +1761,15 @@ size_t spdk_bdev_get_media_events(struct spdk_bdev_desc *bdev_desc,
 				  struct spdk_bdev_media_event *events, size_t max_events);
 
 /**
+ * Is this a KV capable bdev.
+ *
+ * \inbdev bdev to check
+ *
+ * \return true if bdev supports KV interface
+ */
+bool spdk_bdev_is_kv(struct spdk_bdev *bdev);
+
+/**
  * Submit a KV retrieve request to the kv bdev on the given channel.
  *
  * \ingroup bdev_io_submit_functions

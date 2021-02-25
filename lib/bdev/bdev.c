@@ -555,10 +555,14 @@ bdev_in_examine_allowlist(struct spdk_bdev *bdev)
 static inline bool
 bdev_ok_to_examine(struct spdk_bdev *bdev)
 {
-	if (g_bdev_opts.bdev_auto_examine) {
-		return true;
+	if (!spdk_bdev_is_kv(bdev)) {
+		if (g_bdev_opts.bdev_auto_examine) {
+			return true;
+		} else {
+			return bdev_in_examine_allowlist(bdev);
+		}
 	} else {
-		return bdev_in_examine_allowlist(bdev);
+		return false;
 	}
 }
 
