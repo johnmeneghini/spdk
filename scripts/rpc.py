@@ -424,17 +424,37 @@ if __name__ == "__main__":
 
     def bdev_rocksdb_create(args):
         print_json(rpc.bdev.bdev_rocksdb_create(args.client,
-                                                db_path=args.db_path,
-                                                db_backup_path=args.db_path,
                                                 name=args.name,
-                                                uuid=args.uuid))
+                                                db_path=args.db_path,
+                                                uuid=args.uuid,
+                                                db_backup_path=args.db_path,
+                                                wbs_mb=args.wbs_mb,
+                                                compression=args.compression,
+                                                compaction_style=args.compaction_style,
+                                                sync_write=args.sync_write,
+                                                disable_write_ahead=args.disable_write_ahead,
+                                                background_threads_low=args.background_threads_low,
+                                                background_threads_high=args.background_threads_high,
+                                                cache_size_mb=args.cache_size_mb,
+                                                optimize_compaction_mb=args.optimize_compaction_mb))
 
     p = subparsers.add_parser('bdev_rocksdb_create', aliases=['construct_rocksdb_bdev'],
                               help='Add a kv bdev with rocksdb backend')
     p.add_argument('name', help='KV device name')
-    p.add_argument('-u', '--uuid', help='UUID of the bdev')
     p.add_argument('db_path', help='Path to data directory')
-    p.add_argument('-b', '--backup-path', help='Path to backup directory')
+    p.add_argument('-u', '--uuid', help='UUID of the bdev')
+    p.add_argument('--backup-path', help='Path to backup directory')
+    p.add_argument('--wbs-mb', help='Write buffer cache size in MB', type=int, default=64)
+    p.add_argument('--compression', help='Enable compression', type=bool, default=True)
+    p.add_argument('--compaction-style', help='Compaction style level=0, universal=1, fifo=3, none=3', type=int, default=0)
+    p.add_argument('--sync-write', help='Flush write to disk before I/O is complete', type=bool, default=True)
+    p.add_argument('--disable-write-ahead', help='If true, writes will not first go to the write ahead log'
+                   ' and the write may get lost after a crash',
+                   type=bool, default=False)
+    p.add_argument('--background-threads-low', help='Number of background worker threads in default pool', type=int, default=0)
+    p.add_argument('--background-threads-high', help='Number of background worker threads in high pri pool', type=int, default=0)
+    p.add_argument('--cache-size-mb', help='Block cache size in MB', type=int, default=0)
+    p.add_argument('--optimize-compaction-mb', help='memtable memory budget for compaction method', type=int, default=0)
     p.set_defaults(func=bdev_rocksdb_create)
 
     def bdev_rocksdb_delete(args):

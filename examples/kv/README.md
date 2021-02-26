@@ -50,3 +50,5 @@ After stopping nvmf_tgt, you can dump out the DB to txt files in the DB dir to p
 ```
 rocksdb/sst_dump --file=/tmp/rocksdb --command=raw
 ```
+Build with IO URING support in SPDK and RocksDb add '--with-uring'
+`./configure --with-debug --with-uring`

@@ -47,6 +47,15 @@ struct rpc_construct_null {
 	char *uuid;
 	char *db_path;
 	char *db_backup_path;
+	uint32_t wbs_mb;
+	bool compression;
+	int compaction_style;
+	bool sync_write;
+	bool disable_write_ahead;
+	uint32_t background_threads_low;
+	uint32_t background_threads_high;
+	uint32_t cache_size_mb;
+	uint32_t optimize_compaction_mb;
 };
 
 static void
@@ -60,7 +69,16 @@ static const struct spdk_json_object_decoder rpc_construct_null_decoders[] = {
 	{"name", offsetof(struct rpc_construct_null, name), spdk_json_decode_string},
 	{"uuid", offsetof(struct rpc_construct_null, uuid), spdk_json_decode_string, true},
 	{"db_path", offsetof(struct rpc_construct_null, db_path), spdk_json_decode_string},
-	{"db_backup_path", offsetof(struct rpc_construct_null, db_backup_path), spdk_json_decode_string},
+	{"db_backup_path", offsetof(struct rpc_construct_null, db_backup_path), spdk_json_decode_string, true},
+	{"wbs_mb", offsetof(struct rpc_construct_null, wbs_mb), spdk_json_decode_uint32, true},
+	{"compression", offsetof(struct rpc_construct_null, compression), spdk_json_decode_bool, true},
+	{"compaction_style", offsetof(struct rpc_construct_null, compaction_style), spdk_json_decode_uint32, true},
+	{"sync_write", offsetof(struct rpc_construct_null, sync_write), spdk_json_decode_bool, true},
+	{"disable_write_ahead", offsetof(struct rpc_construct_null, disable_write_ahead), spdk_json_decode_bool, true},
+	{"background_threads_low", offsetof(struct rpc_construct_null, background_threads_low), spdk_json_decode_uint32, true},
+	{"background_threads_high", offsetof(struct rpc_construct_null, background_threads_high), spdk_json_decode_uint32, true},
+	{"cache_size_mb", offsetof(struct rpc_construct_null, cache_size_mb), spdk_json_decode_uint32, true},
+	{"optimize_compaction_mb", offsetof(struct rpc_construct_null, optimize_compaction_mb), spdk_json_decode_uint32, true},
 };
 
 static void
@@ -103,6 +121,15 @@ rpc_bdev_rocksdb_create(struct spdk_jsonrpc_request *request,
 	opts.uuid = uuid;
 	opts.db_path = req.db_path;
 	opts.db_backup_path = req.db_backup_path;
+	opts.wbs_mb = req.wbs_mb;
+	opts.compression = req.compression;
+	opts.compaction_style = req.compaction_style;
+	opts.sync_write = req.sync_write;
+	opts.disable_write_ahead = req.disable_write_ahead;
+	opts.background_threads_low = req.background_threads_low;
+	opts.background_threads_high = req.background_threads_high;
+	opts.cache_size_mb = req.cache_size_mb;
+	opts.optimize_compaction_mb = req.optimize_compaction_mb;
 	rc = bdev_rocksdb_create(&bdev, &opts);
 	if (rc) {
 		spdk_jsonrpc_send_error_response(request, rc, spdk_strerror(-rc));

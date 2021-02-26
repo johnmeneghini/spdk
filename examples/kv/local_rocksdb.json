@@ -14,6 +14,16 @@
         {
           "method": "sock_impl_set_options",
           "params": {
+            "impl_name": "uring",
+            "recv_buf_size": 2097152,
+            "send_buf_size": 2097152,
+            "enable_recv_pipe": true,
+            "enable_zerocopy_send": false
+          }
+        },
+        {
+          "method": "sock_impl_set_options",
+          "params": {
             "impl_name": "posix",
             "recv_buf_size": 2097152,
             "send_buf_size": 2097152,
@@ -22,10 +32,6 @@
           }
         }
       ]
-    },
-    {
-      "subsystem": "interface",
-      "config": null
     },
     {
       "subsystem": "bdev",
@@ -43,6 +49,7 @@
           "params": {
             "action_on_timeout": "none",
             "timeout_us": 0,
+            "keep_alive_timeout_ms": 10000,
             "retry_count": 4,
             "arbitration_burst": 0,
             "low_priority_weight": 0,
@@ -65,10 +72,21 @@
           "method": "bdev_rocksdb_create",
           "params": {
             "name": "KV0",
-              "db_path": "/tmp/rocksdb",
-              "db_backup_path": "/tmp/rocksdb_backup",
+            "db_path": "/tmp/rocksdb",
+            "wbs_mb": 64,
+            "compression": false,
+            "compaction_style": 0,
+            "sync_write": false,
+            "disable_write_ahead": false,
+            "background_threads_low": 0,
+            "background_threads_high": 0,
+            "cache_size_mb": 0,
+            "optimize_compaction_mb": 0,
             "uuid": "7ba2391a-6e33-4ee6-8a22-04e658f8afea"
           }
+        },
+        {
+          "method": "bdev_wait_for_examine"
         }
       ]
     },
@@ -95,11 +113,14 @@
           "params": {
             "trtype": "TCP",
             "max_queue_depth": 128,
-            "max_io_qpairs_per_ctrlr": 8,
+            "max_io_qpairs_per_ctrlr": 16,
             "in_capsule_data_size": 8192,
             "max_io_size": 131072,
             "io_unit_size": 16384,
             "max_aq_depth": 128,
+            "num_shared_buffers": 2048,
+            "buf_cache_size": 32,
+            "dif_insert_or_strip": false,
             "c2h_success": true,
             "sock_priority": 0,
             "abort_timeout_sec": 1
@@ -111,18 +132,8 @@
             "nqn": "nqn.2016-06.io.spdk:cnode1",
             "allow_any_host": true,
             "serial_number": "SPDK00000000000001",
-            "model_number": "SPDK_Controller1"
-          }
-        },
-        {
-          "method": "nvmf_subsystem_add_ns",
-          "params": {
-            "nqn": "nqn.2016-06.io.spdk:cnode1",
-            "namespace": {
-              "nsid": 1,
-              "bdev_name": "KV0",
-              "uuid": "7fb5d0fa-7e14-4aac-b9c4-6d053abd0e50"
-            }
+            "model_number": "SPDK_Controller1",
+            "max_namespaces": 32
           }
         },
         {
@@ -134,6 +145,17 @@
               "adrfam": "IPv4",
               "traddr": "127.0.0.1",
               "trsvcid": "4420"
+            }
+          }
+        },
+        {
+          "method": "nvmf_subsystem_add_ns",
+          "params": {
+            "nqn": "nqn.2016-06.io.spdk:cnode1",
+            "namespace": {
+              "nsid": 1,
+              "bdev_name": "KV0",
+              "uuid": "7fb5d0fa-7e14-4aac-b9c4-6d053abd0e50"
             }
           }
         }

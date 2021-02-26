@@ -291,7 +291,6 @@ def bdev_null_resize(client, name, new_size):
     return client.call('bdev_null_resize', params)
 
 
-@deprecated_alias('construct_kv_null_bdev')
 def bdev_kv_null_create(client, capacity, name, uuid=None):
     """Construct a KV null block device.
 
@@ -309,7 +308,6 @@ def bdev_kv_null_create(client, capacity, name, uuid=None):
     return client.call('bdev_kv_null_create', params)
 
 
-@deprecated_alias('delete_kv_null_bdev')
 def bdev_kv_null_delete(client, name):
     """Remove KV null bdev from the system.
 
@@ -320,8 +318,10 @@ def bdev_kv_null_delete(client, name):
     return client.call('bdev_kv_null_delete', params)
 
 
-@deprecated_alias('construct_kv_null_bdev')
-def bdev_rocksdb_create(client, name, db_path, uuid=None, db_backup_path=None):
+def bdev_rocksdb_create(client, name, db_path, uuid=None, db_backup_path=None,
+                        wbs_mb=64, compression=True, compaction_style=0, sync_write=True,
+                        disable_write_ahead=False, background_threads_low=0, background_threads_high=0,
+                        cache_size_mb=0, optimize_compaction_mb=0):
     """Construct a KV rocksd device.
 
     Args:
@@ -333,7 +333,11 @@ def bdev_rocksdb_create(client, name, db_path, uuid=None, db_backup_path=None):
     Returns:
         Name of created KV device.
     """
-    params = {'name': name, 'db_path': db_path}
+    params = {'name': name, 'db_path': db_path, 'wbs_mb': wbs_mb, 'compression': compression,
+              'compaction_style': compaction_style, 'sync_write': sync_write,
+              'disable_write_ahead': disable_write_ahead, 'background_threads_low': background_threads_low,
+              'background_threads_high': background_threads_high, 'cache_size_mb': cache_size_mb,
+              'optimize_compaction_mb': optimize_compaction_mb}
     if uuid:
         params['uuid'] = uuid
     if db_backup_path:
@@ -341,7 +345,6 @@ def bdev_rocksdb_create(client, name, db_path, uuid=None, db_backup_path=None):
     return client.call('bdev_rocksdb_create', params)
 
 
-@deprecated_alias('delete_rocksdb_bdev')
 def bdev_rocksdb_delete(client, name):
     """Remove KV rocksdb bdev from the system.
 
