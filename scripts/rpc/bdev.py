@@ -320,6 +320,33 @@ def bdev_kv_null_delete(client, name):
     return client.call('bdev_kv_null_delete', params)
 
 
+def bdev_kv_malloc_create(client, capacity, name, uuid=None):
+    """Construct a KV malloc block device.
+
+    Args:
+        capacity: size of device in bytes
+        name: name of block device
+        uuid: UUID of block device (optional)
+
+    Returns:
+        Name of created KV device.
+    """
+    params = {'name': name, 'capacity': capacity}
+    if uuid:
+        params['uuid'] = uuid
+    return client.call('bdev_kv_malloc_create', params)
+
+
+def bdev_kv_malloc_delete(client, name):
+    """Remove KV malloc bdev from the system.
+
+    Args:
+        name: name of bdev to delete
+    """
+    params = {'name': name}
+    return client.call('bdev_kv_malloc_delete', params)
+
+
 @deprecated_alias('get_raid_bdevs')
 def bdev_raid_get_bdevs(client, category):
     """Get list of raid bdevs based on category

@@ -422,6 +422,28 @@ if __name__ == "__main__":
     p.add_argument('name', help='KV null bdev name')
     p.set_defaults(func=bdev_kv_null_delete)
 
+    def bdev_kv_malloc_create(args):
+        print_json(rpc.bdev.bdev_kv_malloc_create(args.client,
+                                                  capacity=(args.capacity * 1024 * 1024),
+                                                  name=args.name,
+                                                  uuid=args.uuid))
+
+    p = subparsers.add_parser('bdev_kv_malloc_create',
+                              help='Add a kv bdev with malloc backend')
+    p.add_argument('name', help='KV device name')
+    p.add_argument('-u', '--uuid', help='UUID of the bdev')
+    p.add_argument('capacity', help='Size of malloc bdev in MB (int > 0)', type=int)
+    p.set_defaults(func=bdev_kv_malloc_create)
+
+    def bdev_kv_malloc_delete(args):
+        rpc.bdev.bdev_malloc_delete(args.client,
+                                    name=args.name)
+
+    p = subparsers.add_parser('bdev_kv_malloc_delete',
+                              help='Delete a KV malloc bdev')
+    p.add_argument('name', help='KV malloc bdev name')
+    p.set_defaults(func=bdev_kv_malloc_delete)
+
     def bdev_aio_create(args):
         print_json(rpc.bdev.bdev_aio_create(args.client,
                                             filename=args.filename,

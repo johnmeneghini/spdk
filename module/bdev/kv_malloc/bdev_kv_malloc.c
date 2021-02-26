@@ -327,4 +327,4 @@ bdev_kv_malloc_finish(void)
 	spdk_io_device_unregister(&g_kv_malloc_bdev_head, _bdev_kv_malloc_finish_cb);
 }
 
-SPDK_LOG_REGISTER_COMPONENT(kv_bdev_kv_malloc)
+SPDK_LOG_REGISTER_COMPONENT(bdev_kv_malloc)
