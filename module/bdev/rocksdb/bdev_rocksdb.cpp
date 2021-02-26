@@ -60,7 +60,6 @@ struct rocksdb_bdev {
 	struct spdk_bdev	bdev;
 	const char *db_path;
 	const char *db_backup_path;
-	const char *blobfs_conf;
 	const char *bdev_name;
 	uint64_t cache_size_mb;
 	rocksdb::DB *db;
@@ -443,24 +442,15 @@ bdev_rocksdb_create(struct spdk_bdev **bdev, const struct spdk_rocksdb_bdev_opts
 		}
 	}
 
-	if (opts->conf) {
-		if (!opts->bdev) {
-			SPDK_ERRLOG("Must specify a bdev name for blobfs storage.\n");
+	if (opts->bdev) {
+		if (!opts->cache) {
+			SPDK_ERRLOG("Must specify a cache size > 0\n");
 			return -EINVAL;
-		}
-		rocksdb_disk->blobfs_conf = strdup(opts->conf);
-		if (!rocksdb_disk->blobfs_conf) {
-			free(rocksdb_disk);
-			return -ENOMEM;
 		}
 		rocksdb_disk->bdev_name = strdup(opts->bdev);
 		if (!rocksdb_disk->bdev_name) {
 			free(rocksdb_disk);
 			return -ENOMEM;
-		}
-		if (!opts->cache) {
-			free(rocksdb_disk);
-			return -EINVAL;
 		}
 		rocksdb_disk->cache_size_mb = opts->cache;
 	}
@@ -495,8 +485,8 @@ bdev_rocksdb_create(struct spdk_bdev **bdev, const struct spdk_rocksdb_bdev_opts
 
 	/** open DB */
 
-	if (rocksdb_disk->blobfs_conf) {
-		env = NewSpdkRocksdbEnv(rocksdb::Env::Default(), rocksdb_disk->db_path, rocksdb_disk->blobfs_conf,
+	if (rocksdb_disk->bdev_name) {
+		env = NewSpdkRocksdbEnv(rocksdb::Env::Default(), rocksdb_disk->db_path,
 					rocksdb_disk->bdev_name, rocksdb_disk->cache_size_mb);
 		if (env == NULL) {
 			SPDK_ERRLOG("Could not load SPDK blobfs - check that SPDK mkfs was run "

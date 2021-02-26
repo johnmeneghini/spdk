@@ -40,7 +40,7 @@
 /*
  *   Returns a new environment that is used for SPDK environment.
  */
-rocksdb::Env* NewSpdkRocksdbEnv(rocksdb::Env* base_env, const std::string& fsname, const std::string& confname,
-                const std::string& bdevname, uint64_t cache_size_in_mb);
+rocksdb::Env *NewSpdkRocksdbEnv(rocksdb::Env *base_env, const std::string &fsname,
+				const std::string &bdevname, uint64_t cache_size_in_mb);
 
 #endif /* SPDK_BDEV_ROCKSDB_ENV_H */

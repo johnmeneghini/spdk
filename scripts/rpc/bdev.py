@@ -329,7 +329,6 @@ def bdev_rocksdb_create(client, name, db_path, uuid=None, db_backup_path=None, c
         db_backup_path: Path to backup data directory (Optional)
         name: name of block device
         uuid: UUID of block device (optional)
-        conf: Path to conf file for blobfs (optional)
         bdev: Name of bdev for blobfs (optional)
         cache: cache size for rocksdb in MB (optional)
 
@@ -341,8 +340,6 @@ def bdev_rocksdb_create(client, name, db_path, uuid=None, db_backup_path=None, c
         params['uuid'] = uuid
     if db_backup_path:
         params['db_backup_path'] = db_backup_path
-    if conf:
-        params['conf'] = conf
     if bdev:
         params['bdev'] = bdev
     if cache:

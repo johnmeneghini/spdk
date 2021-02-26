@@ -47,7 +47,6 @@ struct rpc_construct_null {
 	char *uuid;
 	char *db_path;
 	char *db_backup_path;
-	char *conf;
 	char *bdev;
 	uint64_t cache;
 };
@@ -64,7 +63,6 @@ static const struct spdk_json_object_decoder rpc_construct_null_decoders[] = {
 	{"db_path", offsetof(struct rpc_construct_null, db_path), spdk_json_decode_string},
 	{"uuid", offsetof(struct rpc_construct_null, uuid), spdk_json_decode_string, true},
 	{"db_backup_path", offsetof(struct rpc_construct_null, db_backup_path), spdk_json_decode_string, true},
-	{"conf", offsetof(struct rpc_construct_null, conf), spdk_json_decode_string, true},
 	{"bdev", offsetof(struct rpc_construct_null, bdev), spdk_json_decode_string, true},
 	{"cache", offsetof(struct rpc_construct_null, cache), spdk_json_decode_uint64, true},
 };
@@ -104,12 +102,7 @@ rpc_bdev_rocksdb_create(struct spdk_jsonrpc_request *request,
 		}
 		uuid = &decoded_uuid;
 	}
-	if (req.conf) {
-		if (!req.bdev) {
-			spdk_jsonrpc_send_error_response(request, -EINVAL,
-							 "bdev_name must be specified");
-			goto cleanup;
-		}
+	if (req.bdev) {
 		if (!req.cache) {
 			spdk_jsonrpc_send_error_response(request, -EINVAL,
 							 "Cacche size must be greater than 0");
@@ -121,7 +114,6 @@ rpc_bdev_rocksdb_create(struct spdk_jsonrpc_request *request,
 	opts.uuid = uuid;
 	opts.db_path = req.db_path;
 	opts.db_backup_path = req.db_backup_path;
-	opts.conf = req.conf;
 	opts.bdev = req.bdev;
 	opts.cache = req.cache;
 	rc = bdev_rocksdb_create(&bdev, &opts);

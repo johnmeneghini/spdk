@@ -47,7 +47,6 @@ struct spdk_rocksdb_bdev_opts {
 	const struct spdk_uuid *uuid;
 	const char *db_path;
 	const char *db_backup_path;
-	const char *conf;
 	const char *bdev;
 	uint64_t cache;
 };

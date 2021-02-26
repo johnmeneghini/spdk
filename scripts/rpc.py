@@ -428,7 +428,6 @@ if __name__ == "__main__":
                                                 db_backup_path=args.backup_path,
                                                 name=args.name,
                                                 uuid=args.uuid,
-                                                conf=args.conf,
                                                 bdev=args.bdev,
                                                 cache=args.cache))
 
@@ -438,7 +437,6 @@ if __name__ == "__main__":
     p.add_argument('db_path', help='Path to data directory')
     p.add_argument('-u', '--uuid', help='UUID of the bdev')
     p.add_argument('-b', '--backup-path', help='Path to backup directory')
-    p.add_argument('-c', '--conf', help='Path to configuration file for blobfs')
     p.add_argument('-d', '--bdev', help='Name of bdev for blobfs')
     p.add_argument('-m', '--cache', help='cache size for rocksdb in MB', type=int)
     p.set_defaults(func=bdev_rocksdb_create)

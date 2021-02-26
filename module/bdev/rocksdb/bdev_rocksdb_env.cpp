@@ -58,7 +58,6 @@ using namespace rocksdb;
 struct spdk_filesystem *g_fs = NULL;
 struct spdk_bs_dev *g_bs_dev;
 uint32_t g_rocksdb_lcore = 0;
-std::string g_rocksdb_bdev_name;
 volatile bool g_spdk_rocksdb_ready = false;
 volatile bool g_spdk_rocksdb_start_failure = false;
 
@@ -196,7 +195,7 @@ SpdkRocksdbSequentialFile::Skip(uint64_t n)
 
 Status
 SpdkRocksdbSequentialFile::InvalidateCache(__attribute__((unused)) size_t offset,
-				    __attribute__((unused)) size_t length)
+		__attribute__((unused)) size_t length)
 {
 	return Status::OK();
 }
@@ -236,7 +235,7 @@ SpdkRocksdbRandomAccessFile::Read(uint64_t offset, size_t n, Slice *result, char
 
 Status
 SpdkRocksdbRandomAccessFile::InvalidateCache(__attribute__((unused)) size_t offset,
-				      __attribute__((unused)) size_t length)
+		__attribute__((unused)) size_t length)
 {
 	return Status::OK();
 }
@@ -409,12 +408,11 @@ class SpdkRocksdbEnv : public EnvWrapper
 public:
 	pthread_t mSpdkTid;
 	std::string mDirectory;
-	std::string mConfig;
 	std::string mBdev;
 
 public:
-	SpdkRocksdbEnv(Env *base_env, const std::string &dir, const std::string &conf,
-		const std::string &bdev, uint64_t cache_size_in_mb);
+	SpdkRocksdbEnv(Env *base_env, const std::string &dir,
+		       const std::string &bdev, uint64_t cache_size_in_mb);
 
 	virtual ~SpdkRocksdbEnv();
 
@@ -681,46 +679,21 @@ fs_unload_cb(__attribute__((unused)) void *ctx,
 	assert(fserrno == 0);
 }
 
-static void
-spdk_rocksdb_bdev_init_done(int rc, void *cb_arg)
-{
-    SpdkRocksdbEnv * env = (SpdkRocksdbEnv *)cb_arg;
-
-    rc = spdk_bdev_create_bs_dev_ext(env->mBdev.c_str(), base_bdev_event_cb, NULL, &g_bs_dev);
-    if (rc != 0) {
-	g_spdk_rocksdb_start_failure = true;
-	SPDK_ERRLOG("Could not create blob bdev: %s", env->mBdev.c_str());
-    }
-
-    SPDK_NOTICELOG("rocksdb using bdev: %s", g_rocksdb_bdev_name.c_str());
-    spdk_fs_load(g_bs_dev, __send_request, fs_load_cb, NULL);
-}
-
-static void
-initialize_spdk(void *arg)
-{
-    SpdkRocksdbEnv * env = (SpdkRocksdbEnv *)arg;
-    if(env->mConfig.size() > 0) {
-    spdk_app_json_config_load(env->mConfig.c_str(), SPDK_DEFAULT_RPC_ADDR,
-	    spdk_rocksdb_bdev_init_done, env, true);
-    } else {
-	g_spdk_rocksdb_ready = true;
-    }
-    //pthread_exit(NULL);
-}
-
-SpdkRocksdbEnv::SpdkRocksdbEnv(Env *base_env, const std::string &dir, const std::string &conf,
-		 const std::string &bdev, uint64_t cache_size_in_mb)
-	: EnvWrapper(base_env), mDirectory(dir), mConfig(conf), mBdev(bdev)
+SpdkRocksdbEnv::SpdkRocksdbEnv(Env *base_env, const std::string &dir,
+			       const std::string &bdev, uint64_t cache_size_in_mb)
+	: EnvWrapper(base_env), mDirectory(dir), mBdev(bdev)
 {
 	spdk_fs_set_cache_size(cache_size_in_mb);
-	g_rocksdb_bdev_name = mBdev;
 	g_rocksdb_lcore = spdk_env_get_first_core();
 
-	//pthread_create(&mSpdkTid, NULL, &initialize_spdk, this);
-	initialize_spdk(this);
-	while (!g_spdk_rocksdb_ready && !g_spdk_rocksdb_start_failure)
-		;
+	int rc = spdk_bdev_create_bs_dev_ext(mBdev.c_str(), base_bdev_event_cb, NULL, &g_bs_dev);
+	if (rc != 0) {
+		g_spdk_rocksdb_start_failure = true;
+		SPDK_ERRLOG("Could not create blob bdev: %s", mBdev.c_str());
+	} else {
+		SPDK_NOTICELOG("rocksdb using bdev: %s", mBdev.c_str());
+		spdk_fs_load(g_bs_dev, __send_request, fs_load_cb, NULL);
+	}
 
 	if (g_spdk_rocksdb_start_failure) {
 		throw SpdkRocksdbAppStartException("spdk rocks unable to start blobfs");
@@ -751,11 +724,11 @@ SpdkRocksdbEnv::~SpdkRocksdbEnv()
 	}
 }
 
-Env *NewSpdkRocksdbEnv(Env *base_env, const std::string &dir, const std::string &conf,
-		const std::string &bdev, uint64_t cache_size_in_mb)
+Env *NewSpdkRocksdbEnv(Env *base_env, const std::string &dir,
+		       const std::string &bdev, uint64_t cache_size_in_mb)
 {
 	try {
-		SpdkRocksdbEnv *spdk_env = new SpdkRocksdbEnv(base_env, dir, conf, bdev, cache_size_in_mb);
+		SpdkRocksdbEnv *spdk_env = new SpdkRocksdbEnv(base_env, dir, bdev, cache_size_in_mb);
 		if (g_fs != NULL) {
 			return spdk_env;
 		} else {
@@ -770,4 +743,3 @@ Env *NewSpdkRocksdbEnv(Env *base_env, const std::string &dir, const std::string 
 		return NULL;
 	}
 }
-
