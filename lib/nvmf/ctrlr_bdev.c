@@ -542,9 +542,11 @@ nvmf_bdev_ctrlr_retrieve_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc
 {
 	struct spdk_nvme_kv_cmd *cmd = (struct spdk_nvme_kv_cmd *)&req->cmd->nvme_cmd;
 	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
+	struct spdk_nvme_kv_key_t key;
 	int rc;
 
-	rc = spdk_bdev_kv_retrieve(desc, ch, spdk_nvme_kv_cmd_get_key(cmd), req->iov[0].iov_base,
+	spdk_nvme_kv_cmd_get_key(cmd, &key);
+	rc = spdk_bdev_kv_retrieve(desc, ch, key.kl, key.key, req->iov[0].iov_base,
 				   req->iov[0].iov_len,
 				   nvmf_bdev_ctrlr_complete_cmd, req);
 	if (spdk_unlikely(rc)) {
@@ -566,9 +568,11 @@ nvmf_bdev_ctrlr_store_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 {
 	struct spdk_nvme_kv_cmd *cmd = (struct spdk_nvme_kv_cmd *)&req->cmd->nvme_cmd;
 	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
+	struct spdk_nvme_kv_key_t key;
 	int rc;
 
-	rc = spdk_bdev_kv_store(desc, ch, spdk_nvme_kv_cmd_get_key(cmd), req->iov[0].iov_base,
+	spdk_nvme_kv_cmd_get_key(cmd, &key);
+	rc = spdk_bdev_kv_store(desc, ch, key.kl, key.key, req->iov[0].iov_base,
 				req->iov[0].iov_len,
 				nvmf_bdev_ctrlr_complete_cmd, req);
 	if (spdk_unlikely(rc)) {
@@ -590,9 +594,11 @@ nvmf_bdev_ctrlr_list_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 {
 	struct spdk_nvme_kv_cmd *cmd = (struct spdk_nvme_kv_cmd *)&req->cmd->nvme_cmd;
 	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
+	struct spdk_nvme_kv_key_t key;
 	int rc;
 
-	rc = spdk_bdev_kv_list(desc, ch, spdk_nvme_kv_cmd_get_key(cmd), req->iov[0].iov_base,
+	spdk_nvme_kv_cmd_get_key(cmd, &key);
+	rc = spdk_bdev_kv_list(desc, ch, key.kl, key.key, req->iov[0].iov_base,
 			       req->iov[0].iov_len,
 			       nvmf_bdev_ctrlr_complete_cmd, req);
 	if (spdk_unlikely(rc)) {
@@ -614,9 +620,11 @@ nvmf_bdev_ctrlr_exist_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 {
 	struct spdk_nvme_kv_cmd *cmd = (struct spdk_nvme_kv_cmd *)&req->cmd->nvme_cmd;
 	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
+	struct spdk_nvme_kv_key_t key;
 	int rc;
 
-	rc = spdk_bdev_kv_exist(desc, ch, spdk_nvme_kv_cmd_get_key(cmd),
+	spdk_nvme_kv_cmd_get_key(cmd, &key);
+	rc = spdk_bdev_kv_exist(desc, ch, key.kl, key.key,
 				nvmf_bdev_ctrlr_complete_cmd, req);
 	if (spdk_unlikely(rc)) {
 		if (rc == -ENOMEM) {
@@ -637,9 +645,11 @@ nvmf_bdev_ctrlr_delete_cmd(struct spdk_bdev *bdev, struct spdk_bdev_desc *desc,
 {
 	struct spdk_nvme_kv_cmd *cmd = (struct spdk_nvme_kv_cmd *)&req->cmd->nvme_cmd;
 	struct spdk_nvme_cpl *rsp = &req->rsp->nvme_cpl;
+	struct spdk_nvme_kv_key_t key;
 	int rc;
 
-	rc = spdk_bdev_kv_delete(desc, ch, spdk_nvme_kv_cmd_get_key(cmd),
+	spdk_nvme_kv_cmd_get_key(cmd, &key);
+	rc = spdk_bdev_kv_delete(desc, ch, key.kl, key.key,
 				 nvmf_bdev_ctrlr_complete_cmd, req);
 	if (spdk_unlikely(rc)) {
 		if (rc == -ENOMEM) {

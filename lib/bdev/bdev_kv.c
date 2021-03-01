@@ -54,7 +54,7 @@
 
 int
 spdk_bdev_kv_retrieve(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
-		      __uint128_t key, void *buf, uint64_t buffer_len,
+		      uint32_t key_len, uint8_t *key, void *buf, uint64_t buffer_len,
 		      spdk_bdev_io_completion_cb cb, void *cb_arg)
 {
 	struct spdk_bdev *bdev = spdk_bdev_desc_get_bdev(desc);
@@ -69,6 +69,7 @@ spdk_bdev_kv_retrieve(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	bdev_io->internal.ch = channel;
 	bdev_io->internal.desc = desc;
 	bdev_io->type = SPDK_BDEV_IO_TYPE_KV_RETRIEVE;
+	bdev_io->u.kv.key_len = key_len;
 	bdev_io->u.kv.key = key;
 	bdev_io->u.kv.buffer = buf;
 	bdev_io->u.kv.buffer_len = buffer_len;
@@ -80,7 +81,7 @@ spdk_bdev_kv_retrieve(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 
 int
 spdk_bdev_kv_store(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
-		   __uint128_t key, void *buf, uint64_t buffer_len,
+		   uint32_t key_len, uint8_t *key, void *buf, uint64_t buffer_len,
 		   spdk_bdev_io_completion_cb cb, void *cb_arg)
 {
 	struct spdk_bdev *bdev = spdk_bdev_desc_get_bdev(desc);
@@ -95,6 +96,7 @@ spdk_bdev_kv_store(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	bdev_io->internal.ch = channel;
 	bdev_io->internal.desc = desc;
 	bdev_io->type = SPDK_BDEV_IO_TYPE_KV_STORE;
+	bdev_io->u.kv.key_len = key_len;
 	bdev_io->u.kv.key = key;
 	bdev_io->u.kv.buffer = buf;
 	bdev_io->u.kv.buffer_len = buffer_len;
@@ -106,7 +108,7 @@ spdk_bdev_kv_store(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 
 int
 spdk_bdev_kv_list(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
-		  __uint128_t key, void *buf, uint64_t buffer_len,
+		  uint32_t key_len, uint8_t *key, void *buf, uint64_t buffer_len,
 		  spdk_bdev_io_completion_cb cb, void *cb_arg)
 {
 	struct spdk_bdev *bdev = spdk_bdev_desc_get_bdev(desc);
@@ -121,6 +123,7 @@ spdk_bdev_kv_list(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	bdev_io->internal.ch = channel;
 	bdev_io->internal.desc = desc;
 	bdev_io->type = SPDK_BDEV_IO_TYPE_KV_LIST;
+	bdev_io->u.kv.key_len = key_len;
 	bdev_io->u.kv.key = key;
 	bdev_io->u.kv.buffer = buf;
 	bdev_io->u.kv.buffer_len = buffer_len;
@@ -132,7 +135,7 @@ spdk_bdev_kv_list(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 
 int
 spdk_bdev_kv_exist(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
-		   __uint128_t key, spdk_bdev_io_completion_cb cb, void *cb_arg)
+		   uint32_t key_len, uint8_t *key, spdk_bdev_io_completion_cb cb, void *cb_arg)
 {
 	struct spdk_bdev *bdev = spdk_bdev_desc_get_bdev(desc);
 	struct spdk_bdev_io *bdev_io;
@@ -146,6 +149,7 @@ spdk_bdev_kv_exist(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	bdev_io->internal.ch = channel;
 	bdev_io->internal.desc = desc;
 	bdev_io->type = SPDK_BDEV_IO_TYPE_KV_EXIST;
+	bdev_io->u.kv.key_len = key_len;
 	bdev_io->u.kv.key = key;
 	bdev_io_init(bdev_io, bdev, cb_arg, cb);
 
@@ -155,7 +159,7 @@ spdk_bdev_kv_exist(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 
 int
 spdk_bdev_kv_delete(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
-		    __uint128_t key, spdk_bdev_io_completion_cb cb, void *cb_arg)
+		    uint32_t key_len, uint8_t *key, spdk_bdev_io_completion_cb cb, void *cb_arg)
 {
 	struct spdk_bdev *bdev = spdk_bdev_desc_get_bdev(desc);
 	struct spdk_bdev_io *bdev_io;
@@ -169,6 +173,7 @@ spdk_bdev_kv_delete(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	bdev_io->internal.ch = channel;
 	bdev_io->internal.desc = desc;
 	bdev_io->type = SPDK_BDEV_IO_TYPE_KV_DELETE;
+	bdev_io->u.kv.key_len = key_len;
 	bdev_io->u.kv.key = key;
 	bdev_io_init(bdev_io, bdev, cb_arg, cb);
 

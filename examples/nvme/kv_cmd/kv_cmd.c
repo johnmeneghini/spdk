@@ -80,7 +80,16 @@ static bool g_vmd = false;
 
 static bool g_print_completion = false;
 
-static spdk_nvme_kv_key_t g_key = 0;
+static struct spdk_nvme_kv_key_t g_key;
+
+struct kv_op {
+	enum kv_cmd_type cmd_type;
+	struct spdk_nvme_kv_key_t key;
+	void *buffer;
+	size_t buffer_len;
+};
+
+static struct kv_op g_op;
 
 static void
 usage(const char *program_name)
@@ -113,11 +122,12 @@ parse_args(int argc, char **argv)
 {
 	int op;
 	char *hostnqn;
+	int rc;
 
 	spdk_nvme_trid_populate_transport(&g_trid, SPDK_NVME_TRANSPORT_PCIE);
 	snprintf(g_trid.subnqn, sizeof(g_trid.subnqn), "%s", SPDK_NVMF_DISCOVERY_NQN);
 
-	while ((op = getopt(argc, argv, "d:r:c:Ck:")) != -1) {
+	while ((op = getopt(argc, argv, "d:r:c:Ck:L:")) != -1) {
 		switch (op) {
 		case 'd':
 			g_dpdk_mem = spdk_strtol(optarg, 10);
@@ -169,7 +179,15 @@ parse_args(int argc, char **argv)
 			g_print_completion = true;
 			break;
 		case 'k':
-			memcpy(&g_key, optarg, sizeof(g_key));
+			spdk_kv_key_parse(optarg, &g_key);
+			break;
+		case 'L':
+			rc = spdk_log_set_flag(optarg);
+			if (rc < 0) {
+				SPDK_ERRLOG("unknown flag\n");
+				usage(argv[0]);
+				return 1;
+			}
 			break;
 		default:
 			usage(argv[0]);
@@ -183,6 +201,8 @@ parse_args(int argc, char **argv)
 static void
 process_completion(void *cb_arg, const struct spdk_nvme_cpl *cpl)
 {
+	struct kv_op *op = (struct kv_op *)cb_arg;
+	struct spdk_nvme_kv_ns_list_data *list_data;
 	if (spdk_nvme_cpl_is_error(cpl)) {
 		printf("IO failed (sct=%d, sc=%d)\n", cpl->status.sct, cpl->status.sc);
 	}
@@ -198,12 +218,38 @@ process_completion(void *cb_arg, const struct spdk_nvme_cpl *cpl)
 		printf("  CDW1: %d\n", cpl->cdw1);
 	}
 
+	if (!spdk_nvme_cpl_is_error(cpl)) {
+		switch (op->cmd_type) {
+		case KV_CMD_TYPE_STORE:
+			break;
+		case KV_CMD_TYPE_RETRIEVE:
+			break;
+		case KV_CMD_TYPE_EXIST:
+			break;
+		case KV_CMD_TYPE_DELETE:
+			break;
+		case KV_CMD_TYPE_LIST:
+			list_data = (struct spdk_nvme_kv_ns_list_data *)op->buffer;
+			struct spdk_nvme_kv_key_t *key = &list_data->keys[0];
+			for (uint16_t i = 0; i < list_data->nrk; i++) {
+				assert(key->kl > 0 && key->kl <= KV_MAX_KEY_SIZE);
+				char key_str[KV_KEY_STRING_LEN];
+				spdk_kv_key_fmt_lower(key_str, sizeof(key_str), key->kl, key->key);
+				printf("%04u: %s\n", i, key_str);
+				uint32_t key_len = ((sizeof(key->kl) + key->kl + 3) / 4) * 4;
+				key = (struct spdk_nvme_kv_key_t *)(((uint8_t *)key) + key_len);
+			}
+			break;
+		default:
+			fprintf(stderr, "Unsupported command\n");
+		}
+	}
 	outstanding_commands--;
 }
 
 static void
 run_kv_cmd(struct spdk_nvme_ctrlr *ctrlr, uint32_t nsid, enum kv_cmd_type cmd_type,
-	   spdk_nvme_kv_key_t key)
+	   struct spdk_nvme_kv_key_t key)
 {
 	/* Get qpair */
 	struct spdk_nvme_qpair *qpair = spdk_nvme_ctrlr_alloc_io_qpair(ctrlr, NULL, 0);
@@ -253,6 +299,11 @@ run_kv_cmd(struct spdk_nvme_ctrlr *ctrlr, uint32_t nsid, enum kv_cmd_type cmd_ty
 		exit(1);
 	}
 
+	g_op.cmd_type = cmd_type;
+	g_op.key = key;
+	g_op.buffer = buf;
+	g_op.buffer_len = buffer_size;
+
 	switch (cmd_type) {
 	case KV_CMD_TYPE_STORE:
 		if (fgets(buf, sizeof buf, stdin) == NULL) {
@@ -263,23 +314,23 @@ run_kv_cmd(struct spdk_nvme_ctrlr *ctrlr, uint32_t nsid, enum kv_cmd_type cmd_ty
 		}
 		printf("Store buffer: %s\n", buf);
 		++outstanding_commands;
-		spdk_nvme_kv_cmd_store(ns, qpair, key, buf, buffer_size, 0, process_completion, NULL, 0);
+		spdk_nvme_kv_cmd_store(ns, qpair, &key, buf, strlen(buf), 0, process_completion, &g_op, 0);
 		break;
 	case KV_CMD_TYPE_RETRIEVE:
 		++outstanding_commands;
-		spdk_nvme_kv_cmd_retrieve(ns, qpair, key, buf, buffer_size, 0, process_completion, NULL, 0);
+		spdk_nvme_kv_cmd_retrieve(ns, qpair, &key, buf, buffer_size, 0, process_completion, &g_op, 0);
 		break;
 	case KV_CMD_TYPE_EXIST:
 		++outstanding_commands;
-		spdk_nvme_kv_cmd_exist(ns, qpair, key, process_completion, NULL);
+		spdk_nvme_kv_cmd_exist(ns, qpair, &key, process_completion, &g_op);
 		break;
 	case KV_CMD_TYPE_DELETE:
 		++outstanding_commands;
-		spdk_nvme_kv_cmd_delete(ns, qpair, key, process_completion, NULL);
+		spdk_nvme_kv_cmd_delete(ns, qpair, &key, process_completion, &g_op);
 		break;
 	case KV_CMD_TYPE_LIST:
-		/* ++outstanding_commands; */
-		fprintf(stderr, "No support yet for list\n");
+		++outstanding_commands;
+		spdk_nvme_kv_cmd_list(ns, qpair, &key, buf, buffer_size, process_completion, &g_op);
 		break;
 	default:
 		fprintf(stderr, "Unsupported command\n");
@@ -330,7 +381,7 @@ int main(int argc, char **argv)
 			" Some NVMe devices can be unavailable.\n");
 	}
 
-	if (g_key == 0) {
+	if (g_key.kl == 0) {
 		fprintf(stderr, "key (-k) required\n");
 		return 1;
 	}

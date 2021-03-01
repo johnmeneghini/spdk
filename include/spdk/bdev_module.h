@@ -600,8 +600,11 @@ struct spdk_bdev_io {
 		} zone_mgmt;
 		struct {
 
+			/* Length of key buffer */
+			uint32_t key_len;
+
 			/* Key value */
-			__uint128_t key;
+			uint8_t *key;
 
 			/* Data buffer */
 			void *buffer;

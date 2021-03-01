@@ -105,4 +105,23 @@ After stopping nvmf_tgt on ssan-rx2560-03, you can dump out the DB to txt files 
   sudo rocksdb/sst_dump --file=/tmp/rocksdb --command=raw
 ```
 
+# KV key format for human consumption
+
+```
+A key string passed, for example to kv_cmd can take one of 2 forms:
+- An ascii string of up to 16 bytes in length, i.e. "hellokitty"
+- A series of hex digits preceded by '0x' and grouped in to 4 byte sequences
+  separated by '-'.  Note that the final group need not be all 4 bytes, so for
+  example, '0x0' is a 1 byte key '0', 0x00 is also a 1 byte key with 0, while
+  0x000 is a 2 byte key with bytes 0 and 1 set to 0.  Note also that key length
+  is a distinguishing characteristic, so that 0x00 and 0x0000 are distinct keys
+
+Output format for a key is similar, with only the significant bytes output as
+determined by the key length.  For example, the key "hello" is output as:
+"0x68656c6c-68"
+while the key "hellokitty" will be represented as:
+"0x68656c6c-68656c6c-6865"
+
+```
+
 End

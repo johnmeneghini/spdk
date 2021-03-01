@@ -1780,7 +1780,7 @@ size_t spdk_bdev_get_media_events(struct spdk_bdev_desc *bdev_desc,
  *   * -ENOMEM - spdk_bdev_io buffer cannot be allocated
  */
 int spdk_bdev_kv_retrieve(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
-			  __uint128_t key, void *buf, uint64_t buffer_len,
+			  uint32_t key_len, uint8_t *key, void *buf, uint64_t buffer_len,
 			  spdk_bdev_io_completion_cb cb, void *cb_arg);
 
 /**
@@ -1803,7 +1803,7 @@ int spdk_bdev_kv_retrieve(struct spdk_bdev_desc *desc, struct spdk_io_channel *c
  *   * -ENOMEM - spdk_bdev_io buffer cannot be allocated
  */
 int spdk_bdev_kv_store(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
-		       __uint128_t key, void *buf, uint64_t buffer_len,
+		       uint32_t key_len, uint8_t *key, void *buf, uint64_t buffer_len,
 		       spdk_bdev_io_completion_cb cb, void *cb_arg);
 
 /**
@@ -1826,7 +1826,7 @@ int spdk_bdev_kv_store(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
  *   * -ENOMEM - spdk_bdev_io buffer cannot be allocated
  */
 int spdk_bdev_kv_list(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
-		      __uint128_t key, void *buf, uint64_t buffer_len,
+		      uint32_t key_len, uint8_t *key, void *buf, uint64_t buffer_len,
 		      spdk_bdev_io_completion_cb cb, void *cb_arg);
 
 /**
@@ -1847,7 +1847,7 @@ int spdk_bdev_kv_list(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
  *   * -ENOMEM - spdk_bdev_io buffer cannot be allocated
  */
 int spdk_bdev_kv_exist(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
-		       __uint128_t key, spdk_bdev_io_completion_cb cb, void *cb_arg);
+		       uint32_t key_len, uint8_t *key, spdk_bdev_io_completion_cb cb, void *cb_arg);
 
 /**
  * Submit a delete key request to the kv bdev on the given channel.
@@ -1867,7 +1867,7 @@ int spdk_bdev_kv_exist(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
  *   * -ENOMEM - spdk_bdev_io buffer cannot be allocated
  */
 int spdk_bdev_kv_delete(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
-			__uint128_t key, spdk_bdev_io_completion_cb cb, void *cb_arg);
+			uint32_t key_len, uint8_t *key, spdk_bdev_io_completion_cb cb, void *cb_arg);
 
 #ifdef __cplusplus
 }

@@ -311,7 +311,7 @@ nvme_io_qpair_print_kv_command(uint16_t qid, struct spdk_nvme_cmd *cmd)
 	case SPDK_NVME_OPC_KV_STORE:
 	case SPDK_NVME_OPC_KV_RETRIEVE:
 	case SPDK_NVME_OPC_KV_LIST:
-		spdk_kv_cmd_fmt_lower(key_str, sizeof(key_str), (struct spdk_nvme_kv_cmd *)cmd);
+		spdk_kv_cmd_fmt_lower((const struct spdk_nvme_kv_cmd *)cmd, key_str, sizeof(key_str));
 		SPDK_NOTICELOG("%s sqid:%d cid:%d nsid:%d "
 			       "key: %s len:%d %s\n",
 			       nvme_get_string(kv_io_opcode, cmd->opc), qid, cmd->cid, cmd->nsid,
@@ -320,7 +320,7 @@ nvme_io_qpair_print_kv_command(uint16_t qid, struct spdk_nvme_cmd *cmd)
 		break;
 	case SPDK_NVME_OPC_KV_EXIST:
 	case SPDK_NVME_OPC_KV_DELETE:
-		spdk_kv_cmd_fmt_lower(key_str, sizeof(key_str), (struct spdk_nvme_kv_cmd *)cmd);
+		spdk_kv_cmd_fmt_lower((const struct spdk_nvme_kv_cmd *)cmd, key_str, sizeof(key_str));
 		SPDK_NOTICELOG("%s sqid:%d cid:%d nsid:%d "
 			       "key: %s %s\n",
 			       nvme_get_string(kv_io_opcode, cmd->opc), qid, cmd->cid, cmd->nsid,

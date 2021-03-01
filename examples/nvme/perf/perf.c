@@ -188,7 +188,7 @@ struct perf_task {
 	uint64_t		submit_tsc;
 	bool			is_read;
 	struct spdk_dif_ctx	dif_ctx;
-	spdk_nvme_kv_key_t	kv_key;
+	struct spdk_nvme_kv_key_t	kv_key;
 #if HAVE_LIBAIO
 	struct iocb		iocb;
 #endif
@@ -749,8 +749,9 @@ static void io_complete(void *ctx, const struct spdk_nvme_cpl *cpl);
 static void perf_disconnect_cb(struct spdk_nvme_qpair *qpair, void *ctx);
 static int nvme_init_ns_worker_ctx(struct ns_worker_ctx *ns_ctx);
 static void nvme_cleanup_ns_worker_ctx(struct ns_worker_ctx *ns_ctx);
-static spdk_nvme_kv_key_t prod_key;
-static spdk_nvme_kv_key_t cons_key;
+static __uint128_t last_prod_key;
+static __uint128_t next_prod_key;
+static __uint128_t cons_key;
 
 static void
 kv_setup_payload(struct perf_task *task, uint8_t pattern)
@@ -774,6 +775,38 @@ kv_setup_payload(struct perf_task *task, uint8_t pattern)
 
 }
 
+static void
+kv_io_complete(void *ctx, const struct spdk_nvme_cpl *cpl)
+{
+	struct perf_task *task = ctx;
+
+	if (spdk_unlikely(spdk_nvme_cpl_is_error(cpl))) {
+		char key_str[KV_KEY_STRING_LEN];
+		spdk_kv_key_fmt_lower(key_str, sizeof(key_str), task->kv_key.kl, task->kv_key.key);
+		if (task->is_read) {
+			RATELIMIT_LOG("Read completed with error (sct=%d, sc=%d, key=%s)\n",
+				      cpl->status.sct, cpl->status.sc, key_str);
+		} else {
+			RATELIMIT_LOG("Write completed with error (sct=%d, sc=%d, key=%s)\n",
+				      cpl->status.sct, cpl->status.sc, key_str);
+		}
+		if (cpl->status.sct == SPDK_NVME_SCT_GENERIC &&
+		    cpl->status.sc == SPDK_NVME_SC_INVALID_NAMESPACE_OR_FORMAT) {
+			/* The namespace was hotplugged.  Stop trying to send I/O to it. */
+			task->ns_ctx->is_draining = true;
+		}
+	}
+	if (!task->is_read) {
+		__uint128_t task_key;
+		memcpy(&task_key, task->kv_key.key, sizeof(task_key));
+		__sync_bool_compare_and_swap(&last_prod_key,
+					     last_prod_key,
+					     spdk_max(last_prod_key, task_key));
+	}
+
+	task_complete(task);
+}
+
 static int
 kv_submit_io(struct perf_task *task, struct ns_worker_ctx *ns_ctx,
 	     struct ns_entry *entry, uint64_t offset_in_ios)
@@ -787,21 +820,24 @@ kv_submit_io(struct perf_task *task, struct ns_worker_ctx *ns_ctx,
 		ns_ctx->u.nvme.last_qpair = 0;
 	}
 
-	if (task->is_read && cons_key < prod_key) {
-		task->kv_key = __sync_fetch_and_add(&cons_key, 1);
+	if (task->is_read && cons_key < last_prod_key) {
+		__uint128_t task_key = __sync_fetch_and_add(&cons_key, 1);
+		memcpy(task->kv_key.key, &task_key, sizeof(task_key));
 	} else {
 		task->is_read = false;
-		task->kv_key = __sync_fetch_and_add(&prod_key, 1);
+		__uint128_t task_key = __sync_fetch_and_add(&next_prod_key, 1);
+		memcpy(task->kv_key.key, &task_key, sizeof(task_key));
 	}
+	task->kv_key.kl = sizeof(task->kv_key.key);
 
 	if (task->is_read) {
 		rc = spdk_nvme_kv_cmd_retrieve(entry->u.nvme.ns, ns_ctx->u.nvme.qpair[qp_num],
-					       task->kv_key, task->iovs[0].iov_base, entry->io_size_blocks * entry->block_size,
-					       0, io_complete, task, entry->io_flags);
+					       &task->kv_key, task->iovs[0].iov_base, entry->io_size_blocks * entry->block_size,
+					       0, kv_io_complete, task, entry->io_flags);
 	} else {
 		rc = spdk_nvme_kv_cmd_store(entry->u.nvme.ns, ns_ctx->u.nvme.qpair[qp_num],
-					    task->kv_key, task->iovs[0].iov_base, entry->io_size_blocks * entry->block_size,
-					    0, io_complete, task, entry->io_flags);
+					    &task->kv_key, task->iovs[0].iov_base, entry->io_size_blocks * entry->block_size,
+					    0, kv_io_complete, task, entry->io_flags);
 	}
 	return rc;
 }
