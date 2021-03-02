@@ -21,10 +21,15 @@ Retrieve:
 ```
 
 Exist:
-Supported, but not working yet.
+```
+   sudo build/examples/kv_cmd -r 'trtype:TCP adrfam:IPv4 traddr:127.0.0.1 trsvcid:4420 subnqn:nqn.2016-06.io.spdk:cnode1' -d 256 -C -k aaaaaaaaaaaaaaaa -c exist
+```
+Response SC will be 0 if the key exists, and 135 if the key does not exist.
 
 Delete:
-Untested.
+```
+   sudo build/examples/kv_cmd -r 'trtype:TCP adrfam:IPv4 traddr:127.0.0.1 trsvcid:4420 subnqn:nqn.2016-06.io.spdk:cnode1' -d 256 -C -k aaaaaaaaaaaaaaaa -c delete
+```
 
 List:
 No support yet.

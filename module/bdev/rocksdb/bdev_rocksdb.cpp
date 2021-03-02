@@ -139,7 +139,8 @@ static void bdev_rocksdb_store(struct spdk_io_channel *_ch, struct spdk_bdev_io 
 	}
 	do {
 		if (req->cmd->nvme_kv_cmd.cdw11_bits.kv_store.kl != KV_MAX_KEY_SIZE) {
-			req->rsp->nvme_cpl.status.sc = SPDK_NVME_SC_KV_INVALID_KEY_SIZE;
+			bdev_io->internal.error.nvme.sc = SPDK_NVME_SC_KV_INVALID_KEY_SIZE;
+			status = SPDK_BDEV_IO_STATUS_NVME_ERROR;
 			break;
 		}
 		if (req->cmd->nvme_kv_cmd.cdw11_bits.kv_store.so.no_overwrite) {
@@ -153,7 +154,8 @@ static void bdev_rocksdb_store(struct spdk_io_channel *_ch, struct spdk_bdev_io 
 				    rocksdb::Slice((const char *)bdev_io->u.kv.buffer, bdev_io->u.kv.buffer_len));
 		if (!s.ok()) {
 			/** TODO: I know this is wrong, but until this is a C++ source file this is all the status I can get */
-			req->rsp->nvme_cpl.status.sc = SPDK_NVME_SC_KV_KEY_DOES_NOT_EXIST;
+			bdev_io->internal.error.nvme.sc = SPDK_NVME_SC_KV_KEY_DOES_NOT_EXIST;
+			status = SPDK_BDEV_IO_STATUS_NVME_ERROR;
 		}
 	} while (0);
 	spdk_bdev_io_complete(bdev_io, status);
@@ -166,7 +168,8 @@ static void bdev_rocksdb_retrieve(struct spdk_io_channel *_ch, struct spdk_bdev_
 	struct spdk_nvmf_request *req = (struct spdk_nvmf_request *)bdev_io->internal.caller_ctx;
 	do {
 		if (req->cmd->nvme_kv_cmd.cdw11_bits.kv_retrieve.kl != KV_MAX_KEY_SIZE) {
-			req->rsp->nvme_cpl.status.sc = SPDK_NVME_SC_KV_INVALID_KEY_SIZE;
+			bdev_io->internal.error.nvme.sc = SPDK_NVME_SC_KV_INVALID_KEY_SIZE;
+			status = SPDK_BDEV_IO_STATUS_NVME_ERROR;
 			break;
 		}
 		std::string tmp;
@@ -180,9 +183,11 @@ static void bdev_rocksdb_retrieve(struct spdk_io_channel *_ch, struct spdk_bdev_
 		}
 		if (!s.ok()) {
 			if (s.code() == rocksdb::Status::kNotFound) {
-				req->rsp->nvme_cpl.status.sc = SPDK_NVME_SC_KV_KEY_DOES_NOT_EXIST;
+				bdev_io->internal.error.nvme.sc = SPDK_NVME_SC_KV_KEY_DOES_NOT_EXIST;
+				status = SPDK_BDEV_IO_STATUS_NVME_ERROR;
 			} else {
-				req->rsp->nvme_cpl.status.sc = SPDK_NVME_SC_KV_UNRECOVERED_ERROR;
+				bdev_io->internal.error.nvme.sc = SPDK_NVME_SC_KV_UNRECOVERED_ERROR;
+				status = SPDK_BDEV_IO_STATUS_NVME_ERROR;
 			}
 		} else {
 			assert(tmp.data() != NULL);
@@ -204,14 +209,16 @@ static void bdev_rocksdb_delete_key(struct spdk_io_channel *_ch, struct spdk_bde
 			SPDK_DEBUGLOG(bdev_rocksdb, "delete key:%s\n", key_str);
 		}
 		if (req->cmd->nvme_kv_cmd.cdw11_bits.kv_del.kl != KV_MAX_KEY_SIZE) {
-			req->rsp->nvme_cpl.status.sc = SPDK_NVME_SC_KV_INVALID_KEY_SIZE;
+			bdev_io->internal.error.nvme.sc = SPDK_NVME_SC_KV_INVALID_KEY_SIZE;
+			status = SPDK_BDEV_IO_STATUS_NVME_ERROR;
 			break;
 		}
 		rocksdb::Status s = rocksdb_disk->db->Delete(rocksdb_disk->writeoptions,
 				    rocksdb::Slice((char *)&bdev_io->u.kv.key,
 						   sizeof(bdev_io->u.kv.key)));
 		if (s.code() == rocksdb::Status::kNotFound) {
-			req->rsp->nvme_cpl.status.sc = SPDK_NVME_SC_KV_KEY_DOES_NOT_EXIST;
+			bdev_io->internal.error.nvme.sc = SPDK_NVME_SC_KV_KEY_DOES_NOT_EXIST;
+			status = SPDK_BDEV_IO_STATUS_NVME_ERROR;
 		} else {
 			req->rsp->nvme_cpl.status.sc =
 				SPDK_NVME_SC_SUCCESS; /** What should be the result in this case? */
@@ -241,14 +248,16 @@ static void bdev_rocksdb_exist(struct spdk_io_channel *_ch, struct spdk_bdev_io 
 		iter->Seek(rocksdb::Slice((char *)&bdev_io->u.kv.key, sizeof(bdev_io->u.kv.key)));
 		if (!iter->Valid() || iter->status().code() == rocksdb::Status::kNotFound) {
 			/** TODO: I know this is wrong, but until this is a C++ source file this is all the status I can get */
-			req->rsp->nvme_cpl.status.sc = SPDK_NVME_SC_KV_KEY_DOES_NOT_EXIST;
+			bdev_io->internal.error.nvme.sc = SPDK_NVME_SC_KV_KEY_DOES_NOT_EXIST;
+			status = SPDK_BDEV_IO_STATUS_NVME_ERROR;
 			break;
 		}
 		rocksdb::Slice key = iter->key();
 		if (key.size() != KV_MAX_KEY_SIZE) {
 			SPDK_ERRLOG("Invalid key length %zu\n", key.size());
-			req->rsp->nvme_cpl.status.sc =
-				SPDK_NVME_SC_KV_INVALID_KEY_SIZE; /** What should be the result in this case? */
+			/** What should be the result in this case? */
+			bdev_io->internal.error.nvme.sc = SPDK_NVME_SC_KV_INVALID_KEY_SIZE;
+			status = SPDK_BDEV_IO_STATUS_NVME_ERROR;
 			break;
 		}
 		if (memcmp(key.data(), &bdev_io->u.kv.key, spdk_min(key.size(),
@@ -256,8 +265,8 @@ static void bdev_rocksdb_exist(struct spdk_io_channel *_ch, struct spdk_bdev_io 
 			req->rsp->nvme_cpl.status.sc =
 				SPDK_NVME_SC_SUCCESS;
 		} else {
-			req->rsp->nvme_cpl.status.sc =
-				SPDK_NVME_SC_KV_KEY_DOES_NOT_EXIST;
+			bdev_io->internal.error.nvme.sc = SPDK_NVME_SC_KV_KEY_DOES_NOT_EXIST;
+			status = SPDK_BDEV_IO_STATUS_NVME_ERROR;
 		}
 		delete iter;
 	} while (0);
@@ -283,14 +292,17 @@ static void bdev_rocksdb_list(struct spdk_io_channel *_ch, struct spdk_bdev_io *
 
 		iter->Seek(rocksdb::Slice((char *)&bdev_io->u.kv.key, sizeof(bdev_io->u.kv.key)));
 		if (!iter->status().ok() && iter->status().code() != rocksdb::Status::kNotFound) {
-			req->rsp->nvme_cpl.status.sc = SPDK_NVME_SC_KV_UNRECOVERED_ERROR;
+			bdev_io->internal.error.nvme.sc = SPDK_NVME_SC_KV_UNRECOVERED_ERROR;
+			status = SPDK_BDEV_IO_STATUS_NVME_ERROR;
 			break;
 		}
 		struct spdk_nvme_kv_ns_list_data *list_data = (struct spdk_nvme_kv_ns_list_data *)
 				bdev_io->u.kv.buffer;
 		uint32_t bytes_left = bdev_io->u.kv.buffer_len;
 		if (bytes_left < sizeof(*list_data)) {
-			req->rsp->nvme_cpl.status.sc = SPDK_NVME_SC_INVALID_FIELD; /** Is there a better status code? */
+			/** Is there a better status code? */
+			bdev_io->internal.error.nvme.sc = SPDK_NVME_SC_INVALID_FIELD;
+			status = SPDK_BDEV_IO_STATUS_NVME_ERROR;
 			break;
 		}
 		list_data->nrk = 0;
@@ -300,8 +312,9 @@ static void bdev_rocksdb_list(struct spdk_io_channel *_ch, struct spdk_bdev_io *
 			rocksdb::Slice key = iter->key();
 			if (key.size() != KV_MAX_KEY_SIZE) {
 				SPDK_ERRLOG("Invalid key length %zu\n", key.size());
-				req->rsp->nvme_cpl.status.sc =
-					SPDK_NVME_SC_KV_INVALID_KEY_SIZE; /** What should be the result in this case? */
+				/** What should be the result in this case? */
+				bdev_io->internal.error.nvme.sc = SPDK_NVME_SC_KV_INVALID_KEY_SIZE;
+				status = SPDK_BDEV_IO_STATUS_NVME_ERROR;
 				break;
 			}
 			key_data->kl = KV_MAX_KEY_SIZE;

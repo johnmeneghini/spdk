@@ -195,7 +195,25 @@ process_completion(void *cb_arg, const struct spdk_nvme_cpl *cpl)
 		printf("  SQHD: %d\n", cpl->sqhd);
 		printf("  SQID: %d\n", cpl->sqid);
 		printf("  CDW0: %d\n", cpl->cdw0);
-		printf("  CDW1: %d\n", cpl->cdw1);
+		printf("  CDW1: %d\n\n", cpl->cdw1);
+	}
+
+	switch (cpl->status.sc) {
+	case 0x85:
+		printf("Invalid value size\n");
+		break;
+	case 0x86:
+		printf("Invalid key size\n");
+		break;
+	case 0x87:
+		printf("Key does not exist\n");
+		break;
+	case 0x88:
+		printf("Unrecovered error\n");
+		break;
+	case 0x89:
+		printf("Key exists\n");
+		break;
 	}
 
 	outstanding_commands--;
@@ -255,13 +273,14 @@ run_kv_cmd(struct spdk_nvme_ctrlr *ctrlr, uint32_t nsid, enum kv_cmd_type cmd_ty
 
 	switch (cmd_type) {
 	case KV_CMD_TYPE_STORE:
-		if (fgets(buf, sizeof buf, stdin) == NULL) {
+		printf("Enter buffer: ");
+		if (fgets(buf, buffer_size, stdin) == NULL) {
 			fprintf(stderr, "Unable to read from stdin\n");
 			spdk_dma_free(buf);
 			spdk_nvme_ctrlr_free_io_qpair(qpair);
 			exit(1);
 		}
-		printf("Store buffer: %s\n", buf);
+		printf("\nStore buffer: %s\n", buf);
 		++outstanding_commands;
 		spdk_nvme_kv_cmd_store(ns, qpair, key, buf, buffer_size, 0, process_completion, NULL, 0);
 		break;
