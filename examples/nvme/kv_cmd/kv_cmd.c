@@ -71,6 +71,9 @@ static int g_main_core = 0;
 
 static char g_core_mask[16] = "0x1";
 
+/* Default to 30 seconds for the keep alive value. This value is arbitrary. */
+static uint32_t g_keep_alive_timeout_in_ms = 30000;
+
 static struct spdk_nvme_transport_id g_trid;
 static char g_hostnqn[SPDK_NVMF_NQN_MAX_LEN + 1];
 
@@ -110,11 +113,12 @@ usage(const char *program_name)
 
 	spdk_log_usage(stdout, "-L");
 
-	printf(" -d         DPDK huge memory size in MB\n");
-	printf(" -c         KV command (store, retrieve, exist, delete, list)\n");
-	printf(" -C         print completion\n");
-	printf(" -k         key (16-byte string)\n");
-	printf(" -H         show this usage\n");
+	printf(" -K  <kvkey>  Key (16-byte string)\n");
+	printf(" -d  <val>    DPDK huge memory size in MB\n");
+	printf(" -c  <str>    KV command (store, retrieve, exist, delete, list)\n");
+	printf(" -k  <val>    keep-alive-timeout in ms (default: %d)\n", g_keep_alive_timeout_in_ms);
+	printf(" -C           print completion\n");
+	printf(" -H           show this usage\n");
 }
 
 static int
@@ -122,12 +126,13 @@ parse_args(int argc, char **argv)
 {
 	int op;
 	char *hostnqn;
+	long int val;
 	int rc;
 
 	spdk_nvme_trid_populate_transport(&g_trid, SPDK_NVME_TRANSPORT_PCIE);
 	snprintf(g_trid.subnqn, sizeof(g_trid.subnqn), "%s", SPDK_NVMF_DISCOVERY_NQN);
 
-	while ((op = getopt(argc, argv, "d:r:c:Ck:L:")) != -1) {
+	while ((op = getopt(argc, argv, "d:r:c:CK:k:L:")) != -1) {
 		switch (op) {
 		case 'd':
 			g_dpdk_mem = spdk_strtol(optarg, 10);
@@ -178,9 +183,17 @@ parse_args(int argc, char **argv)
 		case 'C':
 			g_print_completion = true;
 			break;
-		case 'k':
+		case 'K':
 			spdk_kv_key_parse(optarg, &g_key);
 			break;
+		case 'k':
+			if ((val = spdk_strtol(optarg, 10)) < 0) {
+				fprintf(stderr, "Converting -k string to integer failed\n");
+				return 1;
+			}
+			g_keep_alive_timeout_in_ms = val;
+			break;
+
 		case 'L':
 			rc = spdk_log_set_flag(optarg);
 			if (rc < 0) {
@@ -390,8 +403,11 @@ int main(int argc, char **argv)
 	if (strlen(g_trid.traddr) != 0) {
 		struct spdk_nvme_ctrlr_opts opts;
 
+		assert(g_trid.trtype != SPDK_NVME_TRANSPORT_PCIE);
+
 		spdk_nvme_ctrlr_get_default_ctrlr_opts(&opts, sizeof(opts));
 		memcpy(opts.hostnqn, g_hostnqn, sizeof(opts.hostnqn));
+		opts.keep_alive_timeout_ms = g_keep_alive_timeout_in_ms;
 		ctrlr = spdk_nvme_connect(&g_trid, &opts, sizeof(opts));
 		if (!ctrlr) {
 			fprintf(stderr, "spdk_nvme_connect() failed\n");

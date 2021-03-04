@@ -123,5 +123,34 @@ while the key "hellokitty" will be represented as:
 "0x68656c6c-68656c6c-6865"
 
 ```
+# KV command test TCP
+
+```
+  sudo gdb --args build/bin/nvmf_tgt -c examples/kv/tcp_no_uring_rocksdb_bdev.json -s 256
+```
+
+## KV Identify
+
+```
+  sudo build/examples/identify -r 'trtype:TCP adrfam:IPv4 traddr:127.0.0.1 trsvcid:4422 subnqn:nqn.2016-06.io.spdk:cnode2' -d 256
+```
+
+## KV Store
+
+```
+ python -c "print('John Meneghini was here')" | sudo build/examples/kv_cmd -r 'trtype:TCP adrfam:IPv4 traddr:127.0.0.1 trsvcid:4422 subnqn:nqn.2016-06.io.spdk:cnode2' -d 256 -C -k "johnm" -c store
+```
+
+## KV Retrieve
+
+```
+  sudo build/examples/kv_cmd -r 'trtype:TCP adrfam:IPv4 traddr:127.0.0.1 trsvcid:4422 subnqn:nqn.2016-06.io.spdk:cnode2' -d 256 -C -K "johnm" -k 100000 -c retrieve
+```
+
+## KV List
+
+```
+  sudo build/examples/kv_cmd -r 'trtype:TCP adrfam:IPv4 traddr:127.0.0.1 trsvcid:4422 subnqn:nqn.2016-06.io.spdk:cnode2' -d 256 -C -K "johnm" -k 100000 -c list
+```
 
 End
