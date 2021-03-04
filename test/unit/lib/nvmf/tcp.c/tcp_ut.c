@@ -574,6 +574,7 @@ test_nvmf_tcp_send_c2h_data(void)
 	struct nvme_tcp_pdu pdu = {};
 	struct spdk_nvme_tcp_c2h_data_hdr *c2h_data;
 
+	ttransport.tcp_opts.c2h_success = true;
 	thread = spdk_thread_create(NULL, NULL);
 	SPDK_CU_ASSERT_FATAL(thread != NULL);
 	spdk_set_thread(thread);
