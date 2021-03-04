@@ -571,4 +571,3 @@ spdk_nvme_kv_cmd_list(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
 
 	return nvme_qpair_submit_request(qpair, req);
 }
-

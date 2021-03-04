@@ -215,6 +215,7 @@
 	spdk_nvme_kv_cmd_retrieve;
 	spdk_nvme_kv_cmd_delete;
 	spdk_nvme_kv_cmd_exist;
+	spdk_nvme_kv_cmd_list;
 	spdk_kv_key_fmt_lower;
 	spdk_kv_cmd_fmt_lower;
 
