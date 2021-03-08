@@ -835,6 +835,12 @@ print_kv_ns_data(const struct spdk_nvme_kv_ns_data *nsdata_kv)
 	printf("Bytes capacity:                       %"PRIu64"\n", nsdata_kv->nsze);
 	printf("Bytes used:                           %"PRIu64"\n", nsdata_kv->nuse);
 	printf("Number of KV formats:                 %u\n", nsdata_kv->nkvf);
+	for (uint8_t i = 0; i < nsdata_kv->nkvf; i++) {
+		printf("  kv[%u]: Max key len:%u, Max value len: %u, Max num keys: %u\n",
+		       i, nsdata_kv->kvf[i].kv_key_max_len, nsdata_kv->kvf[i].kv_value_max_len,
+		       nsdata_kv->kvf[i].kv_max_num_keys);
+
+	}
 	printf("\n");
 }
 

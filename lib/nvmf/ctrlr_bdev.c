@@ -208,7 +208,10 @@ nvmf_bdev_ctrlr_identify_ns_kv(struct spdk_nvmf_ns *ns, struct spdk_nvme_kv_ns_d
 
 	nsdata->nsze = spdk_bdev_get_num_blocks(bdev);
 	nsdata->nuse = spdk_bdev_get_num_blocks(bdev);
-	nsdata->nkvf = 0;
+	nsdata->nkvf = 1;
+	nsdata->kvf[0].kv_value_max_len = KV_MAX_VALUE_SIZE;
+	nsdata->kvf[0].kv_key_max_len = KV_MAX_KEY_SIZE;
+	nsdata->kvf[0].kv_max_num_keys = 0; /* Unlimited */
 	nsdata->nmic.can_share = 1;
 	if (ns->ptpl_file != NULL) {
 		nsdata->nsrescap.rescap.persist = 1;

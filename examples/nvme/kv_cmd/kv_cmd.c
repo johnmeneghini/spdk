@@ -327,11 +327,11 @@ run_kv_cmd(struct spdk_nvme_ctrlr *ctrlr, uint32_t nsid, enum kv_cmd_type cmd_ty
 		}
 		printf("Store buffer: %s\n", buf);
 		++outstanding_commands;
-		spdk_nvme_kv_cmd_store(ns, qpair, &key, buf, strlen(buf), 0, process_completion, &g_op, 0);
+		spdk_nvme_kv_cmd_store(ns, qpair, &key, buf, strlen(buf), process_completion, &g_op, 0);
 		break;
 	case KV_CMD_TYPE_RETRIEVE:
 		++outstanding_commands;
-		spdk_nvme_kv_cmd_retrieve(ns, qpair, &key, buf, buffer_size, 0, process_completion, &g_op, 0);
+		spdk_nvme_kv_cmd_retrieve(ns, qpair, &key, buf, buffer_size, process_completion, &g_op, 0);
 		break;
 	case KV_CMD_TYPE_EXIST:
 		++outstanding_commands;

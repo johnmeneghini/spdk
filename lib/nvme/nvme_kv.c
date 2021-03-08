@@ -43,6 +43,23 @@ spdk_nvme_kv_ns_get_data(struct spdk_nvme_ns *ns)
 void
 spdk_nvme_kv_cmd_set_key(const struct spdk_nvme_kv_key_t *key, struct spdk_nvme_kv_cmd *cmd)
 {
+	switch (cmd->opc) {
+	case SPDK_NVME_OPC_KV_STORE:
+		cmd->cdw11_bits.kv_store.kl = key->kl;
+		break;
+	case SPDK_NVME_OPC_KV_RETRIEVE:
+		cmd->cdw11_bits.kv_retrieve.kl = key->kl;
+		break;
+	case SPDK_NVME_OPC_KV_DELETE:
+		cmd->cdw11_bits.kv_del.kl = key->kl;
+		break;
+	case SPDK_NVME_OPC_KV_EXIST:
+		cmd->cdw11_bits.kv_exist.kl = key->kl;
+		break;
+	case SPDK_NVME_OPC_KV_LIST:
+		cmd->cdw11_bits.kv_list.kl = key->kl;
+		break;
+	}
 	memcpy(&cmd->kvkey0, ((uint32_t *)&key->key) + 0, sizeof(cmd->kvkey0));
 	memcpy(&cmd->kvkey1, ((uint32_t *)&key->key) + 1, sizeof(cmd->kvkey1));
 	memcpy(&cmd->kvkey2, ((uint32_t *)&key->key) + 2, sizeof(cmd->kvkey2));
@@ -70,9 +87,9 @@ spdk_nvme_kv_cmd_get_key(const struct spdk_nvme_kv_cmd *cmd, struct spdk_nvme_kv
 		break;
 	}
 	memcpy(((uint32_t *)&key->key) + 0, &cmd->kvkey0, sizeof(cmd->kvkey0));
-	memcpy(((uint32_t *)&key->key) + 1, &cmd->kvkey0, sizeof(cmd->kvkey1));
-	memcpy(((uint32_t *)&key->key) + 2, &cmd->kvkey0, sizeof(cmd->kvkey2));
-	memcpy(((uint32_t *)&key->key) + 3, &cmd->kvkey0, sizeof(cmd->kvkey3));
+	memcpy(((uint32_t *)&key->key) + 1, &cmd->kvkey1, sizeof(cmd->kvkey1));
+	memcpy(((uint32_t *)&key->key) + 2, &cmd->kvkey2, sizeof(cmd->kvkey2));
+	memcpy(((uint32_t *)&key->key) + 3, &cmd->kvkey3, sizeof(cmd->kvkey3));
 }
 
 int spdk_kv_key_parse(const char *str, struct spdk_nvme_kv_key_t *key)
@@ -168,7 +185,6 @@ static void
 _nvme_kv_cmd_setup_store_request(struct spdk_nvme_ns *ns, struct nvme_request *req,
 				 struct spdk_nvme_kv_key_t *key,
 				 uint32_t buffer_size,
-				 uint32_t offset,
 				 uint32_t option)
 {
 	struct spdk_nvme_kv_cmd	*cmd;
@@ -296,51 +312,24 @@ _nvme_kv_cmd_allocate_request(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *q
 	return req;
 }
 
-/**
- * \brief Submits a KV Store I/O to the specified NVMe namespace.
- *
- * \param ns NVMe namespace to submit the KV Store I/O
- * \param qpair I/O queue pair to submit the request
- * \param keyspace_id namespace id of key
- * \param key virtual address pointer to the value
- * \param key_length length (in bytes) of the key
- * \param buffer virtual address pointer to the value
- * \param buffer_length length (in bytes) of the value
- * \param offset offset of value (in bytes)
- * \param cb_fn callback function to invoke when the I/O is completed
- * \param cb_arg argument to pass to the callback function
- * \param io_flags set flags, defined by the SPDK_NVME_IO_FLAGS_* entries
- *                      in spdk/nvme_spec.h, for this I/O.
- * \param option option to pass to NVMe command
- *          default = 0, compression = 1, idempotent = 2
- * \param is_store store=troe or append=false
-	    SPDK_NVME_OPC_KV_STORE(0x81),  SPDK_NVME_OPC_KV_APPEND(0x83)
- * \return 0 if successfully submitted, SPDK_KV_ERR_DD_NO_AVAILABLE_RESOURCE if an nvme_request
- *           structure cannot be allocated for the I/O request, SPDK_KV_ERR_DD_INVALID_PARAM if
- *           key_length or buffer_length is too large.
- *
- * The command is submitted to a qpair allocated by spdk_nvme_ctrlr_alloc_io_qpair().
- * The user must ensure that only one thread submits I/O on a given qpair at any given time.
- */
 int
 spdk_nvme_kv_cmd_store(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
 		       struct spdk_nvme_kv_key_t *key,
 		       void *buffer, uint32_t buffer_length,
-		       uint32_t offset,
 		       spdk_nvme_cmd_cb cb_fn, void *cb_arg,
 		       uint32_t option)
 {
 	struct nvme_request *req;
 	struct nvme_payload payload;
 
-	assert(key->kl > 0 && key->kl <= KV_MAX_KEY_SIZE);
+	assert(spdk_nvme_ns_get_csi(ns) == SPDK_NVME_CSI_KV);
 	if (key->kl == 0) {
 		return SPDK_NVME_SC_KV_INVALID_KEY_SIZE;
 	}
-	if (key->kl > KV_MAX_KEY_SIZE) {
+	if (key->kl > spdk_nvme_kv_get_max_key_len(ns)) {
 		return SPDK_NVME_SC_KV_INVALID_KEY_SIZE;
 	}
-	if (buffer_length > KV_MAX_VALUE_SIZE) {
+	if (buffer_length > spdk_nvme_kv_get_max_value_len(ns)) {
 		return SPDK_NVME_SC_KV_INVALID_VALUE_SIZE;
 	}
 	payload = NVME_PAYLOAD_CONTIG(buffer, NULL);
@@ -352,53 +341,27 @@ spdk_nvme_kv_cmd_store(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
 		return -ENOMEM;
 	}
 
-	_nvme_kv_cmd_setup_store_request(ns, req, key, buffer_length, offset, option);
+	_nvme_kv_cmd_setup_store_request(ns, req, key, buffer_length, option);
 
 	return nvme_qpair_submit_request(qpair, req);
 }
 
-/**
- * \brief Submits a KV Retrieve I/O to the specified NVMe namespace.
- *
- * \param ns NVMe namespace to submit the KV Retrieve I/O
- * \param qpair I/O queue pair to submit the request
- * \param keyspace_id namespace id of key
- * \param key virtual address pointer to the value
- * \param key_length length (in bytes) of the key
- * \param buffer virtual address pointer to the value
- * \param buffer_length length (in bytes) of the value
- * \param offset offset of value (in bytes)
- * \param cb_fn callback function to invoke when the I/O is completed
- * \param cb_arg argument to pass to the callback function
- * \param io_flags set flags, defined by the SPDK_NVME_IO_FLAGS_* entries
- *                      in spdk/nvme_spec.h, for this I/O.
- * \param option option to pass to NVMe command
- *     default = 0, decompression = 1
- *
- * \return 0 if successfully submitted, SPDK_KV_ERR_DD_NO_AVAILABLE_RESOURCE if an nvme_request
- *           structure cannot be allocated for the I/O request, SPDK_KV_ERR_DD_INVALID_PARAM if
- *           key_length or buffer_length is too large.
- *
- * The command is submitted to a qpair allocated by spdk_nvme_ctrlr_alloc_io_qpair().
- * The user must ensure that only one thread submits I/O on a given qpair at any given time.
- */
 int
 spdk_nvme_kv_cmd_retrieve(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
 			  struct spdk_nvme_kv_key_t *key, void *buffer, uint32_t buffer_length,
-			  uint32_t offset,
 			  spdk_nvme_cmd_cb cb_fn, void *cb_arg, uint32_t option)
 {
 	struct nvme_request *req;
 	struct nvme_payload payload;
 
-	assert(key->kl > 0 && key->kl <= KV_MAX_KEY_SIZE);
+	assert(spdk_nvme_ns_get_csi(ns) == SPDK_NVME_CSI_KV);
 	if (key->kl == 0) {
 		return SPDK_NVME_SC_KV_INVALID_KEY_SIZE;
 	}
-	if (key->kl > KV_MAX_KEY_SIZE) {
+	if (key->kl > spdk_nvme_kv_get_max_key_len(ns)) {
 		return SPDK_NVME_SC_KV_INVALID_KEY_SIZE;
 	}
-	if (buffer_length > KV_MAX_VALUE_SIZE) {
+	if (buffer_length > spdk_nvme_kv_get_max_value_len(ns)) {
 		return SPDK_NVME_SC_KV_INVALID_VALUE_SIZE;
 	}
 
@@ -416,36 +379,18 @@ spdk_nvme_kv_cmd_retrieve(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair
 	return nvme_qpair_submit_request(qpair, req);
 }
 
-/**
- * \brief Submits a KV Delete I/O to the specified NVMe namespace.
- *
- * \param ns NVMe namespace to submit the KV DeleteI/O
- * \param qpair I/O queue pair to submit the request
- * \param keyspace_id namespace id of key
- * \param key virtual address pointer to the value
- * \param cb_fn callback function to invoke when the I/O is completed
- * \param cb_arg argument to pass to the callback function
- *
- * \return 0 if successfully submitted, SPDK_KV_ERR_DD_NO_AVAILABLE_RESOURCE if an nvme_request
- *           structure cannot be allocated for the I/O request, SPDK_KV_ERR_DD_INVALID_PARAM if
- *           key_length or buffer_length is too large.
- *
- * The command is submitted to a qpair allocated by spdk_nvme_ctrlr_alloc_io_qpair().
- * The user must ensure that only one thread submits I/O on a given qpair at any given time.
- */
 int
 spdk_nvme_kv_cmd_delete(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
-			struct spdk_nvme_kv_key_t *key,
-			spdk_nvme_cmd_cb cb_fn, void *cb_arg)
+			struct spdk_nvme_kv_key_t *key, spdk_nvme_cmd_cb cb_fn, void *cb_arg)
 {
 	struct nvme_request *req;
 	struct nvme_payload payload;
 
-	assert(key->kl > 0 && key->kl <= KV_MAX_KEY_SIZE);
+	assert(spdk_nvme_ns_get_csi(ns) == SPDK_NVME_CSI_KV);
 	if (key->kl == 0) {
 		return SPDK_NVME_SC_KV_INVALID_KEY_SIZE;
 	}
-	if (key->kl > KV_MAX_KEY_SIZE) {
+	if (key->kl > spdk_nvme_kv_get_max_key_len(ns)) {
 		return SPDK_NVME_SC_KV_INVALID_KEY_SIZE;
 	}
 
@@ -465,23 +410,6 @@ spdk_nvme_kv_cmd_delete(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
 
 }
 
-
-/**
- * \brief Submits a KV Exist I/O to the specified NVMe namespace.
- *
- * \param ns NVMe namespace to submit the KV Exist I/O
- * \param qpair I/O queue pair to submit the request
- * \param keys virtual address pointer to the key array
- * \param key_length length (in bytes) of the key
- * \param cb_fn callback function to invoke when the I/O is completed
- * \param cb_arg argument to pass to the callback function
- *
- * \return 0 if successfully submitted, SPDK_KV_ERR_DD_NO_AVAILABLE_RESOURCE if an nvme_request
- *           structure cannot be allocated for the I/O request
- *
- * The command is submitted to a qpair allocated by spdk_nvme_ctrlr_alloc_io_qpair().
- * The user must ensure that only one thread submits I/O on a given qpair at any given time.
- */
 int
 spdk_nvme_kv_cmd_exist(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
 		       struct spdk_nvme_kv_key_t *key, spdk_nvme_cmd_cb cb_fn, void *cb_arg)
@@ -489,11 +417,11 @@ spdk_nvme_kv_cmd_exist(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
 	struct nvme_request *req;
 	struct nvme_payload payload;
 
-	assert(key->kl > 0 && key->kl <= KV_MAX_KEY_SIZE);
+	assert(spdk_nvme_ns_get_csi(ns) == SPDK_NVME_CSI_KV);
 	if (key->kl == 0) {
 		return SPDK_NVME_SC_KV_INVALID_KEY_SIZE;
 	}
-	if (key->kl > KV_MAX_KEY_SIZE) {
+	if (key->kl > spdk_nvme_kv_get_max_key_len(ns)) {
 		return SPDK_NVME_SC_KV_INVALID_KEY_SIZE;
 	}
 
@@ -513,32 +441,6 @@ spdk_nvme_kv_cmd_exist(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
 
 }
 
-
-/**
- * \brief Submits a KV Retrieve I/O to the specified NVMe namespace.
- *
- * \param ns NVMe namespace to submit the KV Retrieve I/O
- * \param qpair I/O queue pair to submit the request
- * \param keyspace_id namespace id of key
- * \param key virtual address pointer to the value
- * \param key_length length (in bytes) of the key
- * \param buffer virtual address pointer to the value
- * \param buffer_length length (in bytes) of the value
- * \param offset offset of value (in bytes)
- * \param cb_fn callback function to invoke when the I/O is completed
- * \param cb_arg argument to pass to the callback function
- * \param io_flags set flags, defined by the SPDK_NVME_IO_FLAGS_* entries
- *                      in spdk/nvme_spec.h, for this I/O.
- * \param option option to pass to NVMe command
- *     default = 0, decompression = 1
- *
- * \return 0 if successfully submitted, SPDK_KV_ERR_DD_NO_AVAILABLE_RESOURCE if an nvme_request
- *           structure cannot be allocated for the I/O request, SPDK_KV_ERR_DD_INVALID_PARAM if
- *           key_length or buffer_length is too large.
- *
- * The command is submitted to a qpair allocated by spdk_nvme_ctrlr_alloc_io_qpair().
- * The user must ensure that only one thread submits I/O on a given qpair at any given time.
- */
 int
 spdk_nvme_kv_cmd_list(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
 		      struct spdk_nvme_kv_key_t *key, void *buffer, uint32_t buffer_length,
@@ -547,15 +449,12 @@ spdk_nvme_kv_cmd_list(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
 	struct nvme_request *req;
 	struct nvme_payload payload;
 
-	assert(key->kl > 0 && key->kl <= KV_MAX_KEY_SIZE);
+	assert(spdk_nvme_ns_get_csi(ns) == SPDK_NVME_CSI_KV);
 	if (key->kl == 0) {
 		return SPDK_NVME_SC_KV_INVALID_KEY_SIZE;
 	}
-	if (key->kl > KV_MAX_KEY_SIZE) {
+	if (key->kl > spdk_nvme_kv_get_max_key_len(ns)) {
 		return SPDK_NVME_SC_KV_INVALID_KEY_SIZE;
-	}
-	if (buffer_length > KV_MAX_VALUE_SIZE) {
-		return SPDK_NVME_SC_KV_INVALID_VALUE_SIZE;
 	}
 
 	payload = NVME_PAYLOAD_CONTIG(buffer, NULL);
@@ -570,4 +469,22 @@ spdk_nvme_kv_cmd_list(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
 					key, buffer_length);
 
 	return nvme_qpair_submit_request(qpair, req);
+}
+
+uint32_t spdk_nvme_kv_get_max_key_len(struct spdk_nvme_ns *ns)
+{
+	assert(spdk_nvme_ns_get_csi(ns) == SPDK_NVME_CSI_KV);
+	return ns->kv_key_max_len;
+}
+
+uint32_t spdk_nvme_kv_get_max_value_len(struct spdk_nvme_ns *ns)
+{
+	assert(spdk_nvme_ns_get_csi(ns) == SPDK_NVME_CSI_KV);
+	return ns->kv_value_max_len;
+}
+
+uint32_t spdk_nvme_kv_get_max_num_keys(struct spdk_nvme_ns *ns)
+{
+	assert(spdk_nvme_ns_get_csi(ns) == SPDK_NVME_CSI_KV);
+	return ns->kv_max_num_keys;
 }

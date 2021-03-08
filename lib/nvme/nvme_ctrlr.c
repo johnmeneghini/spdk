@@ -2080,13 +2080,25 @@ nvme_ctrlr_identify_ns_kv_specific_async_done(void *arg, const struct spdk_nvme_
 {
 	struct spdk_nvme_ns *ns = (struct spdk_nvme_ns *)arg;
 	struct spdk_nvme_ctrlr *ctrlr = ns->ctrlr;
+	struct spdk_nvme_kv_ns_data *nsdata_kv;
 
 	if (spdk_nvme_cpl_is_error(cpl)) {
 		nvme_ns_free_kv_specific_data(ns);
 		nvme_ctrlr_set_state(ctrlr, NVME_CTRLR_STATE_ERROR, NVME_TIMEOUT_INFINITE);
 		return;
 	}
+	assert(SPDK_NVME_CSI_KV == ns->csi);
+	assert(ctrlr->nsdata_kv);
+	nsdata_kv = ctrlr->nsdata_kv[ns->id - 1];
+	assert(nsdata_kv);
 
+	assert(nsdata_kv->nkvf > 0);
+	/*
+	 * For now we only use the first KV format
+	 */
+	ns->kv_key_max_len = nsdata_kv->kvf[0].kv_key_max_len;
+	ns->kv_value_max_len = nsdata_kv->kvf[0].kv_value_max_len;
+	ns->kv_max_num_keys = nsdata_kv->kvf[0].kv_max_num_keys;
 	nvme_ctrlr_identify_namespaces_iocs_specific_next(ctrlr, ns->id);
 }
 

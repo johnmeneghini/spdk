@@ -202,6 +202,7 @@ struct spdk_nvmf_ctrlr_feat {
 	union spdk_nvme_feat_write_atomicity write_atomicity;
 	union spdk_nvme_feat_async_event_configuration async_event_configuration;
 	union spdk_nvme_feat_keep_alive_timer keep_alive_timer;
+	union spdk_nvme_feat_key_value_config key_value;
 };
 
 /*

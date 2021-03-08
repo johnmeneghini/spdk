@@ -494,6 +494,9 @@ struct spdk_nvme_ns {
 
 	uint32_t			ana_group_id;
 	enum spdk_nvme_ana_state	ana_state;
+	uint32_t kv_key_max_len;
+	uint32_t kv_value_max_len;
+	uint32_t kv_max_num_keys;
 };
 
 /**

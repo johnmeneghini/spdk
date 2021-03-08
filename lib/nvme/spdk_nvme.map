@@ -218,6 +218,9 @@
 	spdk_nvme_kv_cmd_list;
 	spdk_kv_key_fmt_lower;
 	spdk_kv_cmd_fmt_lower;
+	spdk_nvme_kv_get_max_key_len;
+	spdk_nvme_kv_get_max_value_len;
+	spdk_nvme_kv_get_max_num_keys;
 
 	local: *;
 };

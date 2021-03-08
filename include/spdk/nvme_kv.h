@@ -46,6 +46,7 @@ extern "C" {
 #endif
 
 #include "spdk/nvme_kv_spec.h"
+#include "spdk/nvme.h"
 
 /** 0x11223344-11223344-11223344-11223344 + terminating NULL */
 #define KV_KEY_STRING_LEN (38)
@@ -73,25 +74,150 @@ void spdk_nvme_kv_cmd_get_key(const struct spdk_nvme_kv_cmd *cmd, struct spdk_nv
  */
 int spdk_kv_key_parse(const char *str, struct spdk_nvme_kv_key_t *key);
 
+/**
+ * Get the Key Value Command Set Specific Identify Namespace data
+ * as defined by the NVMe Key Value Command Set Specification.
+ *
+ * This function is thread safe and can be called at any point while the controller
+ * is attached to the SPDK NVMe driver.
+ *
+ * \param ns Namespace.
+ *
+ * \return a pointer to the namespace data, or NULL if the namespace is not
+ * a KV Namespace.
+ */
 const struct spdk_nvme_kv_ns_data *spdk_nvme_kv_ns_get_data(struct spdk_nvme_ns *ns);
 
+/**
+ * \brief Submits a KV Store I/O to the specified NVMe namespace.
+ *
+ * \param ns NVMe namespace to submit the KV Store I/O
+ * \param qpair I/O queue pair to submit the request
+ * \param key Pointer to the key value to store value at
+ * \param buffer virtual address pointer to the value
+ * \param buffer_length length (in bytes) of the value
+ * \param cb_fn callback function to invoke when the I/O is completed
+ * \param cb_arg argument to pass to the callback function
+ * \param option option to pass to NVMe command
+ *          default = 0, no overwrite = 1, overwrite only = 2, compression = 4
+ * \return 0 if successfully submitted, -ENOMEM if an nvme_request
+ *           structure cannot be allocated for the I/O request, SPDK_NVME_SC_KV_INVALID_KEY_SIZE
+ *           or SPDK_NVME_SC_KV_INVALID_VALUE_SIZE if key_length or buffer_length is too large.
+ *
+ * The command is submitted to a qpair allocated by spdk_nvme_ctrlr_alloc_io_qpair().
+ * The user must ensure that only one thread submits I/O on a given qpair at any given time.
+ */
 int spdk_nvme_kv_cmd_store(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
-			   struct spdk_nvme_kv_key_t *key, void *buffer, uint32_t buffer_length, uint32_t offset,
+			   struct spdk_nvme_kv_key_t *key, void *buffer, uint32_t buffer_length,
 			   spdk_nvme_cmd_cb cb_fn, void *cb_arg, uint32_t option);
 
+/**
+ * \brief Submits a KV Retrieve I/O to the specified NVMe namespace.
+ *
+ * \param ns NVMe namespace to submit the KV Retrieve I/O
+ * \param qpair I/O queue pair to submit the request
+ * \param key Pointer to the key value to retrieve the value of
+ * \param buffer virtual address pointer to the value
+ * \param buffer_length length (in bytes) of the value
+ * \param cb_fn callback function to invoke when the I/O is completed
+ * \param cb_arg argument to pass to the callback function
+ * \param option option to pass to NVMe command
+ *     default = 0, decompression = 1
+ * \return 0 if successfully submitted, -ENOMEM if an nvme_request
+ *           structure cannot be allocated for the I/O request, SPDK_NVME_SC_KV_INVALID_KEY_SIZE
+ *           or SPDK_NVME_SC_KV_INVALID_VALUE_SIZE if key_length or buffer_length is too large.
+ *
+ * The command is submitted to a qpair allocated by spdk_nvme_ctrlr_alloc_io_qpair().
+ * The user must ensure that only one thread submits I/O on a given qpair at any given time.
+ */
 int spdk_nvme_kv_cmd_retrieve(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
-			      struct spdk_nvme_kv_key_t *key, void *buffer, uint32_t buffer_length, uint32_t offset,
+			      struct spdk_nvme_kv_key_t *key, void *buffer, uint32_t buffer_length,
 			      spdk_nvme_cmd_cb cb_fn, void *cb_arg, uint32_t option);
 
+/**
+ * \brief Delete a value specified by key in the specified NVMe namespace.
+ *
+ * \param ns NVMe namespace to submit the KV DeleteI/O
+ * \param qpair I/O queue pair to submit the request
+ * \param key Pointer to the key value to delete
+ * \param cb_fn callback function to invoke when the I/O is completed
+ * \param cb_arg argument to pass to the callback function
+ * \return 0 if successfully submitted, -ENOMEM if an nvme_request
+ *           structure cannot be allocated for the I/O request, SPDK_NVME_SC_KV_INVALID_KEY_SIZE
+ *           if key_length is too large.
+ *
+ * The command is submitted to a qpair allocated by spdk_nvme_ctrlr_alloc_io_qpair().
+ * The user must ensure that only one thread submits I/O on a given qpair at any given time.
+ */
 int spdk_nvme_kv_cmd_delete(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
 			    struct spdk_nvme_kv_key_t *key, spdk_nvme_cmd_cb cb_fn, void *cb_arg);
 
+/**
+ * \brief Tests if a key exists in specified NVMe namespace.
+ *
+ * \param ns NVMe namespace to submit the KV Exist I/O
+ * \param qpair I/O queue pair to submit the request
+ * \param key Pointer to the key value to test
+ * \param cb_fn callback function to invoke when the I/O is completed
+ * \param cb_arg argument to pass to the callback function
+ * \return 0 if successfully submitted, -ENOMEM if an nvme_request
+ *           structure cannot be allocated for the I/O request, SPDK_NVME_SC_KV_INVALID_KEY_SIZE
+ *           if key_length is too large.
+ *
+ * The command is submitted to a qpair allocated by spdk_nvme_ctrlr_alloc_io_qpair().
+ * The user must ensure that only one thread submits I/O on a given qpair at any given time.
+ */
 int spdk_nvme_kv_cmd_exist(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
 			   struct spdk_nvme_kv_key_t *key, spdk_nvme_cmd_cb cb_fn, void *cb_arg);
 
+/**
+ * \brief Lists keys starting at the specified key the specified NVMe namespace.
+ *
+ * \param ns NVMe namespace to submit the KV Retrieve I/O
+ * \param qpair I/O queue pair to submit the request
+ * \param key Pointer to the key value to begin listing keys
+ * \param buffer virtual address pointer to the value
+ * \param buffer_length length (in bytes) of the value
+ * \param cb_fn callback function to invoke when the I/O is completed
+ * \param cb_arg argument to pass to the callback function
+ * \return 0 if successfully submitted, -ENOMEM if an nvme_request
+ *           structure cannot be allocated for the I/O request, SPDK_NVME_SC_KV_INVALID_KEY_SIZE
+ *           or SPDK_NVME_SC_KV_INVALID_VALUE_SIZE if key_length or buffer_length is too large.
+ *
+ * The command is submitted to a qpair allocated by spdk_nvme_ctrlr_alloc_io_qpair().
+ * The user must ensure that only one thread submits I/O on a given qpair at any given time.
+ */
 int spdk_nvme_kv_cmd_list(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
 			  struct spdk_nvme_kv_key_t *key, void *buffer, uint32_t buffer_length,
 			  spdk_nvme_cmd_cb cb_fn, void *cb_arg);
+
+/**
+ * Get the maximum key length for KV namespace.
+ *
+ * \param ns Opaque handle to NVMe namespace.
+ *
+ * \return Maximum key length the naespace supports.
+ */
+uint32_t spdk_nvme_kv_get_max_key_len(struct spdk_nvme_ns *ns);
+
+/**
+ * Get the maximum value size for KV namespace.
+ *
+ * \param ns Opaque handle to NVMe namespace.
+ *
+ * \return Maximum value size the naespace supports.
+ */
+uint32_t spdk_nvme_kv_get_max_value_len(struct spdk_nvme_ns *ns);
+
+/**
+ * Get the maximum number of keys a KV namespace can have (0 if unlimited).
+ *
+ * \param ns Opaque handle to NVMe namespace.
+ *
+ * \return Maximum value size the naespace supports.
+ */
+uint32_t spdk_nvme_kv_get_max_num_keys(struct spdk_nvme_ns *ns);
+
 
 /**
  * Convert Key to lowercase textual format.

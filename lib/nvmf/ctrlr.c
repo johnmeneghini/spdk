@@ -1662,6 +1662,20 @@ nvmf_ctrlr_set_features_async_event_configuration(struct spdk_nvmf_request *req)
 }
 
 static int
+nvmf_ctrlr_set_features_key_value(struct spdk_nvmf_request *req)
+{
+	struct spdk_nvmf_ctrlr *ctrlr = req->qpair->ctrlr;
+	struct spdk_nvme_cmd *cmd = &req->cmd->nvme_cmd;
+
+	SPDK_DEBUGLOG(nvmf, "Set Features - Key Value (cdw11 = 0x%0x)\n", cmd->cdw11);
+
+	ctrlr->feat.key_value.raw = cmd->cdw11;
+	ctrlr->feat.key_value.bits.reserved = 0;
+
+	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
+}
+
+static int
 nvmf_ctrlr_async_event_request(struct spdk_nvmf_request *req)
 {
 	struct spdk_nvmf_ctrlr *ctrlr = req->qpair->ctrlr;
@@ -2622,23 +2636,6 @@ _nvme_ana_state_to_path_status(enum spdk_nvme_ana_state ana_state)
 }
 
 static int
-nvmf_ctrlr_get_features_key_value_config(struct spdk_nvmf_request *req)
-{
-	union spdk_nvme_feat_key_value_config kv;
-
-	if (req->data == NULL) {
-		req->rsp->nvme_cpl.status.sct = SPDK_NVME_SCT_GENERIC;
-		req->rsp->nvme_cpl.status.sc = SPDK_NVME_SC_INVALID_FIELD;
-		return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
-	}
-
-	/* Need to do this on a per NS basis */
-	kv.raw = 0;
-	memcpy(req->data, &kv, sizeof(union spdk_nvme_feat_key_value_config));
-	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
-}
-
-static int
 nvmf_ctrlr_get_features(struct spdk_nvmf_request *req)
 {
 	uint8_t feature;
@@ -2714,7 +2711,7 @@ nvmf_ctrlr_get_features(struct spdk_nvmf_request *req)
 	case SPDK_NVME_FEAT_HOST_RESERVE_PERSIST:
 		return nvmf_ctrlr_get_features_reservation_persistence(req);
 	case SPDK_NVME_FEAT_KEY_VALUE_CONFIG:
-		return nvmf_ctrlr_get_features_key_value_config(req);
+		return get_features_generic(req, ctrlr->feat.key_value.raw);
 	default:
 		SPDK_ERRLOG("Get Features command with unsupported feature ID 0x%02x\n", feature);
 		response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
@@ -2816,6 +2813,8 @@ nvmf_ctrlr_set_features(struct spdk_nvmf_request *req)
 		return nvmf_ctrlr_set_features_reservation_notification_mask(req);
 	case SPDK_NVME_FEAT_HOST_RESERVE_PERSIST:
 		return nvmf_ctrlr_set_features_reservation_persistence(req);
+	case SPDK_NVME_FEAT_KEY_VALUE_CONFIG:
+		return nvmf_ctrlr_set_features_key_value(req);
 	default:
 		SPDK_ERRLOG("Set Features command with unsupported feature ID 0x%02x\n", feature);
 		response->status.sc = SPDK_NVME_SC_INVALID_FIELD;
